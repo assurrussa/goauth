@@ -437,13 +437,13 @@ func TestReleaseDocsDocumentConsumerSwitchState(t *testing.T) {
 
 	requiredSnippets := []string{
 		"## Current consumer state",
-		"`backend/go.mod` requires `github.com/assurrussa/goauth v0.0.0`",
-		"`backend/go.mod` replaces `github.com/assurrussa/goauth => ./../goauth`",
-		"`goadmin/go.mod` requires `github.com/assurrussa/goauth v0.0.0`",
-		"`goadmin/go.mod` replaces `github.com/assurrussa/goauth => ../goauth`",
-		"`go list -m -json github.com/assurrussa/goauth@v0.1.0`",
-		"`go get github.com/assurrussa/goauth@v0.1.0`",
-		"remove the local `replace`",
+		"`backend/go.mod` requires `github.com/assurrussa/goauth v0.1.1`",
+		"`backend/go.mod` has no local `replace` for `github.com/assurrussa/goauth`",
+		"`goadmin/go.mod` requires `github.com/assurrussa/goauth v0.1.1`",
+		"`goadmin/go.mod` has no local `replace` for `github.com/assurrussa/goauth`",
+		"`go list -m -json github.com/assurrussa/goauth@v0.1.1`",
+		"`go get github.com/assurrussa/goauth@v0.1.1`",
+		"use `GOAUTH_LOCAL_PATH` only for explicit sibling-development checks",
 	}
 
 	var missing []string
