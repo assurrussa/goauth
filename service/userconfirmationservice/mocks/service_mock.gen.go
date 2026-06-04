@@ -13,9 +13,10 @@ import (
 	context "context"
 	reflect "reflect"
 
+	gomock "go.uber.org/mock/gomock"
+
 	core "github.com/assurrussa/goauth/core"
 	confirmation "github.com/assurrussa/goauth/local/confirmation"
-	gomock "go.uber.org/mock/gomock"
 )
 
 // MockuserConfirmationRepository is a mock of userConfirmationRepository interface.

@@ -14,8 +14,9 @@ import (
 	reflect "reflect"
 	time "time"
 
-	core "github.com/assurrussa/goauth/core"
 	gomock "go.uber.org/mock/gomock"
+
+	core "github.com/assurrussa/goauth/core"
 )
 
 // MockSubjectReader is a mock of SubjectReader interface.

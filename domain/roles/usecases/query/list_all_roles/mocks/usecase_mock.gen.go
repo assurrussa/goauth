@@ -13,9 +13,10 @@ import (
 	context "context"
 	reflect "reflect"
 
+	gomock "go.uber.org/mock/gomock"
+
 	model "github.com/assurrussa/goauth/domain/roles/model"
 	repository "github.com/assurrussa/goauth/domain/roles/repository"
-	gomock "go.uber.org/mock/gomock"
 )
 
 // Mockservice is a mock of service interface.

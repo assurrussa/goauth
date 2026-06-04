@@ -13,8 +13,9 @@ import (
 	context "context"
 	reflect "reflect"
 
-	listallroles "github.com/assurrussa/goauth/domain/roles/usecases/query/list_all_roles"
 	gomock "go.uber.org/mock/gomock"
+
+	listallroles "github.com/assurrussa/goauth/domain/roles/usecases/query/list_all_roles"
 )
 
 // MockrolesAllUseCase is a mock of rolesAllUseCase interface.

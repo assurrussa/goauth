@@ -13,10 +13,11 @@ import (
 	context "context"
 	reflect "reflect"
 
+	gomock "go.uber.org/mock/gomock"
+
 	model "github.com/assurrussa/goauth/domain/roles/model"
 	shared "github.com/assurrussa/goauth/domain/roles/shared"
 	listsubjectroles "github.com/assurrussa/goauth/domain/roles/usecases/query/list_subject_roles"
-	gomock "go.uber.org/mock/gomock"
 )
 
 // MockrolesUseCase is a mock of rolesUseCase interface.
