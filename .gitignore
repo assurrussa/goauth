@@ -1,5 +1,9 @@
+.DS_Store
 .idea
-.zed
 .vscode
-
-/tmp
+.zed
+__debug_*
+tmp/
+.cache/
+.go-cache/
+cover.html
