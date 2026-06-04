@@ -145,25 +145,31 @@ concise and contract-focused.
 
 ## Shared Agent Context
 
-Use `$project-context-router` for tasks that need cross-project context or the
-shared wiki.
+Use `$project-context-router` when a task needs cross-project context
+from a local shared wiki.
 
-Shared wiki roots currently exist at:
+Do not hard-code machine-local absolute paths in this public repository.
+If a local shared wiki is available, expose its root through
+`AGENT_CONTEXT_ROOT` or let `$project-context-router` resolve it for the
+current session.
 
-- `/Users/amir/agents/agent-context`
-- `/Users/amir/dev/projects/agent-context`
+Local docs and code in this repository remain the source of truth for
+commands, public APIs, config keys, supported imports, runtime behavior,
+and release gates. Read this repo's `AGENTS.md`, `README.md`, `docs/`
+or `reference/`, task files, code, tests, and configs before shared wiki
+pages.
 
-Prefer the first valid root that contains `streams/wiki/index.md`. For this
-project, read:
-
+When shared context is available, read these paths from the resolved wiki
+root:
 - `streams/wiki/index.md`
 - `streams/wiki/glossary.md`
 - `streams/wiki/platforms/goauth.md`
 - `streams/wiki/platforms/goadmin.md`
 
-Local docs and code in this repository remain the source of truth for commands,
-public APIs, config keys, supported imports, runtime behavior, and release
-gates.
+If local verified docs/code conflict with the shared wiki, treat the wiki
+as stale and update the relevant platform page after verification. Do not
+copy whole README files into wiki; keep shared pages concise and
+contract-focused.
 
 ## Dependency Documentation
 
@@ -190,3 +196,4 @@ The repository may contain unrelated user changes. Do not revert, restage, or
 rewrite files you did not change unless the user explicitly asks for that.
 Before editing public contracts, inspect current diffs and work with existing
 changes instead of assuming a clean baseline.
+
