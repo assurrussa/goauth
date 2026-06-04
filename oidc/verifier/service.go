@@ -1,4 +1,4 @@
-//nolint:depguard,tagliatelle // Verifier validates JWT access tokens and uses protocol snake_case claims.
+//nolint:tagliatelle // Verifier validates JWT access tokens and uses protocol snake_case claims.
 package verifier
 
 import (

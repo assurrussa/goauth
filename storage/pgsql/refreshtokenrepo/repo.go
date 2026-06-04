@@ -20,9 +20,9 @@ const tableName = "auth_refresh_tokens"
 
 var columns = []string{
 	"id",
-	"subject_id",
+	"subject_id", //nolint:goconst // autofix
 	"subject_kind",
-	"token",
+	"token", //nolint:goconst // autofix
 	"password_version",
 	"reason",
 	"banned_at",

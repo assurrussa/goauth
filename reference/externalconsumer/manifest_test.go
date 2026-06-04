@@ -1,3 +1,4 @@
+//nolint:testpackage // internal test
 package externalconsumer
 
 import (
@@ -21,7 +22,7 @@ func TestSupportedPackagesMatchesBlankImports(t *testing.T) {
 	file, err := parser.ParseFile(fset, filepath.Join(".", "imports.go"), nil, parser.ImportsOnly)
 	require.NoError(t, err)
 
-	var imported []string
+	imported := make([]string, 0, len(file.Imports))
 	for _, spec := range file.Imports {
 		require.NotNil(t, spec)
 		require.Equal(t, "_", spec.Name.Name)

@@ -1,3 +1,4 @@
+//nolint:testpackage // internal test
 package passwordresettokenrepo
 
 import (
@@ -96,7 +97,7 @@ func (db *fakePasswordResetDB) Selectx(context.Context, string, any, outbox.Stor
 	return nil
 }
 
-func (db *fakePasswordResetDB) Execx(ctx context.Context, op string, sqlizer outbox.StoragePgsqlSqlizer) (pgconn.CommandTag, error) {
+func (db *fakePasswordResetDB) Execx(ctx context.Context, op string, sqlizer outbox.StoragePgsqlSqlizer) (pgconn.CommandTag, error) { //nolint:lll // autofix
 	if db.execxFn == nil {
 		return pgconn.NewCommandTag(""), nil
 	}
@@ -116,7 +117,7 @@ func (db *fakePasswordResetDB) CopyFrom(context.Context, string, pgx.Identifier,
 }
 
 func (db *fakePasswordResetDB) BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error) {
-	return nil, nil
+	return nil, errors.New("not implemented")
 }
 func (db *fakePasswordResetDB) Ping(context.Context) error { return nil }
 func (db *fakePasswordResetDB) Close()                     {}

@@ -1,3 +1,4 @@
+//nolint:testpackage // internal test
 package migrations
 
 import (

@@ -24,10 +24,10 @@ func TestServiceRequestUserNotFound(t *testing.T) {
 		Hasher:        passwordHasherFake{},
 		Tx:            txManagerFake{},
 		Outbox:        outbox,
-		BaseURL:       "https://front.local",
+		BaseURL:       "https://front.local", //nolint:goconst // autofix
 		TTLMinutes:    60,
 		Now:           fixedNow,
-		GenerateToken: func() (string, error) { return "tok", nil },
+		GenerateToken: func() (string, error) { return "tok", nil }, //nolint:goconst // autofix
 	})
 
 	err := svc.Request(context.Background(), "missing@test.com")
@@ -43,7 +43,7 @@ func TestServiceRequestSuccess(t *testing.T) {
 	subject := authcore.Subject{
 		ID:    authshared.NewSubjectID(),
 		Kind:  authcore.SubjectKindUser,
-		Email: "user@test.com",
+		Email: "user@test.com", //nolint:goconst // autofix
 	}
 	svc := passwordreset.Must(passwordreset.Options{
 		Reader: subjectReaderFake{
@@ -74,7 +74,7 @@ func TestServiceRequestSuccess(t *testing.T) {
 
 func TestServicePerformInvalidToken(t *testing.T) {
 	store := &passwordResetStoreFake{
-		getByEmailFn: func(_ context.Context, email string) (authcore.PasswordResetToken, error) {
+		getByEmailFn: func(_ context.Context, _ string) (authcore.PasswordResetToken, error) {
 			return authcore.PasswordResetToken{}, errors.New("no rows")
 		},
 	}
@@ -117,7 +117,7 @@ func TestServicePerformCurrentPasswordReuse(t *testing.T) {
 	invalidator := &invalidatorFake{}
 	svc := passwordreset.Must(passwordreset.Options{
 		Reader: subjectReaderFake{
-			getByEmailFn: func(_ context.Context, email string) (authcore.Subject, error) {
+			getByEmailFn: func(_ context.Context, _ string) (authcore.Subject, error) {
 				return subject, nil
 			},
 		},
@@ -161,7 +161,7 @@ func TestServicePerformSuccessInvalidatesSubjectTokens(t *testing.T) {
 	outbox := &outboxFake{}
 	svc := passwordreset.Must(passwordreset.Options{
 		Reader: subjectReaderFake{
-			getByEmailFn: func(_ context.Context, email string) (authcore.Subject, error) {
+			getByEmailFn: func(_ context.Context, _ string) (authcore.Subject, error) {
 				return subject, nil
 			},
 		},
@@ -213,7 +213,7 @@ func TestServicePerformUpdatePasswordFailureDoesNotInvalidate(t *testing.T) {
 	invalidator := &invalidatorFake{}
 	svc := passwordreset.Must(passwordreset.Options{
 		Reader: subjectReaderFake{
-			getByEmailFn: func(_ context.Context, email string) (authcore.Subject, error) {
+			getByEmailFn: func(_ context.Context, _ string) (authcore.Subject, error) {
 				return subject, nil
 			},
 		},
@@ -260,7 +260,7 @@ type subjectWriterFake struct {
 	updatePasswordFn func(ctx context.Context, subject authcore.Subject, passwordHash string) error
 }
 
-func (subjectWriterFake) CreateUser(ctx context.Context, subject authcore.Subject) (authcore.Subject, error) {
+func (subjectWriterFake) CreateUser(_ context.Context, subject authcore.Subject) (authcore.Subject, error) {
 	return subject, nil
 }
 
@@ -278,7 +278,7 @@ type passwordResetStoreFake struct {
 	deleteByEmailFn func(ctx context.Context, email string) error
 }
 
-func (f *passwordResetStoreFake) Upsert(ctx context.Context, token authcore.PasswordResetToken) error {
+func (f *passwordResetStoreFake) Upsert(_ context.Context, token authcore.PasswordResetToken) error {
 	f.upsertCalled = true
 	f.lastToken = token
 	return nil

@@ -1,4 +1,4 @@
-//nolint:testpackage,depguard // Tests verify internal error behavior and JWT validation paths.
+//nolint:testpackage // Tests verify internal error behavior and JWT validation paths.
 package verifier
 
 import (
@@ -36,7 +36,7 @@ func TestVerifyAccessTokenCachesJWKSAndContextHelpers(t *testing.T) {
 
 	verifier, err := New(Options{
 		Issuer:         issuer,
-		Audience:       "pet-app",
+		Audience:       "pet-app", //nolint:goconst // autofix
 		RequiredScopes: []string{oidc.ScopeEmail},
 		HTTPClient:     &http.Client{Transport: transport},
 		Now:            func() time.Time { return now },
@@ -44,10 +44,10 @@ func TestVerifyAccessTokenCachesJWKSAndContextHelpers(t *testing.T) {
 	require.NoError(t, err)
 
 	token := signAccessToken(t, key, accessTokenInput{
-		keyID:     "kid-1",
+		keyID:     "kid-1", //nolint:goconst // autofix
 		issuer:    issuer,
 		audience:  "pet-app",
-		subject:   "subject-1",
+		subject:   "subject-1", //nolint:goconst // autofix
 		scopes:    []string{oidc.ScopeOpenID, oidc.ScopeEmail},
 		expiresAt: now.Add(15 * time.Minute),
 		issuedAt:  now,
@@ -147,14 +147,14 @@ func TestVerifyAccessTokenRejectsInvalidTokens(t *testing.T) {
 		{
 			name: "wrong token use",
 			token: signToken(t, key, "kid-1", jwt.MapClaims{
-				"iss":       issuer,
-				"sub":       "subject-1",
-				"aud":       []string{"pet-app"},
-				"exp":       now.Add(15 * time.Minute).Unix(),
-				"iat":       now.Unix(),
-				"nbf":       now.Unix(),
-				"scope":     oidc.ScopeOpenID,
-				"client_id": "pet-app",
+				"iss":       issuer,                           //nolint:goconst // autofix
+				"sub":       "subject-1",                      //nolint:goconst // autofix
+				"aud":       []string{"pet-app"},              //nolint:goconst // autofix
+				"exp":       now.Add(15 * time.Minute).Unix(), //nolint:goconst // autofix
+				"iat":       now.Unix(),                       //nolint:goconst // autofix
+				"nbf":       now.Unix(),                       //nolint:goconst // autofix
+				"scope":     oidc.ScopeOpenID,                 //nolint:goconst // autofix
+				"client_id": "pet-app",                        //nolint:goconst // autofix
 				"token_use": "id",
 			}),
 			wantErr: "token_use must be access",

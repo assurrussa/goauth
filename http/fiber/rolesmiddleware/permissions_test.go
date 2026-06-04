@@ -1,6 +1,7 @@
 package rolesmiddleware_test
 
 import (
+	"context"
 	"net/http/httptest"
 	"testing"
 
@@ -32,7 +33,7 @@ func TestRequirePermissionGuardDelegatesToPermissionGuard(t *testing.T) {
 	app.Use(mwGuard(key, opt))
 	app.Get("/", func(c fiber.Ctx) error { return c.SendStatus(fiber.StatusOK) })
 
-	resp, err := app.Test(httptest.NewRequest(fiber.MethodGet, "/", nil))
+	resp, err := app.Test(httptest.NewRequestWithContext(context.Background(), fiber.MethodGet, "/", nil))
 	require.NoError(t, err)
 	require.Equal(t, fiber.StatusAccepted, resp.StatusCode)
 	require.True(t, stub.called)
@@ -61,7 +62,7 @@ func TestRequirePermissionUsesProvidedGuard(t *testing.T) {
 	app.Use(handler)
 	app.Get("/", func(c fiber.Ctx) error { return c.SendStatus(fiber.StatusOK) })
 
-	resp, err := app.Test(httptest.NewRequest(fiber.MethodGet, "/", nil))
+	resp, err := app.Test(httptest.NewRequestWithContext(context.Background(), fiber.MethodGet, "/", nil))
 	require.NoError(t, err)
 	require.Equal(t, fiber.StatusTeapot, resp.StatusCode)
 	require.True(t, stub.called)

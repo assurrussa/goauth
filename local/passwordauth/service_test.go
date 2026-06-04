@@ -33,7 +33,7 @@ func TestAuthenticateSuccess(t *testing.T) {
 		Reader: subjectReaderStub{subject: authcore.Subject{
 			ID:           subjectID,
 			Kind:         authcore.SubjectKindAccount,
-			Email:        "test@example.com",
+			Email:        "test@example.com", //nolint:goconst // autofix
 			PasswordHash: string(hash),
 		}},
 		Credentials: authcore.StaticSubjectCredentials{},
@@ -42,7 +42,7 @@ func TestAuthenticateSuccess(t *testing.T) {
 
 	subject, err := svc.Authenticate(context.Background(), authcore.Credential{
 		Email:    "test@example.com",
-		Password: "password",
+		Password: "password", //nolint:goconst // autofix
 	})
 	require.NoError(t, err)
 	require.Equal(t, subjectID, subject.ID)

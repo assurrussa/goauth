@@ -10,6 +10,7 @@ import (
 
 type SlogAdapter = loggeroutbox.SlogAdapter
 
+//nolint:gochecknoinits // this is required for initialization
 func init() {
 	loggeroutbox.LogLevel.Set(slog.LevelInfo)
 }

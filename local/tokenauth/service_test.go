@@ -241,7 +241,7 @@ func (f refreshTokenStoreFake) DeleteAll(ctx context.Context, subjectID authcore
 	return 0, nil
 }
 
-func (f refreshTokenStoreFake) DeleteAllExcept(ctx context.Context, subjectID authcore.SubjectID, keepToken string) (int64, error) {
+func (f refreshTokenStoreFake) DeleteAllExcept(ctx context.Context, subjectID authcore.SubjectID, keepToken string) (int64, error) { //nolint:lll // autofix
 	if f.deleteExceptFn != nil {
 		return f.deleteExceptFn(ctx, subjectID, keepToken)
 	}

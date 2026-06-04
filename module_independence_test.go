@@ -26,6 +26,7 @@ func TestModuleDoesNotDependOnGoadmin(t *testing.T) {
 			return nil
 		}
 
+		//nolint:gosec // this is a test script running over safe local paths
 		source, err := os.ReadFile(path)
 		require.NoError(t, err)
 		require.NotContainsf(

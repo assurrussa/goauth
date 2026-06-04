@@ -1,4 +1,4 @@
-//nolint:depguard,tagliatelle // OIDC provider uses direct JWT claims and RFC-defined snake_case names.
+//nolint:tagliatelle // OIDC provider uses direct JWT claims and RFC-defined snake_case names.
 package provider
 
 import (

@@ -103,11 +103,7 @@ func (s *Service) Change(ctx context.Context, subjectID authcore.SubjectID, curr
 		if err := s.writer.UpdatePassword(ctx, subject, string(hash)); err != nil {
 			return fmt.Errorf("update password: %w", err)
 		}
-		if err := s.enqueueSuccessNotification(ctx, subject); err != nil {
-			return err
-		}
-
-		return nil
+		return s.enqueueSuccessNotification(ctx, subject)
 	}
 
 	if s.tx != nil && s.outbox != nil {
@@ -118,11 +114,7 @@ func (s *Service) Change(ctx context.Context, subjectID authcore.SubjectID, curr
 		return nil
 	}
 
-	if err := changeFn(ctx); err != nil {
-		return err
-	}
-
-	return nil
+	return changeFn(ctx)
 }
 
 func (s *Service) enqueueSuccessNotification(ctx context.Context, subject authcore.Subject) error {

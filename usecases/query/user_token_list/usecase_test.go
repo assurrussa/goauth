@@ -64,7 +64,7 @@ func TestUseCase_Handle_Success(t *testing.T) {
 	request := usertokenlist.Request{
 		ID:           sharedtypes.NewRequestID(),
 		SubjectID:    subjectID,
-		CurrentToken: "any-token",
+		CurrentToken: "any-token", //nolint:goconst // autofix
 	}
 
 	repoModels := []authjwtservice.TokenInfo{

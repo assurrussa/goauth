@@ -19,7 +19,8 @@ import (
 )
 
 const (
-	subjectsTable    = "auth_subjects"
+	subjectsTable = "auth_subjects"
+	//nolint:gosec // this is just a table name
 	credentialsTable = "auth_local_credentials"
 )
 
@@ -235,7 +236,7 @@ DO UPDATE SET
 			Update(subjectsTable).
 			Set("password_version", squirrel.Expr("password_version + 1")).
 			Set("updated_at", now).
-			Where(squirrel.Eq{"subject_id": subjectID})
+			Where(squirrel.Eq{"subject_id": subjectID}) //nolint:goconst // dbcol
 
 		if _, err := r.pgsql.DB().Execx(txCtx, op+".update_subject", subjectBuilder); err != nil {
 			return fmt.Errorf("update subject: %w", outbox.ErrorTransform(err))

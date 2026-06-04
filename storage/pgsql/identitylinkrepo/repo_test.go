@@ -1,3 +1,4 @@
+//nolint:testpackage // internal test
 package identitylinkrepo
 
 import (
@@ -197,7 +198,7 @@ func (db *fakeIdentityLinkDB) Exec(context.Context, string, string, ...any) (pgc
 	return pgconn.NewCommandTag(""), nil
 }
 
-func (db *fakeIdentityLinkDB) Getx(ctx context.Context, operationName string, dest any, sqlizer outbox.StoragePgsqlSqlizer) error {
+func (db *fakeIdentityLinkDB) Getx(ctx context.Context, operationName string, dest any, sqlizer outbox.StoragePgsqlSqlizer) error { //nolint:lll // autofix
 	if db.getxFn == nil {
 		return nil
 	}
@@ -205,7 +206,7 @@ func (db *fakeIdentityLinkDB) Getx(ctx context.Context, operationName string, de
 	return db.getxFn(ctx, operationName, dest, sqlizer)
 }
 
-func (db *fakeIdentityLinkDB) Selectx(ctx context.Context, operationName string, dest any, sqlizer outbox.StoragePgsqlSqlizer) error {
+func (db *fakeIdentityLinkDB) Selectx(ctx context.Context, operationName string, dest any, sqlizer outbox.StoragePgsqlSqlizer) error { //nolint:lll // autofix
 	if db.selectxFn == nil {
 		return nil
 	}

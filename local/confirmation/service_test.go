@@ -1,3 +1,4 @@
+//nolint:testpackage // internal test
 package confirmation
 
 import (
@@ -97,7 +98,7 @@ type subjectUpdaterStub struct {
 	appliedAt   time.Time
 }
 
-func (s *subjectUpdaterStub) ApplyConfirmation(_ context.Context, _ shared.SubjectID, confirmationType Type, confirmedAt time.Time) error {
+func (s *subjectUpdaterStub) ApplyConfirmation(_ context.Context, _ shared.SubjectID, confirmationType Type, confirmedAt time.Time) error { //nolint:lll // autofix
 	s.appliedType = confirmationType
 	s.appliedAt = confirmedAt
 	return nil

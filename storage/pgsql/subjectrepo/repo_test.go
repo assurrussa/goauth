@@ -1,3 +1,4 @@
+//nolint:testpackage // internal test
 package subjectrepo
 
 import (
@@ -287,9 +288,12 @@ func (db *fakeSubjectDB) SendBatch(context.Context, string, *pgx.Batch) pgx.Batc
 func (db *fakeSubjectDB) CopyFrom(context.Context, string, pgx.Identifier, []string, pgx.CopyFromSource) (int64, error) {
 	return 0, errors.New("unexpected CopyFrom call")
 }
-func (db *fakeSubjectDB) BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error) { return nil, nil }
-func (db *fakeSubjectDB) Ping(context.Context) error                             { return nil }
-func (db *fakeSubjectDB) Close()                                                 {}
-func (db *fakeSubjectDB) Pool() *pgxpool.Pool                                    { return nil }
+
+func (db *fakeSubjectDB) BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error) {
+	return nil, errors.New("not implemented")
+}
+func (db *fakeSubjectDB) Ping(context.Context) error { return nil }
+func (db *fakeSubjectDB) Close()                     {}
+func (db *fakeSubjectDB) Pool() *pgxpool.Pool        { return nil }
 
 var _ outbox.StoragePgsqlDBEngine = (*fakeSubjectDB)(nil)

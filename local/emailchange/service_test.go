@@ -1,3 +1,4 @@
+//nolint:testpackage // internal test
 package emailchange
 
 import (
@@ -21,14 +22,14 @@ type storeStub struct {
 	incremented    string
 }
 
-func (s *storeStub) Upsert(_ context.Context, subjectID string, req Request) error {
+func (s *storeStub) Upsert(_ context.Context, _ string, req Request) error {
 	s.upserted = req
 	s.req = req
 	s.getErr = nil
 	return nil
 }
 
-func (s *storeStub) Get(_ context.Context, subjectID string, _ bool) (Request, error) {
+func (s *storeStub) Get(_ context.Context, _ string, _ bool) (Request, error) {
 	if s.getErr != nil {
 		return Request{}, s.getErr
 	}
@@ -105,7 +106,7 @@ func TestRequestAndConfirmEmailChange(t *testing.T) {
 	subject := authcore.Subject{
 		ID:    subjectID,
 		Kind:  authcore.SubjectKindAccount,
-		Email: "old@example.com",
+		Email: "old@example.com", //nolint:goconst // autofix
 	}
 
 	err = service.Request(context.Background(), subject, "new@example.com", "127.0.0.1")

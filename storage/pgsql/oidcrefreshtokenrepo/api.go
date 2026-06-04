@@ -23,11 +23,13 @@ var columns = []string{
 	"subject_id",
 	"client_id",
 	"password_version",
+	//nolint:goconst // dbcol
 	"token",
 	"scopes",
 	"authenticated_at",
 	"expires_at",
 	"created_at",
+	//nolint:goconst // dbcol
 	"revoked_at",
 }
 

@@ -1,3 +1,4 @@
+//nolint:testpackage // internal test
 package oidcrefreshtokenrepo
 
 import (
@@ -21,8 +22,11 @@ func TestRepoSaveAndGet(t *testing.T) {
 
 	ctx := context.Background()
 	token := oidc.RefreshToken{
-		Token:           "refresh-1",
-		SubjectID:       "123e4567-e89b-12d3-a456-426614174100",
+		//nolint:goconst // test
+		Token: "refresh-1",
+		//nolint:goconst // test
+		SubjectID: "123e4567-e89b-12d3-a456-426614174100",
+		//nolint:goconst // test
 		ClientID:        "pet-app",
 		Scopes:          []string{oidc.ScopeEmail, oidc.ScopeOpenID},
 		PasswordVersion: 7,
@@ -84,8 +88,10 @@ func TestRepoRevokeMarksTokenRevoked(t *testing.T) {
 	now := time.Date(2026, 4, 18, 13, 0, 0, 0, time.UTC)
 	stored := map[string]oidc.RefreshToken{
 		"refresh-1": {
-			Token:           "refresh-1",
-			SubjectID:       "123e4567-e89b-12d3-a456-426614174100",
+			Token: "refresh-1",
+
+			SubjectID: "123e4567-e89b-12d3-a456-426614174100",
+
 			ClientID:        "pet-app",
 			Scopes:          []string{oidc.ScopeOpenID},
 			PasswordVersion: 3,
@@ -139,8 +145,10 @@ func TestRepoRotateRevokesCurrentAndStoresNext(t *testing.T) {
 	ctx := context.Background()
 	now := time.Date(2026, 4, 18, 14, 0, 0, 0, time.UTC)
 	current := oidc.RefreshToken{
-		Token:           "refresh-1",
-		SubjectID:       "123e4567-e89b-12d3-a456-426614174100",
+		Token: "refresh-1",
+
+		SubjectID: "123e4567-e89b-12d3-a456-426614174100",
+
 		ClientID:        "pet-app",
 		Scopes:          []string{oidc.ScopeOfflineAccess, oidc.ScopeOpenID},
 		PasswordVersion: 4,
@@ -303,7 +311,7 @@ func (db *fakeRefreshTokenDB) Exec(
 	return db.execFn(ctx, operationName, query, arguments...)
 }
 
-func (db *fakeRefreshTokenDB) Getx(ctx context.Context, operationName string, dest any, sqlizer outbox.StoragePgsqlSqlizer) error {
+func (db *fakeRefreshTokenDB) Getx(ctx context.Context, operationName string, dest any, sqlizer outbox.StoragePgsqlSqlizer) error { //nolint:lll // autofix
 	if db.getxFn == nil {
 		return nil
 	}

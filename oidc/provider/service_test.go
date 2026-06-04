@@ -1,4 +1,4 @@
-//nolint:testpackage,depguard // Tests need same-package access to provider internals and direct JWT parsing.
+//nolint:testpackage // Tests need same-package access to provider internals and direct JWT parsing.
 package provider
 
 import (
@@ -37,12 +37,12 @@ func TestAuthorizeUnauthenticatedRedirectsToHostedLogin(t *testing.T) {
 	result, err := h.service.Authorize(context.Background(), oidc.AuthorizeRequest{
 		ClientID:            h.client.ID,
 		RedirectURI:         h.client.RedirectURIs[0],
-		ResponseType:        "code",
+		ResponseType:        "code", //nolint:goconst // autofix
 		Scope:               "openid profile email offline_access",
-		State:               "state-1",
+		State:               "state-1", //nolint:goconst // autofix
 		Nonce:               "nonce-1",
 		CodeChallenge:       codeChallengeFor("verifier-1"),
-		CodeChallengeMethod: "S256",
+		CodeChallengeMethod: "S256", //nolint:goconst // autofix
 	}, nil)
 	require.NoError(t, err)
 	require.Equal(t, "https://front.example.com/login?oidc_challenge=challenge-1", result.RedirectURI)
@@ -83,7 +83,7 @@ func TestAuthorizationCodeExchangeAndUserInfo(t *testing.T) {
 
 	response, err := h.service.ExchangeToken(context.Background(), oidc.TokenRequest{
 		GrantType:    "authorization_code",
-		Code:         "code-1",
+		Code:         "code-1", //nolint:goconst // autofix
 		RedirectURI:  h.client.RedirectURIs[0],
 		CodeVerifier: "verifier-1",
 		ClientID:     h.client.ID,
@@ -127,9 +127,9 @@ func TestRefreshRotationAndRevoke(t *testing.T) {
 	t.Parallel()
 
 	h := newOIDCTestHarness(t)
-	h.service.generateToken = (&tokenGenerator{tokens: []string{"refresh-2"}}).Next
+	h.service.generateToken = (&tokenGenerator{tokens: []string{"refresh-2"}}).Next //nolint:goconst // autofix
 	h.refreshTokens.items["refresh-1"] = oidc.RefreshToken{
-		Token:           "refresh-1",
+		Token:           "refresh-1", //nolint:goconst // autofix
 		SubjectID:       h.subject.CanonicalID(),
 		ClientID:        h.client.ID,
 		Scopes:          []string{oidc.ScopeEmail, oidc.ScopeOfflineAccess, oidc.ScopeOpenID, oidc.ScopeProfile},
@@ -140,7 +140,7 @@ func TestRefreshRotationAndRevoke(t *testing.T) {
 	}
 
 	response, err := h.service.ExchangeToken(context.Background(), oidc.TokenRequest{
-		GrantType:    "refresh_token",
+		GrantType:    "refresh_token", //nolint:goconst // autofix
 		RefreshToken: "refresh-1",
 		ClientID:     h.client.ID,
 	})
@@ -174,7 +174,7 @@ func TestAuthorizationCodeFlowSupportsAPIScope(t *testing.T) {
 
 	h := newOIDCTestHarnessWithClient(t, oidc.Client{
 		ID:            "oidc-demo",
-		RedirectURIs:  []string{"https://client.example.com/callback"},
+		RedirectURIs:  []string{"https://client.example.com/callback"}, //nolint:goconst // autofix
 		AllowedScopes: []string{oidc.ScopeAPIRead, oidc.ScopeOfflineAccess, oidc.ScopeOpenID},
 		RequirePKCE:   true,
 		Trusted:       true,

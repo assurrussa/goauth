@@ -121,7 +121,7 @@ func (s *Service) Request(ctx context.Context, email string) error {
 	}
 
 	tm := s.now()
-	if err := s.tx.RunInTx(ctx, func(ctx context.Context) error {
+	return s.tx.RunInTx(ctx, func(ctx context.Context) error {
 		if err := s.tokens.Upsert(ctx, authcore.PasswordResetToken{
 			Email:     subject.Email,
 			SubjectID: subject.AuthSubjectID(),
@@ -151,11 +151,7 @@ func (s *Service) Request(ctx context.Context, email string) error {
 		}
 
 		return nil
-	}); err != nil {
-		return err
-	}
-
-	return nil
+	})
 }
 
 func (s *Service) Perform(ctx context.Context, email, token, password string) error {

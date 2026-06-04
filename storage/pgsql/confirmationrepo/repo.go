@@ -18,7 +18,7 @@ const tableName = "auth_confirmations"
 
 var columns = []string{
 	"id",
-	"subject_id",
+	"subject_id", //nolint:goconst // autofix
 	"confirmation_type",
 	"confirmation_info",
 	"purpose",
@@ -125,6 +125,8 @@ func (r *Repo) GetConfirmationStatus(ctx context.Context, subjectID shared.Subje
 			status.EmailConfirmed = true
 		case confirmation.TypePhone:
 			status.PhoneConfirmed = true
+		case confirmation.TypeUnknown:
+			break
 		case confirmation.TypeTgBot:
 			status.TelegramConfirmed = true
 		}

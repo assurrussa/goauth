@@ -18,7 +18,7 @@ const tableName = "auth_email_change_requests"
 
 var columns = []string{
 	"id",
-	"subject_id",
+	"subject_id", //nolint:goconst // autofix
 	"old_email",
 	"new_email",
 	"code",

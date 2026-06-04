@@ -112,7 +112,8 @@ type Kit struct {
 	UseCases UseCases
 }
 
-func New(opts Options) (*Kit, error) {
+//nolint:gocognit // this function sets up many dependencies
+func New(opts Options) (*Kit, error) { //nolint:gocyclo // autofix
 	switch {
 	case opts.Reader == nil:
 		return nil, errors.New("localjwt: reader is required")
@@ -318,7 +319,7 @@ func New(opts Options) (*Kit, error) {
 	}
 	var cleanerTokensUseCase *cleanertokens.UseCase
 	if tokenCleanerStorage, ok := opts.Tokens.(interface {
-		CleanupExpiredTokens(context.Context, int, int) (int64, error)
+		CleanupExpiredTokens(ctx context.Context, batchSize int, limit int) (int64, error)
 	}); ok {
 		cleanerTokensUseCase, err = cleanertokens.New(cleanertokens.NewOptions(
 			opts.Logger,
@@ -332,7 +333,7 @@ func New(opts Options) (*Kit, error) {
 
 	var cleanerPasswordResetUseCase *cleanerpasswordresettokens.UseCase
 	if passwordResetCleanerStorage, ok := opts.PasswordResets.(interface {
-		CleanupExpiredPasswordTokens(context.Context, int, int) (int64, error)
+		CleanupExpiredPasswordTokens(ctx context.Context, batchSize int, limit int) (int64, error)
 	}); ok {
 		cleanerPasswordResetUseCase, err = cleanerpasswordresettokens.New(cleanerpasswordresettokens.NewOptions(
 			opts.Logger,
@@ -402,7 +403,7 @@ func (a tokenDeleteAdapter) Delete(ctx context.Context, subjectID authcore.Subje
 
 type tokenCleaner struct {
 	tokens interface {
-		CleanupExpiredTokens(context.Context, int, int) (int64, error)
+		CleanupExpiredTokens(ctx context.Context, batchSize int, limit int) (int64, error)
 	}
 }
 
@@ -412,7 +413,7 @@ func (c tokenCleaner) CleanupExpiredTokens(ctx context.Context, batchSize, minut
 
 type passwordResetCleaner struct {
 	tokens interface {
-		CleanupExpiredPasswordTokens(context.Context, int, int) (int64, error)
+		CleanupExpiredPasswordTokens(ctx context.Context, batchSize int, limit int) (int64, error)
 	}
 }
 

@@ -279,31 +279,36 @@ func decodeID[T comparable](raw string) (T, error) {
 
 	switch any(zero).(type) {
 	case string:
-		return any(raw).(T), nil
+		v, _ := any(raw).(T)
+		return v, nil
 	case authcore.SubjectID:
 		id, err := authcore.ParseSubjectIDString(raw)
 		if err != nil {
 			return zero, err
 		}
-		return any(id).(T), nil
+		v, _ := any(id).(T)
+		return v, nil
 	case int64:
 		val, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil {
 			return zero, fmt.Errorf("parse int64 subject id: %w", err)
 		}
-		return any(val).(T), nil
+		v, _ := any(val).(T)
+		return v, nil
 	case int:
 		val, err := strconv.Atoi(raw)
 		if err != nil {
 			return zero, fmt.Errorf("parse int subject id: %w", err)
 		}
-		return any(val).(T), nil
+		v, _ := any(val).(T)
+		return v, nil
 	case sharedtypes.UserID:
 		var id sharedtypes.UserID
 		if err := id.UnmarshalText([]byte(raw)); err != nil {
 			return zero, fmt.Errorf("parse user id: %w", err)
 		}
-		return any(id).(T), nil
+		v, _ := any(id).(T)
+		return v, nil
 	default:
 		return zero, fmt.Errorf("unsupported subject id type %T", zero)
 	}

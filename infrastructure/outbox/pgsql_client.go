@@ -19,7 +19,7 @@ type (
 )
 
 var (
-	PgsqlErrOption      = pgsqlclient.ErrOption
+	ErrPgsqlOption      = pgsqlclient.ErrOption
 	ErrRowAlreadyExists = pgsql.ErrRowAlreadyExists
 	ErrNoRows           = pgsql.ErrNoRows
 )

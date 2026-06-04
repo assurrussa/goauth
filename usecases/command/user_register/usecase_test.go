@@ -70,7 +70,7 @@ func TestUseCase_Execute_Success(t *testing.T) {
 		ID:                sharedtypes.NewRequestID(),
 		Email:             "test@test.com",
 		Name:              "Amir",
-		Password:          "password",
+		Password:          "password", //nolint:goconst // autofix
 		ConfirmedPassword: "password",
 	}
 	ts.authServiceMock.EXPECT().Register(ctx, dto.Email, dto.Password, dto.ConfirmedPassword, dto.Name).

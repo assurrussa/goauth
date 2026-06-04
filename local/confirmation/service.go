@@ -181,6 +181,7 @@ type Status struct {
 
 type CodeRepository interface {
 	UpsertCode(ctx context.Context, record CodeRecord) (int64, error)
+	//nolint:lll
 	GetActiveCodeBySubjectAndType(ctx context.Context, subjectID shared.SubjectID, codeType Type, purpose Purpose) (CodeRecord, error)
 	UpdateVerified(ctx context.Context, record CodeRecord) error
 	IncrementAttempts(ctx context.Context, id int64) error
@@ -423,6 +424,7 @@ func (s *Service) GetConfirmationStatus(ctx context.Context, subjectID shared.Su
 	return s.recordRepo.GetConfirmationStatus(ctx, subjectID)
 }
 
+//nolint:lll
 func (s *Service) IsConfirmed(ctx context.Context, subjectID shared.SubjectID, confirmationType Type, purpose Purpose) (bool, error) {
 	return s.recordRepo.IsConfirmed(ctx, subjectID, confirmationType, purpose)
 }

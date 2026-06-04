@@ -27,7 +27,9 @@ const (
 var (
 	roleColumns = []string{
 		"id",
+		//nolint:goconst // dbcol
 		"uuid",
+		//nolint:goconst // dbcol
 		"slug",
 		"name",
 		"description",
@@ -38,9 +40,11 @@ var (
 
 	permissionColumns = []string{
 		"id",
+
 		"uuid",
+		//nolint:goconst // dbcol
 		"domain",
-		"action",
+		"action", //nolint:goconst // autofix
 		"description",
 		"created_at",
 		"updated_at",

@@ -32,9 +32,9 @@ func TestUseCase_Handle_Success(t *testing.T) {
 
 	resp, err := uc.Handle(ctx, performpasswordreset.Request{
 		ID:              sharedtypes.NewRequestID(),
-		Email:           "user@test.com",
-		Token:           "tok",
-		Password:        "newpass",
+		Email:           "user@test.com", //nolint:goconst // autofix
+		Token:           "tok",           //nolint:goconst // autofix
+		Password:        "newpass",       //nolint:goconst // autofix
 		ConfirmPassword: "newpass",
 	})
 

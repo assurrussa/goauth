@@ -19,9 +19,9 @@ const tableName = "auth_confirmation_codes"
 
 var columns = []string{
 	"id",
-	"subject_id",
+	"subject_id", //nolint:goconst // autofix
 	"code",
-	"confirmation_type",
+	"confirmation_type", //nolint:goconst // autofix
 	"confirmation_info",
 	"purpose",
 	"attempts",

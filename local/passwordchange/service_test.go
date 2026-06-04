@@ -1,3 +1,4 @@
+//nolint:testpackage // internal test
 package passwordchange
 
 import (
@@ -44,11 +45,11 @@ type hasherStub struct {
 	hashErr error
 }
 
-func (s hasherStub) GenerateHash(password string) ([]byte, error) {
+func (s hasherStub) GenerateHash(_ string) ([]byte, error) {
 	return append([]byte(nil), s.hash...), s.hashErr
 }
 
-func (s hasherStub) CompareHash(passwordHash string, password string) error {
+func (s hasherStub) CompareHash(_ string, password string) error {
 	if err, ok := s.compare[password]; ok {
 		return err
 	}

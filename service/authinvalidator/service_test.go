@@ -38,7 +38,7 @@ func TestServiceInvalidateAllExcept_RefreshOnly(t *testing.T) {
 	})
 
 	err := svc.InvalidateAllExcept(context.Background(), subjectID, authinvalidator.KeepCurrent{
-		RefreshToken: "refresh-keep",
+		RefreshToken: "refresh-keep", //nolint:goconst // autofix
 	})
 	require.NoError(t, err)
 	require.Len(t, refresh.deleteAllExceptCalls, 1)
@@ -56,7 +56,7 @@ func TestServiceInvalidateAllExcept_SessionOnly(t *testing.T) {
 	})
 
 	err := svc.InvalidateAllExcept(context.Background(), subjectID, authinvalidator.KeepCurrent{
-		SessionToken: "session-keep",
+		SessionToken: "session-keep", //nolint:goconst // autofix
 	})
 	require.NoError(t, err)
 	require.Len(t, sessions.deleteAllExceptCalls, 1)

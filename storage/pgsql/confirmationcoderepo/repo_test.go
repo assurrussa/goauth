@@ -1,3 +1,4 @@
+//nolint:testpackage // internal test
 package confirmationcoderepo
 
 import (
@@ -155,9 +156,12 @@ func (db *fakeDB) SendBatch(context.Context, string, *pgx.Batch) pgx.BatchResult
 func (db *fakeDB) CopyFrom(context.Context, string, pgx.Identifier, []string, pgx.CopyFromSource) (int64, error) {
 	return 0, errors.New("unexpected CopyFrom call")
 }
-func (db *fakeDB) BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error) { return nil, nil }
-func (db *fakeDB) Ping(context.Context) error                             { return nil }
-func (db *fakeDB) Close()                                                 {}
-func (db *fakeDB) Pool() *pgxpool.Pool                                    { return nil }
+
+func (db *fakeDB) BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error) {
+	return nil, errors.New("not implemented")
+}
+func (db *fakeDB) Ping(context.Context) error { return nil }
+func (db *fakeDB) Close()                     {}
+func (db *fakeDB) Pool() *pgxpool.Pool        { return nil }
 
 var _ outbox.StoragePgsqlDBEngine = (*fakeDB)(nil)

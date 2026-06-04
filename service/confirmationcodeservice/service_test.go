@@ -76,8 +76,8 @@ func (r *codeRepoStub) FindLast(
 ) (*confirmation.CodeRecord, error) {
 	for _, record := range r.records {
 		if record.SubjectID == subjectID && record.ConfirmationType == targetType {
-			copy := record
-			return &copy, nil
+			recordCopy := record
+			return &recordCopy, nil
 		}
 	}
 	return nil, errors.New("not found")
@@ -133,6 +133,8 @@ func (r *recordRepoStub) GetConfirmationStatus(_ context.Context, subjectID auth
 			status.EmailConfirmed = true
 		case confirmation.TypePhone:
 			status.PhoneConfirmed = true
+		case confirmation.TypeUnknown:
+			break
 		case confirmation.TypeTgBot:
 			status.TelegramConfirmed = true
 		}

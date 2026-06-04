@@ -20,8 +20,10 @@ const tableName = "auth_sessions"
 
 var columns = []string{
 	"id",
+	//nolint:goconst // dbcol
 	"subject_id",
 	"subject_kind",
+	//nolint:goconst // dbcol
 	"token",
 	"payload",
 	"password_version",
@@ -72,8 +74,10 @@ func (r *Repo) Save(ctx context.Context, session authcore.AuthSession, payload [
 	builder := outbox.BuilderDollar().
 		Insert(tableName).
 		Columns(
+
 			"subject_id",
 			"subject_kind",
+
 			"token",
 			"payload",
 			"password_version",

@@ -1,3 +1,4 @@
+//nolint:testpackage // internal test
 package externalconsumerprobe
 
 import (
@@ -12,8 +13,8 @@ func TestConfigValidateRequiresVersionOrLocalPath(t *testing.T) {
 	t.Helper()
 
 	err := Config{
-		ProbeModule: "example.com/goauthprobe",
-		ModulePath:  "github.com/assurrussa/goauth",
+		ProbeModule: DefaultProbeModule,
+		ModulePath:  DefaultModulePath,
 	}.Validate()
 
 	require.EqualError(t, err, "external consumer probe: version or local path is required")
@@ -23,8 +24,8 @@ func TestBuildGoModIncludesReplaceForLocalPath(t *testing.T) {
 	t.Helper()
 
 	content, err := Config{
-		ProbeModule: "example.com/goauthprobe",
-		ModulePath:  "github.com/assurrussa/goauth",
+		ProbeModule: DefaultProbeModule,
+		ModulePath:  DefaultModulePath,
 		LocalPath:   "/tmp/goauth",
 	}.BuildGoMod()
 	require.NoError(t, err)
@@ -38,8 +39,8 @@ func TestBuildGoModUsesPublishedVersionWithoutReplace(t *testing.T) {
 	t.Helper()
 
 	content, err := Config{
-		ProbeModule: "example.com/goauthprobe",
-		ModulePath:  "github.com/assurrussa/goauth",
+		ProbeModule: DefaultProbeModule,
+		ModulePath:  DefaultModulePath,
 		Version:     "v0.1.0",
 	}.BuildGoMod()
 	require.NoError(t, err)
@@ -52,8 +53,8 @@ func TestBuildProbeTestImportsSupportedPackages(t *testing.T) {
 	t.Helper()
 
 	content, err := Config{
-		ProbeModule: "example.com/goauthprobe",
-		ModulePath:  "github.com/assurrussa/goauth",
+		ProbeModule: DefaultProbeModule,
+		ModulePath:  DefaultModulePath,
 		LocalPath:   "/tmp/goauth",
 	}.BuildProbeTest()
 	require.NoError(t, err)

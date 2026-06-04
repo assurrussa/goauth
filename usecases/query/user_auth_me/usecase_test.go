@@ -46,7 +46,7 @@ func NewTestUseCaseSuite(t *testing.T) (context.Context, context.CancelFunc, *Te
 			subjectLookupMock: subjectLookupMock,
 			profileLookupMock: profileLookupMock,
 			repoTokenMock:     repoTokenMock,
-			useCase:           userauthme.Must(userauthme.NewOptions(logger.Discard(), subjectLookupMock, profileLookupMock, repoTokenMock)),
+			useCase:           userauthme.Must(userauthme.NewOptions(logger.Discard(), subjectLookupMock, profileLookupMock, repoTokenMock)), //nolint:lll // autofix
 		}
 	})
 }

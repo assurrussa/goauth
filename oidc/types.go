@@ -1,4 +1,4 @@
-//nolint:gosec,tagliatelle // OIDC DTOs intentionally use protocol token fields and snake_case JSON names.
+//nolint:tagliatelle // OIDC DTOs intentionally use protocol token fields and snake_case JSON names.
 package oidc
 
 import (

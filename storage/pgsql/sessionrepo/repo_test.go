@@ -1,3 +1,4 @@
+//nolint:testpackage // internal test
 package sessionrepo
 
 import (
@@ -186,10 +187,13 @@ func (db *fakeSessionDB) SendBatch(context.Context, string, *pgx.Batch) pgx.Batc
 func (db *fakeSessionDB) CopyFrom(context.Context, string, pgx.Identifier, []string, pgx.CopyFromSource) (int64, error) {
 	return 0, errors.New("unexpected CopyFrom call")
 }
-func (db *fakeSessionDB) BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error) { return nil, nil }
-func (db *fakeSessionDB) Ping(context.Context) error                             { return nil }
-func (db *fakeSessionDB) Close()                                                 {}
-func (db *fakeSessionDB) Pool() *pgxpool.Pool                                    { return nil }
+
+func (db *fakeSessionDB) BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error) {
+	return nil, errors.New("not implemented")
+}
+func (db *fakeSessionDB) Ping(context.Context) error { return nil }
+func (db *fakeSessionDB) Close()                     {}
+func (db *fakeSessionDB) Pool() *pgxpool.Pool        { return nil }
 
 func nullableTimeValue(value *time.Time) sql.NullTime {
 	if value == nil {

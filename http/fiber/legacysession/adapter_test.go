@@ -1,3 +1,4 @@
+//nolint:testpackage // internal test
 package legacysession
 
 import (
@@ -98,7 +99,7 @@ func TestAdapterRoundTrip(t *testing.T) {
 		return c.SendStatus(http.StatusOK)
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
 	resp, err := app.Test(req)
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
@@ -141,7 +142,7 @@ func TestAdapterGetReturnsSessionIDWithoutLegacyPayload(t *testing.T) {
 		return c.SendStatus(http.StatusOK)
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/seed", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/seed", nil)
 	resp, err := app.Test(req)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
@@ -150,7 +151,7 @@ func TestAdapterGetReturnsSessionIDWithoutLegacyPayload(t *testing.T) {
 	require.Len(t, cookies, 1)
 	require.NoError(t, resp.Body.Close())
 
-	req = httptest.NewRequest(http.MethodGet, "/read", nil)
+	req = httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/read", nil)
 	req.AddCookie(cookies[0])
 	resp, err = app.Test(req)
 	require.NoError(t, err)

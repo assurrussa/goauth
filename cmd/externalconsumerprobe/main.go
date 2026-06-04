@@ -69,10 +69,10 @@ func run(ctx context.Context, args []string) error {
 		return err
 	}
 
-	if err := os.WriteFile(filepath.Join(workdir, "go.mod"), []byte(goMod), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workdir, "go.mod"), []byte(goMod), 0o600); err != nil {
 		return fmt.Errorf("write probe go.mod: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(workdir, "externalconsumer_probe_test.go"), []byte(testFile), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(workdir, "externalconsumer_probe_test.go"), []byte(testFile), 0o600); err != nil {
 		return fmt.Errorf("write probe test: %w", err)
 	}
 
@@ -84,7 +84,7 @@ func run(ctx context.Context, args []string) error {
 	}
 
 	if *keepWorkdir {
-		fmt.Println(workdir)
+		_, _ = fmt.Fprintln(os.Stdout, workdir)
 	}
 
 	return nil
@@ -94,6 +94,7 @@ func goListModule(ctx context.Context, modulePath string, version string, goModC
 	commandCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	//nolint:gosec // this is a probe intended to run go commands
 	cmd := exec.CommandContext(commandCtx, "go", "list", "-m", "-json", modulePath+"@"+version)
 	cmd.Env = commandEnv(goModCache)
 	cmd.Stdout = os.Stdout
@@ -113,6 +114,7 @@ func goTestProbe(ctx context.Context, workdir string, goModCache string, timeout
 	commandCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
+	//nolint:gosec // this is a probe intended to run go commands
 	cmd := exec.CommandContext(commandCtx, "go", probeTestArgs()...)
 	cmd.Dir = workdir
 	cmd.Env = commandEnv(goModCache)

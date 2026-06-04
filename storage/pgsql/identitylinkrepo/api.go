@@ -19,10 +19,10 @@ import (
 const tableName = "auth_sso_identity_links"
 
 var columns = []string{
-	"subject_id",
+	"subject_id", //nolint:goconst // autofix
 	"subject_kind",
-	"issuer",
-	"external_subject",
+	"issuer",           //nolint:goconst // autofix
+	"external_subject", //nolint:goconst // autofix
 	"auth_source",
 	"email",
 	"email_verified",

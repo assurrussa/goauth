@@ -133,7 +133,7 @@ func TestUseCase_Handle_Tg_NotLinked(t *testing.T) {
 	ctx, _, ts := NewTestUseCaseSuite(t)
 	userID := sharedtypes.NewUserID()
 	subjectID := shared2.NewSubjectID()
-	req := sendconfirmationcode.Request{ID: sharedtypes.NewRequestID(), SubjectID: subjectID, CodeType: shared2.ConfirmationTypeTgBot}
+	req := sendconfirmationcode.Request{ID: sharedtypes.NewRequestID(), SubjectID: subjectID, CodeType: shared2.ConfirmationTypeTgBot} //nolint:lll // autofix
 
 	ts.profilesMock.EXPECT().GetBySubjectID(ctx, subjectID).Return(authcore.Profile{PublicID: userID}, nil)
 
@@ -171,7 +171,7 @@ func TestUseCase_Handle_InvalidRequest(t *testing.T) {
 func TestUseCase_Handle_UserRepoError(t *testing.T) {
 	ctx, _, ts := NewTestUseCaseSuite(t)
 	subjectID := shared2.NewSubjectID()
-	req := sendconfirmationcode.Request{ID: sharedtypes.NewRequestID(), SubjectID: subjectID, CodeType: shared2.ConfirmationTypeEmail}
+	req := sendconfirmationcode.Request{ID: sharedtypes.NewRequestID(), SubjectID: subjectID, CodeType: shared2.ConfirmationTypeEmail} //nolint:lll // autofix
 	ts.profilesMock.EXPECT().GetBySubjectID(ctx, subjectID).Return(authcore.Profile{}, errors.New("boom"))
 	res, err := ts.useCase.Handle(ctx, req)
 	ts.Require().Error(err)
@@ -182,7 +182,7 @@ func TestUseCase_Handle_InvalidEmail(t *testing.T) {
 	ctx, _, ts := NewTestUseCaseSuite(t)
 	userID := sharedtypes.NewUserID()
 	subjectID := shared2.NewSubjectID()
-	req := sendconfirmationcode.Request{ID: sharedtypes.NewRequestID(), SubjectID: subjectID, CodeType: shared2.ConfirmationTypeEmail}
+	req := sendconfirmationcode.Request{ID: sharedtypes.NewRequestID(), SubjectID: subjectID, CodeType: shared2.ConfirmationTypeEmail} //nolint:lll // autofix
 	ts.profilesMock.EXPECT().GetBySubjectID(ctx, subjectID).Return(authcore.Profile{PublicID: userID, Email: ""}, nil)
 	res, err := ts.useCase.Handle(ctx, req)
 	ts.Require().Error(err)
@@ -193,7 +193,7 @@ func TestUseCase_Handle_SendError(t *testing.T) {
 	ctx, _, ts := NewTestUseCaseSuite(t)
 	userID := sharedtypes.NewUserID()
 	subjectID := shared2.NewSubjectID()
-	req := sendconfirmationcode.Request{ID: sharedtypes.NewRequestID(), SubjectID: subjectID, CodeType: shared2.ConfirmationTypeEmail}
+	req := sendconfirmationcode.Request{ID: sharedtypes.NewRequestID(), SubjectID: subjectID, CodeType: shared2.ConfirmationTypeEmail} //nolint:lll // autofix
 	profile := authcore.Profile{PublicID: userID, Email: "test@example.com"}
 	ts.profilesMock.EXPECT().GetBySubjectID(ctx, subjectID).Return(profile, nil)
 	ts.trxMock.EXPECT().RunInTx(gomock.Any(), gomock.Any()).

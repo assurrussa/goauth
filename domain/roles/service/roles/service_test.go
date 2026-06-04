@@ -88,7 +88,7 @@ func TestService_CreateRole_AssignsPermissions(t *testing.T) {
 
 	ts.mockPermissionRepository.EXPECT().
 		ListByFilter(ctx, repository.PermissionFilter{Keys: []shared.PermissionKey{key}}).
-		Return([]model.Permission{{ID: 10, Domain: "roles", Action: "read"}}, nil)
+		Return([]model.Permission{{ID: 10, Domain: "roles", Action: "read"}}, nil) //nolint:goconst // autofix
 
 	ts.mockAssignmentRepository.EXPECT().
 		ReplacePermissions(ctx, int64(42), []int64{10}).

@@ -1,3 +1,4 @@
+//nolint:testpackage // internal test
 package adminsession
 
 import (
@@ -26,7 +27,7 @@ func TestKitAccountEmailChangeUsesCanonicalAdminSubjectID(t *testing.T) {
 
 	kit, err := New(Options{
 		Reader:         subjectReaderStub{},
-		Lookup:         subjectLookupStub{subject: authcore.Subject{ID: subjectID, Kind: authcore.SubjectKindAdmin, PublicID: adminUUID, NumericID: 77, Email: "admin@example.com", Name: "Admin"}},
+		Lookup:         subjectLookupStub{subject: authcore.Subject{ID: subjectID, Kind: authcore.SubjectKindAdmin, PublicID: adminUUID, NumericID: 77, Email: "admin@example.com", Name: "Admin"}}, //nolint:lll // autofix
 		Writer:         subjectWriterStub{},
 		PasswordResets: passwordResetStoreStub{},
 		Hasher:         passwordHasherStub{},

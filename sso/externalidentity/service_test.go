@@ -19,7 +19,7 @@ func TestResolveExistingLink(t *testing.T) {
 	subject := authcore.Subject{
 		ID:    subjectID,
 		Kind:  authcore.SubjectKindUser,
-		Email: "linked@example.com",
+		Email: "linked@example.com", //nolint:goconst // autofix
 	}
 	verified := true
 
@@ -30,7 +30,7 @@ func TestResolveExistingLink(t *testing.T) {
 				link: sso.IdentityLink{
 					SubjectID:     subject.AuthSubjectID(),
 					SubjectKind:   authcore.SubjectKindUser,
-					Issuer:        "https://zitadel.example.com",
+					Issuer:        "https://zitadel.example.com", //nolint:goconst // autofix
 					ExternalSub:   "ext-1",
 					AuthSource:    sso.AuthSourceZitadel,
 					Email:         "linked@example.com",
@@ -68,7 +68,7 @@ func TestResolveLinksExistingLocalUserByEmail(t *testing.T) {
 	subject := authcore.Subject{
 		ID:    subjectID,
 		Kind:  authcore.SubjectKindUser,
-		Email: "user@example.com",
+		Email: "user@example.com", //nolint:goconst // autofix
 	}
 	verified := true
 	links := &linkManagerFake{}
@@ -222,7 +222,7 @@ func TestResolveRejectsCreateRaceWhenExistingUserHasConflictingIssuerLink(t *tes
 	subject := authcore.Subject{
 		ID:    subjectID,
 		Kind:  authcore.SubjectKindUser,
-		Email: "race@example.com",
+		Email: "race@example.com", //nolint:goconst // autofix
 	}
 	reader := &readerSequenceFake{
 		results: []authcore.Subject{

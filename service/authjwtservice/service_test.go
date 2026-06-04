@@ -253,11 +253,11 @@ func TestLoginIssuesAndPersistsTokenPair(t *testing.T) {
 		subjects,
 		tokens,
 		jwtStub{
-			domain: ".example.test",
+			domain: ".example.test", //nolint:goconst // autofix
 			next: &authcore.TokenPair{
 				Domain:           ".example.test",
-				AccessToken:      "access-token",
-				RefreshToken:     "refresh-token",
+				AccessToken:      "access-token",  //nolint:goconst // autofix
+				RefreshToken:     "refresh-token", //nolint:goconst // autofix
 				ExpiresIn:        60,
 				ExpiresRefreshIn: 3600,
 			},
