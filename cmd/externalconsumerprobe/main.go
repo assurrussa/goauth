@@ -16,7 +16,7 @@ import (
 
 func main() {
 	if err := run(context.Background(), os.Args[1:]); err != nil {
-		slog.Error(err.Error(), "err", err)
+		slog.Error("probe failed", "err", err)
 		os.Exit(1)
 	}
 }

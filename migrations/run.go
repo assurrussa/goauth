@@ -9,7 +9,7 @@ import (
 	"sync"
 
 	logger "github.com/assurrussa/goshared/pkg/logger"
-	_ "github.com/jackc/pgx/v5/stdlib"
+	_ "github.com/jackc/pgx/v5/stdlib" // pgx driver
 	"github.com/pressly/goose/v3"
 
 	outbox "github.com/assurrussa/goauth/infrastructure/outbox"

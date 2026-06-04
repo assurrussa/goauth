@@ -1,7 +1,7 @@
 package externalconsumer
 
 import (
-	_ "github.com/assurrussa/goauth/core"
+	_ "github.com/assurrussa/goauth/core" // dependency
 	_ "github.com/assurrussa/goauth/http/fiber/rolesmiddleware"
 	_ "github.com/assurrussa/goauth/http/oidcctx"
 	_ "github.com/assurrussa/goauth/integration/adminsession"
