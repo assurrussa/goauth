@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,13 +16,13 @@ import (
 
 func main() {
 	if err := run(context.Background(), os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		slog.Error(err.Error(), "err", err)
 		os.Exit(1)
 	}
 }
 
 func run(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("externalconsumerprobe", flag.ContinueOnError)
+	fs := flag.NewFlagSet("externalconsumerp robe", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
 	modulePath := fs.String("module", externalconsumerprobe.DefaultModulePath, "target Go module path")

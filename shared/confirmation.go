@@ -117,7 +117,7 @@ func ConfirmCodeNormalize(code ConfirmCode) ConfirmCode {
 	var result strings.Builder
 	for _, r := range string(code) {
 		if r != ' ' && r != '\t' && r != '\n' && r != '\r' {
-			result.WriteRune(r)
+			_, _ = result.WriteRune(r)
 		}
 	}
 

@@ -37,20 +37,20 @@ func (c Config) BuildGoMod() (string, error) {
 	}
 
 	var builder strings.Builder
-	builder.WriteString("module ")
-	builder.WriteString(cfg.ProbeModule)
-	builder.WriteString("\n\ngo 1.26\n\nrequire ")
-	builder.WriteString(cfg.ModulePath)
-	builder.WriteString(" ")
-	builder.WriteString(cfg.targetVersion())
-	builder.WriteString("\n")
+	_, _ = builder.WriteString("module ")
+	_, _ = builder.WriteString(cfg.ProbeModule)
+	_, _ = builder.WriteString("\n\ngo 1.26\n\nrequire ")
+	_, _ = builder.WriteString(cfg.ModulePath)
+	_, _ = builder.WriteString(" ")
+	_, _ = builder.WriteString(cfg.targetVersion())
+	_, _ = builder.WriteString("\n")
 
 	if cfg.LocalPath != "" {
-		builder.WriteString("\nreplace ")
-		builder.WriteString(cfg.ModulePath)
-		builder.WriteString(" => ")
-		builder.WriteString(filepath.Clean(cfg.LocalPath))
-		builder.WriteString("\n")
+		_, _ = builder.WriteString("\nreplace ")
+		_, _ = builder.WriteString(cfg.ModulePath)
+		_, _ = builder.WriteString(" => ")
+		_, _ = builder.WriteString(filepath.Clean(cfg.LocalPath))
+		_, _ = builder.WriteString("\n")
 	}
 
 	return builder.String(), nil
@@ -63,14 +63,14 @@ func (c Config) BuildProbeTest() (string, error) {
 	}
 
 	var builder strings.Builder
-	builder.WriteString("package probe\n\n")
-	builder.WriteString("import (\n")
-	builder.WriteString("\t\"testing\"\n")
+	_, _ = builder.WriteString("package probe\n\n")
+	_, _ = builder.WriteString("import (\n")
+	_, _ = builder.WriteString("\t\"testing\"\n")
 	for _, pkg := range externalconsumer.SupportedPackages {
-		fmt.Fprintf(&builder, "\t_ %q\n", pkg)
+		_, _ = fmt.Fprintf(&builder, "\t_ %q\n", pkg)
 	}
-	builder.WriteString(")\n\n")
-	builder.WriteString("func TestSupportedPackagesCompile(t *testing.T) {}\n")
+	_, _ = builder.WriteString(")\n\n")
+	_, _ = builder.WriteString("func TestSupportedPackagesCompile(t *testing.T) {}\n")
 
 	return builder.String(), nil
 }
