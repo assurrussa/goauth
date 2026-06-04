@@ -10,7 +10,7 @@ import (
 type Request struct {
 	ID       sharedtypes.RequestID `validate:"required"`
 	Email    string                `validate:"required|email"`
-	Password string                `validate:"required"` //nolint:gosec // expected struct field
+	Password string                `validate:"required"`
 }
 
 func (r Request) Validate() error {
@@ -20,8 +20,8 @@ func (r Request) Validate() error {
 type Response struct {
 	SubjectID        authcore.SubjectID
 	Domain           string
-	AccessToken      string //nolint:gosec // expected struct field
-	RefreshToken     string //nolint:gosec // expected struct field
+	AccessToken      string
+	RefreshToken     string
 	ExpiresIn        int64
 	ExpiresRefreshIn int64
 }

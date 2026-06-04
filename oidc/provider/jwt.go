@@ -1,4 +1,3 @@
-//nolint:depguard // OIDC provider uses direct JWT signing/parsing primitives from golang-jwt/v5.
 package provider
 
 import (

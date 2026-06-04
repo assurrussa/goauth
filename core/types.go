@@ -125,7 +125,7 @@ func ParseSubjectIDString(value string) (SubjectID, error) {
 
 	subjectID, err := shared.Parse[shared.SubjectID](value)
 	if err != nil {
-		return shared.SubjectIDNil, fmt.Errorf("%w: %v", ErrInvalidSubjectID, err)
+		return shared.SubjectIDNil, fmt.Errorf("%w: %w", ErrInvalidSubjectID, err)
 	}
 
 	return subjectID, nil

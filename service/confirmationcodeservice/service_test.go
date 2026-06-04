@@ -2,7 +2,7 @@ package confirmationcodeservice_test
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"testing"
 	"time"
 
@@ -46,7 +46,7 @@ func (r *codeRepoStub) GetActiveCodeBySubjectAndType(
 ) (confirmation.CodeRecord, error) {
 	record, ok := r.records[r.key(subjectID, codeType, purpose)]
 	if !ok {
-		return confirmation.CodeRecord{}, fmt.Errorf("not found")
+		return confirmation.CodeRecord{}, errors.New("not found")
 	}
 	return record, nil
 }
@@ -80,7 +80,7 @@ func (r *codeRepoStub) FindLast(
 			return &copy, nil
 		}
 	}
-	return nil, fmt.Errorf("not found")
+	return nil, errors.New("not found")
 }
 
 func (r *codeRepoStub) CountSince(

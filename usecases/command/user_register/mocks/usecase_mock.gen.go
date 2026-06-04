@@ -13,8 +13,9 @@ import (
 	context "context"
 	reflect "reflect"
 
-	core "github.com/assurrussa/goauth/core"
 	gomock "go.uber.org/mock/gomock"
+
+	core "github.com/assurrussa/goauth/core"
 )
 
 // MockauthService is a mock of authService interface.
@@ -53,14 +54,5 @@ func (m *MockauthService) Register(ctx context.Context, email, password, confirm
 // Register indicates an expected call of Register.
 func (mr *MockauthServiceMockRecorder) Register(ctx, email, password, confirmPassword, name any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(
-		mr.mock,
-		"Register",
-		reflect.TypeOf((*MockauthService)(nil).Register),
-		ctx,
-		email,
-		password,
-		confirmPassword,
-		name,
-	)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Register", reflect.TypeOf((*MockauthService)(nil).Register), ctx, email, password, confirmPassword, name)
 }

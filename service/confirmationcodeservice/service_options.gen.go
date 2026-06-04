@@ -6,10 +6,11 @@ import (
 	fmt461e464ebed9 "fmt"
 	"time"
 
-	authcore "github.com/assurrussa/goauth/core"
 	logger3 "github.com/assurrussa/goshared/pkg/logger"
 	errors461e464ebed9 "github.com/kazhuravlev/options-gen/pkg/errors"
 	validator461e464ebed9 "github.com/kazhuravlev/options-gen/pkg/validator"
+
+	authcore "github.com/assurrussa/goauth/core"
 )
 
 type OptOptionsSetter func(o *Options)

@@ -13,10 +13,11 @@ import (
 	context "context"
 	reflect "reflect"
 
+	gomock "go.uber.org/mock/gomock"
+
 	model "github.com/assurrussa/goauth/domain/roles/model"
 	shared "github.com/assurrussa/goauth/domain/roles/shared"
 	listsubjectroles "github.com/assurrussa/goauth/domain/roles/usecases/query/list_subject_roles"
-	gomock "go.uber.org/mock/gomock"
 )
 
 // MockrolesUseCase is a mock of rolesUseCase interface.
@@ -136,20 +137,6 @@ func (m *Mockcache) EXPECT() *MockcacheMockRecorder {
 	return m.recorder
 }
 
-// SubjectRoles mocks base method.
-func (m *Mockcache) SubjectRoles(subjectID string) []model.Role {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SubjectRoles", subjectID)
-	ret0, _ := ret[0].([]model.Role)
-	return ret0
-}
-
-// SubjectRoles indicates an expected call of SubjectRoles.
-func (mr *MockcacheMockRecorder) SubjectRoles(subjectID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SubjectRoles", reflect.TypeOf((*Mockcache)(nil).SubjectRoles), subjectID)
-}
-
 // AllRolePermissions mocks base method.
 func (m *Mockcache) AllRolePermissions(roles []model.Role) map[int64]map[int64]model.Permission {
 	m.ctrl.T.Helper()
@@ -176,4 +163,18 @@ func (m *Mockcache) Enabled(ctx context.Context) bool {
 func (mr *MockcacheMockRecorder) Enabled(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Enabled", reflect.TypeOf((*Mockcache)(nil).Enabled), ctx)
+}
+
+// SubjectRoles mocks base method.
+func (m *Mockcache) SubjectRoles(subjectID string) []model.Role {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SubjectRoles", subjectID)
+	ret0, _ := ret[0].([]model.Role)
+	return ret0
+}
+
+// SubjectRoles indicates an expected call of SubjectRoles.
+func (mr *MockcacheMockRecorder) SubjectRoles(subjectID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SubjectRoles", reflect.TypeOf((*Mockcache)(nil).SubjectRoles), subjectID)
 }

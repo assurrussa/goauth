@@ -198,7 +198,6 @@ func (s *Service) ensureDiscovery(ctx context.Context, force bool) (oidc.Discove
 		return oidc.DiscoveryMetadata{}, fmt.Errorf("build discovery request: %w", err)
 	}
 
-	//nolint:gosec // Issuer is explicitly configured for the verifier.
 	response, err := s.httpClient.Do(request)
 	if err != nil {
 		return oidc.DiscoveryMetadata{}, fmt.Errorf("fetch discovery metadata: %w", err)
@@ -242,7 +241,6 @@ func (s *Service) ensureJWKS(ctx context.Context, force bool) error {
 		return fmt.Errorf("build jwks request: %w", err)
 	}
 
-	//nolint:gosec // JWKS URI comes from trusted issuer discovery.
 	response, err := s.httpClient.Do(request)
 	if err != nil {
 		return fmt.Errorf("fetch jwks: %w", err)

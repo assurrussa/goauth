@@ -5,9 +5,10 @@ package oidcrefreshtokenrepo
 import (
 	fmt461e464ebed9 "fmt"
 
-	outbox "github.com/assurrussa/goauth/infrastructure/outbox"
 	errors461e464ebed9 "github.com/kazhuravlev/options-gen/pkg/errors"
 	validator461e464ebed9 "github.com/kazhuravlev/options-gen/pkg/validator"
+
+	outbox "github.com/assurrussa/goauth/infrastructure/outbox"
 )
 
 type OptOptionsSetter func(o *Options)

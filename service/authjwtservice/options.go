@@ -2,7 +2,6 @@ package authjwtservice
 
 import (
 	"errors"
-	"fmt"
 
 	authcore "github.com/assurrussa/goauth/core"
 )
@@ -62,25 +61,25 @@ func WithProfileProvisioner(provisioner authcore.ProfileProvisioner) OptOptionsS
 func (o Options) Validate() error {
 	var errs []error
 	if o.Reader == nil {
-		errs = append(errs, fmt.Errorf("reader is required"))
+		errs = append(errs, errors.New("reader is required"))
 	}
 	if o.Lookup == nil {
-		errs = append(errs, fmt.Errorf("lookup is required"))
+		errs = append(errs, errors.New("lookup is required"))
 	}
 	if o.Writer == nil {
-		errs = append(errs, fmt.Errorf("writer is required"))
+		errs = append(errs, errors.New("writer is required"))
 	}
 	if o.Tokens == nil {
-		errs = append(errs, fmt.Errorf("tokens are required"))
+		errs = append(errs, errors.New("tokens are required"))
 	}
 	if o.Issuer == nil {
-		errs = append(errs, fmt.Errorf("issuer is required"))
+		errs = append(errs, errors.New("issuer is required"))
 	}
 	if o.Hasher == nil {
-		errs = append(errs, fmt.Errorf("hasher is required"))
+		errs = append(errs, errors.New("hasher is required"))
 	}
 	if o.Tx == nil {
-		errs = append(errs, fmt.Errorf("tx is required"))
+		errs = append(errs, errors.New("tx is required"))
 	}
 	return errors.Join(errs...)
 }

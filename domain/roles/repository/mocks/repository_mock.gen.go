@@ -13,10 +13,11 @@ import (
 	context "context"
 	reflect "reflect"
 
+	gomock "go.uber.org/mock/gomock"
+
 	model "github.com/assurrussa/goauth/domain/roles/model"
 	repository "github.com/assurrussa/goauth/domain/roles/repository"
 	shared "github.com/assurrussa/goauth/domain/roles/shared"
-	gomock "go.uber.org/mock/gomock"
 )
 
 // MockRoleRepository is a mock of RoleRepository interface.
@@ -117,21 +118,6 @@ func (mr *MockRoleRepositoryMockRecorder) List(ctx, filter any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "List", reflect.TypeOf((*MockRoleRepository)(nil).List), ctx, filter)
 }
 
-// ListAllSubjectRoles mocks base method.
-func (m *MockRoleRepository) ListAllSubjectRoles(ctx context.Context) ([]model.SubjectRole, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListAllSubjectRoles", ctx)
-	ret0, _ := ret[0].([]model.SubjectRole)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ListAllSubjectRoles indicates an expected call of ListAllSubjectRoles.
-func (mr *MockRoleRepositoryMockRecorder) ListAllSubjectRoles(ctx any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAllSubjectRoles", reflect.TypeOf((*MockRoleRepository)(nil).ListAllSubjectRoles), ctx)
-}
-
 // ListAllRolePermissions mocks base method.
 func (m *MockRoleRepository) ListAllRolePermissions(ctx context.Context) ([]model.RolePermission, error) {
 	m.ctrl.T.Helper()
@@ -145,6 +131,21 @@ func (m *MockRoleRepository) ListAllRolePermissions(ctx context.Context) ([]mode
 func (mr *MockRoleRepositoryMockRecorder) ListAllRolePermissions(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAllRolePermissions", reflect.TypeOf((*MockRoleRepository)(nil).ListAllRolePermissions), ctx)
+}
+
+// ListAllSubjectRoles mocks base method.
+func (m *MockRoleRepository) ListAllSubjectRoles(ctx context.Context) ([]model.SubjectRole, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListAllSubjectRoles", ctx)
+	ret0, _ := ret[0].([]model.SubjectRole)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListAllSubjectRoles indicates an expected call of ListAllSubjectRoles.
+func (mr *MockRoleRepositoryMockRecorder) ListAllSubjectRoles(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAllSubjectRoles", reflect.TypeOf((*MockRoleRepository)(nil).ListAllSubjectRoles), ctx)
 }
 
 // Update mocks base method.
@@ -314,21 +315,6 @@ func (mr *MockAssignmentRepositoryMockRecorder) AssignRoleToSubject(ctx, subject
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AssignRoleToSubject", reflect.TypeOf((*MockAssignmentRepository)(nil).AssignRoleToSubject), ctx, subjectID, roleIDs)
 }
 
-// ListSubjectRoles mocks base method.
-func (m *MockAssignmentRepository) ListSubjectRoles(ctx context.Context, subjectID string) ([]model.Role, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListSubjectRoles", ctx, subjectID)
-	ret0, _ := ret[0].([]model.Role)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ListSubjectRoles indicates an expected call of ListSubjectRoles.
-func (mr *MockAssignmentRepositoryMockRecorder) ListSubjectRoles(ctx, subjectID any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListSubjectRoles", reflect.TypeOf((*MockAssignmentRepository)(nil).ListSubjectRoles), ctx, subjectID)
-}
-
 // ListPermissions mocks base method.
 func (m *MockAssignmentRepository) ListPermissions(ctx context.Context, roleID int64) ([]model.Permission, error) {
 	m.ctrl.T.Helper()
@@ -342,6 +328,21 @@ func (m *MockAssignmentRepository) ListPermissions(ctx context.Context, roleID i
 func (mr *MockAssignmentRepositoryMockRecorder) ListPermissions(ctx, roleID any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListPermissions", reflect.TypeOf((*MockAssignmentRepository)(nil).ListPermissions), ctx, roleID)
+}
+
+// ListSubjectRoles mocks base method.
+func (m *MockAssignmentRepository) ListSubjectRoles(ctx context.Context, subjectID string) ([]model.Role, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListSubjectRoles", ctx, subjectID)
+	ret0, _ := ret[0].([]model.Role)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListSubjectRoles indicates an expected call of ListSubjectRoles.
+func (mr *MockAssignmentRepositoryMockRecorder) ListSubjectRoles(ctx, subjectID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListSubjectRoles", reflect.TypeOf((*MockAssignmentRepository)(nil).ListSubjectRoles), ctx, subjectID)
 }
 
 // ReplacePermissions mocks base method.

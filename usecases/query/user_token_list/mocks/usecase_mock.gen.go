@@ -13,9 +13,10 @@ import (
 	context "context"
 	reflect "reflect"
 
+	gomock "go.uber.org/mock/gomock"
+
 	core "github.com/assurrussa/goauth/core"
 	authjwtservice "github.com/assurrussa/goauth/service/authjwtservice"
-	gomock "go.uber.org/mock/gomock"
 )
 
 // MockauthService is a mock of authService interface.

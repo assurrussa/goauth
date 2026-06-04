@@ -9,7 +9,7 @@ type Request struct {
 	ID              sharedtypes.RequestID `validate:"required"`
 	Email           string                `validate:"required"`
 	Token           string                `validate:"required"`
-	Password        string                `validate:"required"` //nolint:gosec // expected struct field
+	Password        string                `validate:"required"`
 	ConfirmPassword string                `validate:"required"`
 }
 

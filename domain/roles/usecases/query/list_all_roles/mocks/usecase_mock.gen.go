@@ -13,9 +13,10 @@ import (
 	context "context"
 	reflect "reflect"
 
+	gomock "go.uber.org/mock/gomock"
+
 	model "github.com/assurrussa/goauth/domain/roles/model"
 	repository "github.com/assurrussa/goauth/domain/roles/repository"
-	gomock "go.uber.org/mock/gomock"
 )
 
 // Mockservice is a mock of service interface.
@@ -96,21 +97,6 @@ func (m *MockroleRepository) EXPECT() *MockroleRepositoryMockRecorder {
 	return m.recorder
 }
 
-// ListAllSubjectRoles mocks base method.
-func (m *MockroleRepository) ListAllSubjectRoles(ctx context.Context) ([]model.SubjectRole, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListAllSubjectRoles", ctx)
-	ret0, _ := ret[0].([]model.SubjectRole)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// ListAllSubjectRoles indicates an expected call of ListAllSubjectRoles.
-func (mr *MockroleRepositoryMockRecorder) ListAllSubjectRoles(ctx any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAllSubjectRoles", reflect.TypeOf((*MockroleRepository)(nil).ListAllSubjectRoles), ctx)
-}
-
 // ListAllRolePermissions mocks base method.
 func (m *MockroleRepository) ListAllRolePermissions(ctx context.Context) ([]model.RolePermission, error) {
 	m.ctrl.T.Helper()
@@ -124,6 +110,21 @@ func (m *MockroleRepository) ListAllRolePermissions(ctx context.Context) ([]mode
 func (mr *MockroleRepositoryMockRecorder) ListAllRolePermissions(ctx any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAllRolePermissions", reflect.TypeOf((*MockroleRepository)(nil).ListAllRolePermissions), ctx)
+}
+
+// ListAllSubjectRoles mocks base method.
+func (m *MockroleRepository) ListAllSubjectRoles(ctx context.Context) ([]model.SubjectRole, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListAllSubjectRoles", ctx)
+	ret0, _ := ret[0].([]model.SubjectRole)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListAllSubjectRoles indicates an expected call of ListAllSubjectRoles.
+func (mr *MockroleRepositoryMockRecorder) ListAllSubjectRoles(ctx any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListAllSubjectRoles", reflect.TypeOf((*MockroleRepository)(nil).ListAllSubjectRoles), ctx)
 }
 
 // MockpermissionRepository is a mock of permissionRepository interface.

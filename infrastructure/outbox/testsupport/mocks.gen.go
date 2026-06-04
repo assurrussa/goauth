@@ -13,9 +13,10 @@ import (
 	context "context"
 	reflect "reflect"
 
-	outbox "github.com/assurrussa/goauth/infrastructure/outbox"
 	pgx "github.com/jackc/pgx/v5"
 	gomock "go.uber.org/mock/gomock"
+
+	outbox "github.com/assurrussa/goauth/infrastructure/outbox"
 )
 
 // MockTxManager is a mock of TxManager interface.

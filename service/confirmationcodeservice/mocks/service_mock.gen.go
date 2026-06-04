@@ -14,11 +14,12 @@ import (
 	reflect "reflect"
 	time "time"
 
+	gomock "go.uber.org/mock/gomock"
+
 	core "github.com/assurrussa/goauth/core"
 	notify "github.com/assurrussa/goauth/infrastructure/notify"
 	confirmation "github.com/assurrussa/goauth/local/confirmation"
 	shared "github.com/assurrussa/goauth/shared"
-	gomock "go.uber.org/mock/gomock"
 )
 
 // MockuserConfirmationCodeRepository is a mock of userConfirmationCodeRepository interface.

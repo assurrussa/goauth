@@ -13,9 +13,10 @@ import (
 	context "context"
 	reflect "reflect"
 
+	gomock "go.uber.org/mock/gomock"
+
 	core "github.com/assurrussa/goauth/core"
 	shared "github.com/assurrussa/goauth/shared"
-	gomock "go.uber.org/mock/gomock"
 )
 
 // MockconfirmationService is a mock of confirmationService interface.
