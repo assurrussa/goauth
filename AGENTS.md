@@ -96,9 +96,9 @@ Important invariants:
 - Full local run: `make`
 - Mutating preparation only: `make prepare`
 - Verification only: `make check`
-- Published release readiness: `make release-readiness VERSION=v0.1.1`
+- Published release readiness: `make release-readiness VERSION=v0.1.4`
 - Local clean-consumer probe: `make externalconsumer-local`
-- Published clean-consumer probe: `make externalconsumer-published VERSION=v0.1.1`
+- Published clean-consumer probe: `make externalconsumer-published VERSION=v0.1.4`
 
 The Makefile exports repo-local `GOCACHE`, `GOMODCACHE`, and `GOPATH` under
 `.go-cache/`. Prefer Makefile targets for verification. If running raw `go`
@@ -116,7 +116,7 @@ go list ./...
 Do not rewrite existing tags. If `make` changes generated code, formatting,
 `go.mod`, or `go.sum`, commit those changes and publish a new semver tag.
 
-Current verified baseline for this split pass is `v0.1.1`.
+Current verified baseline for this split pass is `v0.1.4`.
 
 Before claiming release readiness:
 
@@ -196,4 +196,3 @@ The repository may contain unrelated user changes. Do not revert, restage, or
 rewrite files you did not change unless the user explicitly asks for that.
 Before editing public contracts, inspect current diffs and work with existing
 changes instead of assuming a clean baseline.
-
