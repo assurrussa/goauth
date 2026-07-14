@@ -2,7 +2,7 @@
 
 ## Baseline
 
-Current verified baseline: `v0.1.1`.
+Current verified baseline: `v0.1.4`.
 
 Do not rewrite existing tags. If preparation or verification changes generated
 files, formatting, `go.mod`, or `go.sum`, commit those changes and release a new
@@ -47,13 +47,13 @@ make externalconsumer-local
 Published module probe:
 
 ```sh
-make externalconsumer-published VERSION=v0.1.1
+make externalconsumer-published VERSION=v0.1.4
 ```
 
 Full release-readiness gate:
 
 ```sh
-make release-readiness VERSION=v0.1.1
+make release-readiness VERSION=v0.1.4
 ```
 
 `cmd/externalconsumerprobe` creates a temporary Go module, imports the packages
@@ -87,7 +87,7 @@ For `/Users/amir/dev/projects/my/site`, `RELEASING.md` currently documents:
 
 ```sh
 cd /Users/amir/dev/projects/my/site
-task platform:published-check GOAUTH_VERSION=v0.1.1 GOADMIN_VERSION=v0.2.1
+task platform:published-check GOAUTH_VERSION=v0.1.4 GOADMIN_VERSION=v0.2.3
 ```
 
 Treat local `replace` success as sibling-development evidence only. It is not

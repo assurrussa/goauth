@@ -34,9 +34,9 @@ other packages listed in the manifest instead of direct implementation packages.
 ```sh
 make
 make check
-make release-readiness VERSION=v0.1.1
+make release-readiness VERSION=v0.1.4
 make externalconsumer-local
-make externalconsumer-published VERSION=v0.1.1
+make externalconsumer-published VERSION=v0.1.4
 ```
 
 See [RELEASING.md](RELEASING.md) for the release checklist and
