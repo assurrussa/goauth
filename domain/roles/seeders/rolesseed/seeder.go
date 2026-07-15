@@ -2,7 +2,9 @@ package rolesseed
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/assurrussa/goshared/pkg/pointer"
 
@@ -143,18 +145,26 @@ func buildSeedRoles(catalog shared.PermissionCatalog, presets []RolePreset) ([]s
 		contentAdminRoleSlug: {},
 	}
 	for _, preset := range presets {
-		if _, exists := seenSlugs[preset.Slug]; exists {
-			return nil, fmt.Errorf("duplicate or reserved role preset slug %q", preset.Slug)
+		slug := strings.TrimSpace(preset.Slug)
+		if slug == "" {
+			return nil, errors.New("role preset slug is required")
 		}
-		seenSlugs[preset.Slug] = struct{}{}
+		if _, exists := seenSlugs[slug]; exists {
+			return nil, fmt.Errorf("duplicate or reserved role preset slug %q", slug)
+		}
+		name := strings.TrimSpace(preset.Name)
+		if name == "" {
+			return nil, fmt.Errorf("role preset %q name is required", slug)
+		}
+		seenSlugs[slug] = struct{}{}
 		for _, permission := range preset.Permissions {
 			if _, exists := knownPermissions[permission]; !exists {
-				return nil, fmt.Errorf("role preset %q references permission %q outside the seed catalog", preset.Slug, permission)
+				return nil, fmt.Errorf("role preset %q references permission %q outside the seed catalog", slug, permission)
 			}
 		}
 		seedRoles = append(seedRoles, seedRole{
-			Slug:        preset.Slug,
-			Name:        preset.Name,
+			Slug:        slug,
+			Name:        name,
 			Description: preset.Description,
 			IsSystem:    preset.IsSystem,
 			Permissions: append([]shared.PermissionKey(nil), preset.Permissions...),

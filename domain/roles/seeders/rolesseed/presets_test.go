@@ -9,7 +9,10 @@ import (
 	"github.com/assurrussa/goauth/domain/roles/shared"
 )
 
-const cmsEditorRoleSlug = "cms_editor"
+const (
+	cmsEditorRoleSlug = "cms_editor"
+	cmsEditorRoleName = "CMS editor"
+)
 
 func TestWithRolePresetsCopiesCallerPolicy(t *testing.T) {
 	permission := shared.NewPermissionKey("cms.entry", "read")
@@ -33,13 +36,14 @@ func TestBuildSeedRolesAppendsValidatedPresets(t *testing.T) {
 	})
 
 	roles, err := buildSeedRoles(catalog, []RolePreset{{
-		Slug: cmsEditorRoleSlug, Name: "CMS editor", IsSystem: true,
+		Slug: "  " + cmsEditorRoleSlug + "  ", Name: "  " + cmsEditorRoleName + "  ", IsSystem: true,
 		Permissions: []shared.PermissionKey{permission},
 	}})
 
 	require.NoError(t, err)
 	require.Len(t, roles, 3)
 	require.Equal(t, cmsEditorRoleSlug, roles[2].Slug)
+	require.Equal(t, cmsEditorRoleName, roles[2].Name)
 	require.Equal(t, []shared.PermissionKey{permission}, roles[2].Permissions)
 }
 
@@ -62,14 +66,26 @@ func TestBuildSeedRolesRejectsInvalidPresets(t *testing.T) {
 		{
 			name: "duplicate slug",
 			presets: []RolePreset{
-				{Slug: cmsEditorRoleSlug, Permissions: []shared.PermissionKey{permission}},
-				{Slug: cmsEditorRoleSlug, Permissions: []shared.PermissionKey{permission}},
+				{Slug: cmsEditorRoleSlug, Name: cmsEditorRoleName, Permissions: []shared.PermissionKey{permission}},
+				{Slug: " " + cmsEditorRoleSlug + " ", Name: "Duplicate", Permissions: []shared.PermissionKey{permission}},
 			},
+		},
+		{
+			name: "blank slug",
+			presets: []RolePreset{{
+				Slug: " ", Name: cmsEditorRoleName, Permissions: []shared.PermissionKey{permission},
+			}},
+		},
+		{
+			name: "blank name",
+			presets: []RolePreset{{
+				Slug: cmsEditorRoleSlug, Name: " ", Permissions: []shared.PermissionKey{permission},
+			}},
 		},
 		{
 			name: "unknown permission",
 			presets: []RolePreset{{
-				Slug: cmsEditorRoleSlug,
+				Slug: cmsEditorRoleSlug, Name: cmsEditorRoleName,
 				Permissions: []shared.PermissionKey{
 					shared.NewPermissionKey("cms.entry", "delete"),
 				},
