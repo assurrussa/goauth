@@ -29,6 +29,10 @@ public API even if it exists in the module.
 New consumers should prefer `integration/*`, `core`, `shared`, `migrations`, and
 other packages listed in the manifest instead of direct implementation packages.
 
+`integration/roles` lets hosts extend the canonical seed with permission
+definitions and idempotent role presets. A preset may reference only permissions
+from the combined seed catalog; built-in role slugs cannot be overridden.
+
 ## Commands
 
 ```sh

@@ -152,6 +152,7 @@ func TestPublicSurfaceCompiles(t *testing.T) {
 	var _ *integrationroles.Service
 	var _ *integrationroles.Seed
 	var _ integrationroles.SeedOption
+	var _ integrationroles.RolePreset
 	var _ *integrationroles.GuardCache
 	var _ *integrationroles.GuardService
 	_ = integrationroles.Role{}
@@ -232,6 +233,7 @@ func TestPublicSurfaceCompiles(t *testing.T) {
 	_ = integrationroles.MustService
 	_ = integrationroles.NewSeed
 	_ = integrationroles.WithPermissionDefinitions
+	_ = integrationroles.WithRolePresets
 	_ = integrationroles.WithGuardCacheSyncInterval
 	_ = integrationroles.WithGuardCacheSyncCacheInterval
 	_ = integrationroles.NewGuardServiceOptions

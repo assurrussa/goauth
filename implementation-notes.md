@@ -15,3 +15,11 @@
   failed against the global Go build cache under the current sandbox, while the
   same command succeeds with `.go-cache/` paths.
 - Did not touch existing modified files outside this documentation task.
+## CMS role preset seeding (2026-07-15)
+
+- Added generic host-owned role presets to the existing `integration/roles`
+  seeder instead of putting CMS-specific policy into canonical auth.
+- Preset slices are copied at the option boundary. Duplicate/reserved slugs and
+  permissions outside the merged seed catalog fail before any seed writes.
+- Built-in `super_admin` and `content_admin` behavior stays unchanged; concrete
+  CMS role names and permission sets remain owned by `gocms`.

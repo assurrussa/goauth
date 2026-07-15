@@ -13,21 +13,44 @@ import (
 	outbox "github.com/assurrussa/goauth/infrastructure/outbox"
 )
 
-const name = "rolesseed"
+const (
+	name                 = "rolesseed"
+	superAdminRoleSlug   = "super_admin"
+	contentAdminRoleSlug = "content_admin"
+)
 
 type Seed struct {
 	pgsql                 outbox.StoragePgsqlClient
 	repoRoles             *rolesrepo.Repo
 	svc                   *rolesservice.Service
 	permissionDefinitions []shared.PermissionDefinition
+	rolePresets           []RolePreset
 }
 
 type Option func(*Seed)
+
+// RolePreset describes a canonical role managed by the roles seeder.
+// Permissions must be present in the combined built-in and host permission catalog.
+type RolePreset struct {
+	Slug        string
+	Name        string
+	Description string
+	IsSystem    bool
+	Permissions []shared.PermissionKey
+}
 
 // WithPermissionDefinitions appends host-owned permission definitions to the seed catalog.
 func WithPermissionDefinitions(definitions ...shared.PermissionDefinition) Option {
 	return func(seed *Seed) {
 		seed.permissionDefinitions = shared.MergePermissionDefinitions(seed.permissionDefinitions, definitions)
+	}
+}
+
+// WithRolePresets appends host-owned role presets to the built-in role seed.
+// Input slices are copied so callers cannot mutate seeder policy after construction.
+func WithRolePresets(presets ...RolePreset) Option {
+	return func(seed *Seed) {
+		seed.rolePresets = append(seed.rolePresets, cloneRolePresets(presets)...)
 	}
 }
 
@@ -72,24 +95,9 @@ func (s *Seed) Handle(ctx context.Context) error {
 		})
 	}
 
-	seedRoles := []seedRole{
-		{
-			Slug:        "super_admin",
-			Name:        "Супер-администратор",
-			Description: "Полный доступ ко всем действиям админ-панели",
-			IsSystem:    true,
-			Permissions: catalog.GetPermissions(),
-		},
-		{
-			Slug:        "content_admin",
-			Name:        "Контент-администратор",
-			Description: "Управление контентом и просмотр ролей",
-			IsSystem:    true,
-			Permissions: []shared.PermissionKey{
-				shared.NewPermissionKey(shared.PermissionDomainRoles, shared.PermissionActionRead),
-				shared.NewPermissionKey(shared.PermissionDomainPermissions, shared.PermissionActionRead),
-			},
-		},
+	seedRoles, err := buildSeedRoles(catalog, s.rolePresets)
+	if err != nil {
+		return fmt.Errorf("build roles seed %s: %w", s.Name(), err)
 	}
 
 	if err := s.ensurePermissionsSeed(ctx, permissionsInput); err != nil {
@@ -105,12 +113,71 @@ func (s *Seed) Handle(ctx context.Context) error {
 	return nil
 }
 
+func buildSeedRoles(catalog shared.PermissionCatalog, presets []RolePreset) ([]seedRole, error) {
+	seedRoles := []seedRole{
+		{
+			Slug:        superAdminRoleSlug,
+			Name:        "Супер-администратор",
+			Description: "Полный доступ ко всем действиям админ-панели",
+			IsSystem:    true,
+			Permissions: catalog.GetPermissions(),
+		},
+		{
+			Slug:        contentAdminRoleSlug,
+			Name:        "Контент-администратор",
+			Description: "Управление контентом и просмотр ролей",
+			IsSystem:    true,
+			Permissions: []shared.PermissionKey{
+				shared.NewPermissionKey(shared.PermissionDomainRoles, shared.PermissionActionRead),
+				shared.NewPermissionKey(shared.PermissionDomainPermissions, shared.PermissionActionRead),
+			},
+		},
+	}
+
+	knownPermissions := make(map[shared.PermissionKey]struct{}, len(catalog.Data))
+	for _, definition := range catalog.Data {
+		knownPermissions[definition.Key] = struct{}{}
+	}
+	seenSlugs := map[string]struct{}{
+		superAdminRoleSlug:   {},
+		contentAdminRoleSlug: {},
+	}
+	for _, preset := range presets {
+		if _, exists := seenSlugs[preset.Slug]; exists {
+			return nil, fmt.Errorf("duplicate or reserved role preset slug %q", preset.Slug)
+		}
+		seenSlugs[preset.Slug] = struct{}{}
+		for _, permission := range preset.Permissions {
+			if _, exists := knownPermissions[permission]; !exists {
+				return nil, fmt.Errorf("role preset %q references permission %q outside the seed catalog", preset.Slug, permission)
+			}
+		}
+		seedRoles = append(seedRoles, seedRole{
+			Slug:        preset.Slug,
+			Name:        preset.Name,
+			Description: preset.Description,
+			IsSystem:    preset.IsSystem,
+			Permissions: append([]shared.PermissionKey(nil), preset.Permissions...),
+		})
+	}
+	return seedRoles, nil
+}
+
 type seedRole struct {
 	Slug        string
 	Name        string
 	Description string
 	IsSystem    bool
 	Permissions []shared.PermissionKey
+}
+
+func cloneRolePresets(presets []RolePreset) []RolePreset {
+	cloned := make([]RolePreset, len(presets))
+	for i, preset := range presets {
+		cloned[i] = preset
+		cloned[i].Permissions = append([]shared.PermissionKey(nil), preset.Permissions...)
+	}
+	return cloned
 }
 
 func (s *Seed) ensurePermissionsSeed(ctx context.Context, inputs []rolesservice.CreatePermissionInput) error {
