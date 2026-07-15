@@ -5,6 +5,8 @@ This module is published as `github.com/assurrussa/goauth`.
 ## Current Baseline
 
 - Current verified release baseline: `v0.1.4`.
+- Next additive candidate: `v0.1.5`, adding host-owned role presets through
+  `integration/roles` without changing the supported package list.
 - Keep module path unchanged: `module github.com/assurrussa/goauth`.
 - Consumers should depend on published semver tags, not local `replace`
   directives, outside explicit sibling-development checks.
@@ -98,6 +100,10 @@ task platform:published-check GOAUTH_VERSION=v0.1.4 GOADMIN_VERSION=v0.2.3
 ```
 
 ## Release-visible behavior
+
+- `integration/roles.WithRolePresets` lets hosts seed idempotent canonical role
+  policies alongside their permission definitions. Presets cannot override
+  built-in slugs or reference permissions outside the merged seed catalog.
 
 - `goauth/migrations` exposes public `DatabaseConfig` and `RunWithConfig` so
   clean consumers can run canonical auth/RBAC migrations without importing

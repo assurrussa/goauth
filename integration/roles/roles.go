@@ -35,6 +35,7 @@ type (
 type (
 	Seed       = rolesseed.Seed
 	SeedOption = rolesseed.Option
+	RolePreset = rolesseed.RolePreset
 )
 
 type Service = rolesservice.Service
@@ -179,6 +180,7 @@ var (
 	ErrInvalidRoleName              = rolesservice.ErrInvalidRoleName
 	NewSeed                         = rolesseed.NewSeed
 	WithPermissionDefinitions       = rolesseed.WithPermissionDefinitions
+	WithRolePresets                 = rolesseed.WithRolePresets
 	NewPermissionKey                = shared.NewPermissionKey
 	ParsePermissionKey              = shared.ParsePermissionKey
 	DefaultPermissionDefinitions    = shared.DefaultPermissionDefinitions
