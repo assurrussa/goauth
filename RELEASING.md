@@ -4,9 +4,11 @@ This module is published as `github.com/assurrussa/goauth`.
 
 ## Current Baseline
 
-- Current verified release baseline: `v0.1.4`.
-- Next additive candidate: `v0.1.5`, adding host-owned role presets through
-  `integration/roles` without changing the supported package list.
+- Current verified release baseline: `v0.1.5`.
+- Next additive candidate: `v0.1.6`. It clarifies that the built-in
+  `content_admin` role only reads roles and permissions; CMS access still comes
+  from the separate CMS role presets. The permission set and supported package
+  list do not change.
 - Keep module path unchanged: `module github.com/assurrussa/goauth`.
 - Consumers should depend on published semver tags, not local `replace`
   directives, outside explicit sibling-development checks.
@@ -15,20 +17,20 @@ This module is published as `github.com/assurrussa/goauth`.
 
 The post-split baseline uses the published module in known workspace consumers:
 
-- `backend/go.mod` requires `github.com/assurrussa/goauth v0.1.4`.
+- `backend/go.mod` requires `github.com/assurrussa/goauth v0.1.5`.
 - `backend/go.mod` has no local `replace` for `github.com/assurrussa/goauth`.
-- `goadmin/go.mod` requires `github.com/assurrussa/goauth v0.1.4`.
+- `goadmin/go.mod` requires `github.com/assurrussa/goauth v0.1.5`.
 - `goadmin/go.mod` has no local `replace` for `github.com/assurrussa/goauth`.
 
 Before claiming a baseline is published-consumer ready, verify that it resolves
 from a clean module:
 
-Verification commands are `go list -m -json github.com/assurrussa/goauth@v0.1.4`
-and `go get github.com/assurrussa/goauth@v0.1.4`.
+Verification commands are `go list -m -json github.com/assurrussa/goauth@v0.1.5`
+and `go get github.com/assurrussa/goauth@v0.1.5`.
 
 ```sh
-go list -m -json github.com/assurrussa/goauth@v0.1.4
-go get github.com/assurrussa/goauth@v0.1.4
+go list -m -json github.com/assurrussa/goauth@v0.1.5
+go get github.com/assurrussa/goauth@v0.1.5
 ```
 
 For local work, use `GOAUTH_LOCAL_PATH` only for explicit sibling-development checks, not as a required module-level replace.
@@ -85,7 +87,7 @@ published version through `cmd/externalconsumerprobe`.
 For the current baseline:
 
 ```sh
-make release-readiness VERSION=v0.1.4
+make release-readiness VERSION=v0.1.5
 ```
 
 ## Host Consumer Validation
