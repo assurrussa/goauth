@@ -25,13 +25,17 @@ The post-split baseline uses the published module in known workspace consumers:
 Before claiming a baseline is published-consumer ready, verify that it resolves
 from a clean module:
 
-Verification commands are `go list -m -json github.com/assurrussa/goauth@v0.1.5`
-and `go get github.com/assurrussa/goauth@v0.1.5`.
+The current consumer verification commands remain
+`go list -m -json github.com/assurrussa/goauth@v0.1.5` and
+`go get github.com/assurrussa/goauth@v0.1.5` until the dependent modules move.
 
 ```sh
 go list -m -json github.com/assurrussa/goauth@v0.1.5
 go get github.com/assurrussa/goauth@v0.1.5
 ```
+
+After publishing the candidate tag, run the same clean checks against
+`github.com/assurrussa/goauth@v0.1.6` before updating dependent modules.
 
 For local work, use `GOAUTH_LOCAL_PATH` only for explicit sibling-development checks, not as a required module-level replace.
 
@@ -84,10 +88,10 @@ make release-readiness VERSION=<tag>
 This includes `make check` plus a clean temporary consumer resolving the
 published version through `cmd/externalconsumerprobe`.
 
-For the current baseline:
+For the current candidate after tagging:
 
 ```sh
-make release-readiness VERSION=v0.1.5
+make release-readiness VERSION=v0.1.6
 ```
 
 ## Host Consumer Validation
@@ -98,7 +102,7 @@ post-split gate is:
 
 ```sh
 cd /Users/amir/dev/projects/my/site
-task platform:published-check GOAUTH_VERSION=v0.1.4 GOADMIN_VERSION=v0.2.3
+task platform:published-check GOAUTH_VERSION=v0.1.6 GOADMIN_VERSION=v0.4.0-alpha.6
 ```
 
 ## Release-visible behavior

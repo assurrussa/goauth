@@ -4,7 +4,7 @@
 
 GO_MODULE := $(shell GOWORK=off go list -m)
 GO_FILES := $(shell find . -type f -name '*.go' -not -path './.cache/*' -not -path './.go-cache/*' -not -path './tmp/*' -not -path './vendor/*')
-VERSION ?= v0.1.4
+VERSION ?= v0.1.6
 GOCACHE ?= $(CURDIR)/.go-cache/gocache
 GOMODCACHE ?= $(CURDIR)/.go-cache/gomodcache
 GOPATH ?= $(CURDIR)/.go-cache/gopath

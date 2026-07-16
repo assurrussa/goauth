@@ -29,3 +29,10 @@
 - Kept the built-in `content_admin` permission set unchanged to avoid a silent
   privilege expansion. Its description now states the actual read-only RBAC
   scope and points administrators to the separate host-owned CMS roles.
+
+## Private alpha release flow (2026-07-16)
+
+- Prepared `v0.1.6` as the immutable release for the role-scope clarification.
+- During the private alpha phase, a trusted maintainer may fast-forward the
+  verified release commit directly to `master`; the tag and post-tag clean
+  consumer gate remain mandatory even when a PR is skipped.
