@@ -23,3 +23,9 @@
   permissions outside the merged seed catalog fail before any seed writes.
 - Built-in `super_admin` and `content_admin` behavior stays unchanged; concrete
   CMS role names and permission sets remain owned by `gocms`.
+
+## CMS role scope clarification (2026-07-16)
+
+- Kept the built-in `content_admin` permission set unchanged to avoid a silent
+  privilege expansion. Its description now states the actual read-only RBAC
+  scope and points administrators to the separate host-owned CMS roles.

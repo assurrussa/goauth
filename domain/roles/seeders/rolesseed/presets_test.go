@@ -47,6 +47,19 @@ func TestBuildSeedRolesAppendsValidatedPresets(t *testing.T) {
 	require.Equal(t, []shared.PermissionKey{permission}, roles[2].Permissions)
 }
 
+func TestBuiltInContentAdminDescriptionMatchesPermissions(t *testing.T) {
+	t.Parallel()
+
+	roles, err := buildSeedRoles(shared.NewPermissionCatalog(shared.DefaultPermissionDefinitions().Data), nil)
+	require.NoError(t, err)
+	require.Equal(t, contentAdminRoleSlug, roles[1].Slug)
+	require.Equal(
+		t,
+		"Просмотр ролей и разрешений; доступ к CMS назначается отдельной CMS-ролью",
+		roles[1].Description,
+	)
+}
+
 func TestBuildSeedRolesRejectsInvalidPresets(t *testing.T) {
 	permission := shared.NewPermissionKey("cms.entry", "read")
 	catalog := shared.NewPermissionCatalog([]shared.PermissionDefinition{

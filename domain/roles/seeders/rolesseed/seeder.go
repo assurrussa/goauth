@@ -127,7 +127,7 @@ func buildSeedRoles(catalog shared.PermissionCatalog, presets []RolePreset) ([]s
 		{
 			Slug:        contentAdminRoleSlug,
 			Name:        "Контент-администратор",
-			Description: "Управление контентом и просмотр ролей",
+			Description: "Просмотр ролей и разрешений; доступ к CMS назначается отдельной CMS-ролью",
 			IsSystem:    true,
 			Permissions: []shared.PermissionKey{
 				shared.NewPermissionKey(shared.PermissionDomainRoles, shared.PermissionActionRead),
