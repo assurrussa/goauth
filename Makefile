@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := full
 
-.PHONY: full prepare check tidy-check tidy generate fmt lint lint-fix vet test test-race bench-all cover-html externalconsumer-local externalconsumer-published release-readiness
+.PHONY: full prepare check tidy-check tidy generate fmt fmt-check lint lint-fix vet test test-full test-race bench-all cover-html externalconsumer-local externalconsumer-published release-readiness
 
 GO_MODULE := $(shell GOWORK=off go list -m)
 GO_FILES := $(shell find . -type f -name '*.go' -not -path './.cache/*' -not -path './.go-cache/*' -not -path './tmp/*' -not -path './vendor/*')
@@ -16,7 +16,7 @@ full: prepare check
 
 prepare: tidy generate fmt lint-fix
 
-check: tidy-check vet lint test test-race cover-html externalconsumer-local
+check: tidy-check fmt-check vet lint test-full externalconsumer-local
 
 release-readiness: check externalconsumer-published
 
@@ -34,6 +34,12 @@ fmt:
 	gofumpt -l -w $(GO_FILES)
 	gci write -s standard -s default -s "prefix($(GO_MODULE))" $(GO_FILES)
 
+fmt-check:
+	@unformatted="$$(gofumpt -l $(GO_FILES))"; \
+		test -z "$$unformatted" || { printf 'gofumpt changes are required:\n%s\nRun: make prepare\n' "$$unformatted" >&2; exit 1; }
+	@import_diff="$$(gci diff -s standard -s default -s "prefix($(GO_MODULE))" $(GO_FILES))"; \
+		test -z "$$import_diff" || { printf 'gci changes are required:\n%s\nRun: make prepare\n' "$$import_diff" >&2; exit 1; }
+
 lint:
 	golangci-lint run -v --timeout=5m ./...
 
@@ -45,6 +51,9 @@ vet:
 
 test:
 	go test ./...
+
+test-full:
+	go test -race -cover -covermode=atomic -count=1 ./...
 
 test-race:
 	go test -race -count=5 ./...

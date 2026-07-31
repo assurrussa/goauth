@@ -95,7 +95,10 @@ Important invariants:
 
 - Full local run: `make`
 - Mutating preparation only: `make prepare`
-- Verification only: `make check`
+- Verification only: `make check` — one race+coverage test pass, formatting,
+  vet, lint, and the local consumer probe.
+- Explicit stress rerun: `make test-race`.
+- Explicit HTML coverage artifact: `make cover-html`.
 - Published release readiness: `make release-readiness VERSION=v0.1.4`
 - Local clean-consumer probe: `make externalconsumer-local`
 - Published clean-consumer probe: `make externalconsumer-published VERSION=v0.1.4`
@@ -110,6 +113,10 @@ GOMODCACHE=$PWD/.go-cache/gomodcache \
 GOPATH=$PWD/.go-cache/gopath \
 go list ./...
 ```
+
+During implementation, run package-scoped `go test` commands. Run `make check`
+once after a coherent batch; do not stack it with `make test`,
+`make test-race`, and `make cover-html` on an unchanged tree.
 
 ## Release Rules
 

@@ -36,3 +36,12 @@
 - During the private alpha phase, a trusted maintainer may fast-forward the
   verified release commit directly to `master`; the tag and post-tag clean
   consumer gate remain mandatory even when a PR is skipped.
+
+## Development gate efficiency (2026-07-31)
+
+- Kept `make`, `make prepare`, `make check`, and release target names stable.
+- Made `make check` source-read-only and replaced normal, repeated-race, and
+  coverage test traversals with one race+coverage pass.
+- Kept five-run race stress and HTML coverage as explicit diagnostics so
+  investigations and release policy can still request them without charging
+  every normal verification run.

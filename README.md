@@ -37,7 +37,10 @@ from the combined seed catalog; built-in role slugs cannot be overridden.
 
 ```sh
 make
+make prepare
 make check
+make test-race
+make cover-html
 make release-readiness VERSION=v0.1.4
 make externalconsumer-local
 make externalconsumer-published VERSION=v0.1.4

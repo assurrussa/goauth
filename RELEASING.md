@@ -64,12 +64,15 @@ This runs the mutating preparation phase and then verification:
 - `go fmt`, `gofumpt`, and `gci`
 - `golangci-lint run --fix`
 - `go mod tidy -diff`
+- non-mutating `gofumpt` and `gci` checks
 - `go vet ./...`
 - `golangci-lint run`
-- `go test ./...`
-- `go test -race -count=5 ./...`
-- coverage HTML generation
+- one `go test -race -cover -count=1 ./...` pass
 - local external-consumer probe
+
+Repeated race stress and HTML coverage artifacts are explicit diagnostics:
+`make test-race` and `make cover-html`. Do not stack them onto a successful
+`make check` unless the release or investigation specifically requires them.
 
 For a non-mutating verification pass after preparation, run:
 
