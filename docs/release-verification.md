@@ -1,94 +1,53 @@
-# Release Verification
+# Release verification
 
-## Baseline
-
-Current verified baseline: `v0.1.4`.
-
-Do not rewrite existing tags. If preparation or verification changes generated
-files, formatting, `go.mod`, or `go.sum`, commit those changes and release a new
-semver tag.
-
-## Local Verification
-
-Run the full local gate from the repository root:
+## Local gates
 
 ```sh
-make
-```
-
-This runs preparation and verification:
-
-- `go mod tidy`
-- `go generate ./...`
-- formatting through `go fmt`, `gofumpt`, and `gci`
-- `golangci-lint run --fix`
-- `go mod tidy -diff`
-- `go vet ./...`
-- `golangci-lint run`
-- `go test ./...`
-- `go test -race -count=5 ./...`
-- coverage HTML generation
-- local external-consumer probe
-
-For non-mutating verification after preparation:
-
-```sh
+make prepare
 make check
 ```
 
-## Clean Consumer Probes
+`make check` is non-mutating and runs one canonical race/coverage pass. Use
+`make test-race` only for deliberate stress reruns and `make cover-html` only
+when an HTML artifact is needed.
 
-Local checkout probe:
+The security integration suite requires PostgreSQL and Redis:
+
+```sh
+docker compose -f compose.integration.yml -p goauth-v02-integration up -d --wait
+make integration
+docker compose -f compose.integration.yml -p goauth-v02-integration down -v
+```
+
+The integration suite executes the v0.2 migration, Down/Up, v0.1 refusal,
+atomic refresh/reset/challenge behavior, case-insensitive identifier uniqueness,
+SSO policy, status revocation, secret-at-rest assertions, and Redis GETDEL
+concurrency.
+
+## Coverage and vulnerabilities
+
+`make coverage-check` builds an aggregate atomic profile and enforces at least
+80% statement coverage for the security-critical root, PostgreSQL, Redis,
+OIDC-provider, and RBAC packages. `make vulnerability-check` runs
+`govulncheck ./...`. A finding must be upgraded away or documented with
+reachability evidence before release; a database-only result is not silently
+treated as clean.
+
+## Clean consumers
 
 ```sh
 make externalconsumer-local
+make externalconsumer-published VERSION=v0.2.0-rc.1
+make release-readiness VERSION=v0.2.0-rc.1
 ```
 
-Published module probe:
+The probe creates a temporary module without a committed replace for published
+versions, builds a Runtime, mounts Fiber, initializes OIDC/Redis and RBAC, and
+runs the example test. A local replace proves only sibling-development
+compatibility.
 
-```sh
-make externalconsumer-published VERSION=v0.1.4
-```
+## Evidence boundary
 
-Full release-readiness gate:
-
-```sh
-make release-readiness VERSION=v0.1.4
-```
-
-`cmd/externalconsumerprobe` creates a temporary Go module, imports the packages
-listed by `reference/externalconsumer`, and runs:
-
-```sh
-go test -mod=mod ./... -count=1
-```
-
-With `--version`, it first resolves `github.com/assurrussa/goauth@<version>`
-via `go list -m -json`.
-
-## Sandbox Cache Note
-
-Raw `go` commands can fail in a restricted sandbox if they try to use the global
-Go build cache. Prefer Makefile targets, or use:
-
-```sh
-GOCACHE=$PWD/.go-cache/gocache \
-GOMODCACHE=$PWD/.go-cache/gomodcache \
-GOPATH=$PWD/.go-cache/gopath \
-go test ./...
-```
-
-## Host Consumer Follow-Up
-
-After publishing a new `goauth` tag, known host repositories should remove local
-`replace` directives and verify against the published module version.
-
-For `/Users/amir/dev/projects/my/site`, `RELEASING.md` currently documents:
-
-```sh
-cd /Users/amir/dev/projects/my/site
-task platform:published-check GOAUTH_VERSION=v0.1.4 GOADMIN_VERSION=v0.2.3
-```
-
-Treat local `replace` success as sibling-development evidence only. It is not
-proof that a clean external consumer can resolve the published module.
+Keep local verification, tag publication, consumer adoption, and production
+deployment as distinct claims. Record the exact version/commit for every gate;
+manual production smoke remains outstanding until it is actually performed.

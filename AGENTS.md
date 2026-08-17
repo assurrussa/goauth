@@ -30,23 +30,17 @@ contract change.
 
 ## Project Map
 
-- `core/`: stable subject, profile, token, credential, transaction, and store
-  contracts.
-- `shared/`: small shared auth DTOs and subject helpers.
-- `local/`: local auth services for registration, login, tokens, password
-  reset/change, email change, confirmation, and related flows.
-- `session/`: session runtime and admin-account support.
-- `domain/roles/`: reusable subject RBAC model, storage contracts, services,
-  guards, use cases, cache, and seeders.
-- `integration/`: preferred host-facing wiring kits for storage, Local JWT,
-  OIDC, admin session, and roles.
-- `migrations/`: canonical auth/RBAC PostgreSQL migrations and public migration
-  entrypoints.
-- `storage/`, `infrastructure/`, `http/`: concrete adapters and transport glue.
-- `oidc/`, `sso/`: OIDC/JWK, verifier/provider, embedded/external identity,
-  and identity-link support.
-- `service/`, `usecases/`: transport-neutral auth services and application
-  use cases used by integration kits.
+- Root package: stable identity models, Runtime contracts, local auth,
+  recovery, sessions, refresh rotation, and identity-link policy.
+- `postgres/`: v0.2 baseline migrations, Runtime assembly, canonical storage,
+  audit persistence, cleanup, rate limiting, and RBAC storage.
+- `redis/`: atomic Redis-backed OIDC one-time state.
+- `fiber/`: JSON handlers, typed error mapping, and realm middleware.
+- `oidc/`: OIDC protocol, provider, and verifier contracts.
+- `rbac/`: hierarchy-free role and permission service.
+- `testkit/`: supported in-memory Runtime fixture and encrypted-event helpers.
+- `internal/legacy/`: compile-checked v0.1 implementation retained only for
+  repository history and regression coverage; consumers cannot import it.
 - `reference/externalconsumer`: compile-checked supported package manifest.
 - `cmd/externalconsumerprobe`: release helper for clean temporary consumers.
 
@@ -62,15 +56,15 @@ When making public API changes:
   `reference/externalconsumer/packages.go`.
 - Keep `reference/externalconsumer/imports.go` aligned with the supported list.
 - Update `public_surface_test.go` when new exported symbols are release-visible.
-- Prefer `integration/*`, `core`, `shared`, `migrations`, `oidc`, `sso`, and
-  explicitly supported service packages over direct implementation packages.
+- Prefer the root Runtime and the explicit `postgres`, `redis`, `fiber`,
+  `oidc`, `rbac`, and `testkit` adapters. Do not add consumer-facing aliases
+  for `internal/legacy` implementation packages.
 - Keep `HostSupportPackages` empty unless there is an unavoidable, temporary
   host-wiring gap with a documented migration path.
 
-RBAC internals should stay behind `integration/roles`. Storage adapters should
-stay behind `integration/storage`. Fiber auth adapters should stay behind
-integration facades unless a package is deliberately promoted to the stable
-surface.
+Concrete SQL repositories and migration implementation stay behind
+`postgres`; Fiber transport internals stay behind `fiber`; RBAC storage stays
+behind `postgres.NewRBAC`.
 
 See `docs/public-surface.md` for the working checklist.
 
@@ -87,7 +81,8 @@ Important invariants:
 - Canonical auth relations must use the real canonical `subject_id`.
 - Host `users` and `administrations` rows are projections or memberships keyed
   by canonical `subject_id`.
-- `Subject.Kind` is routing metadata, not the admin security boundary.
+- Realm and host membership, not a subject kind, are the admin security
+  boundary.
 - Projection IDs, public IDs, and numeric admin IDs must not be used as runtime
   auth fallback identities.
 
@@ -99,9 +94,9 @@ Important invariants:
   vet, lint, and the local consumer probe.
 - Explicit stress rerun: `make test-race`.
 - Explicit HTML coverage artifact: `make cover-html`.
-- Published release readiness: `make release-readiness VERSION=v0.1.4`
+- Published release readiness: `make release-readiness VERSION=v0.2.0-rc.1`
 - Local clean-consumer probe: `make externalconsumer-local`
-- Published clean-consumer probe: `make externalconsumer-published VERSION=v0.1.4`
+- Published clean-consumer probe: `make externalconsumer-published VERSION=v0.2.0-rc.1`
 
 The Makefile exports repo-local `GOCACHE`, `GOMODCACHE`, and `GOPATH` under
 `.go-cache/`. Prefer Makefile targets for verification. If running raw `go`
@@ -123,7 +118,8 @@ once after a coherent batch; do not stack it with `make test`,
 Do not rewrite existing tags. If `make` changes generated code, formatting,
 `go.mod`, or `go.sum`, commit those changes and publish a new semver tag.
 
-Current verified baseline for this split pass is `v0.1.4`.
+Current published compatibility baseline is `v0.1.6`; the active breaking
+release train starts at `v0.2.0-rc.1`.
 
 Before claiming release readiness:
 

@@ -45,3 +45,29 @@
 - Kept five-run race stress and HTML coverage as explicit diagnostics so
   investigations and release policy can still request them without charging
   every normal verification run.
+
+## v0.2 secure Runtime release train (2026-08-18)
+
+- The implementation is intentionally breaking and starts from a clean v0.2
+  PostgreSQL schema. Existing v0.1 tags and migration files remain immutable.
+- The stable consumer boundary is being reduced to the root Runtime plus
+  PostgreSQL, Redis, Fiber, OIDC, RBAC, and testkit adapters. Legacy packages
+  remain compile-checked under `internal/legacy`, where consumers cannot import
+  them.
+- Security-sensitive one-time state uses atomic store outcomes rather than
+  read-then-delete APIs. Business outcomes are returned after the storage
+  transaction commits so replay revocation and failed-attempt counters persist.
+- Email is the only built-in confirmation identifier. Additional identifier
+  schemes remain extension points and do not imply built-in delivery support.
+- Runtime secrets use separate versioned JWT, token-HMAC, and outbox-AEAD key
+  rings. Raw reset, refresh, and confirmation secrets must never be stored.
+- Consumer migration proceeds in dependency order: goauth RC, goadmin and
+  platform tooling, direct site/demo/vault consumers, then transitive hosts.
+- Publication is a separate final gate. A local pass or an RC-compatible
+  branch is not reported as a published release or production deployment.
+- The toolchain moved from the planned Go 1.26.5 to Go 1.26.6 because 1.26.6 is
+  the current security patch and removes reachable standard-library findings;
+  `x/text` was raised to 0.39.0 for the same gate.
+- The stable RBAC facade includes hierarchy-free management operations needed
+  by host admin UIs. PostgreSQL role and permission replacement is
+  transactional, while presentation DTOs remain host-owned.

@@ -1,133 +1,71 @@
 # Releasing goauth
 
-This module is published as `github.com/assurrussa/goauth`.
+The module path is `github.com/assurrussa/goauth`.
 
-## Current Baseline
+## Version state
 
-- Current verified release baseline: `v0.1.5`.
-- Next additive candidate: `v0.1.6`. It clarifies that the built-in
-  `content_admin` role only reads roles and permissions; CMS access still comes
-  from the separate CMS role presets. The permission set and supported package
-  list do not change.
-- Keep module path unchanged: `module github.com/assurrussa/goauth`.
-- Consumers should depend on published semver tags, not local `replace`
-  directives, outside explicit sibling-development checks.
+- Current published compatibility baseline: `v0.1.6`.
+- Next release train: `v0.2.0-rc.1`, subsequent immutable RCs as needed, then
+  `v0.2.0` on the exact commit of the last RC that passed every consumer gate.
+- Never move or replace an existing tag. Never publish a committed local
+  `replace` directive.
+- Publication is not production deployment.
 
-## Current consumer state
+## Breaking migration
 
-The post-split baseline uses the published module in known workspace consumers:
+v0.2 installs a clean baseline schema. `postgres.Migrate` detects a v0.1 auth
+schema and returns `postgres.ErrLegacySchemaRequiresReset` without deleting
+data. Only isolated development and test databases may call:
 
-- `backend/go.mod` requires `github.com/assurrussa/goauth v0.1.5`.
-- `backend/go.mod` has no local `replace` for `github.com/assurrussa/goauth`.
-- `goadmin/go.mod` requires `github.com/assurrussa/goauth v0.1.5`.
-- `goadmin/go.mod` has no local `replace` for `github.com/assurrussa/goauth`.
-
-Before claiming a baseline is published-consumer ready, verify that it resolves
-from a clean module:
-
-The current consumer verification commands remain
-`go list -m -json github.com/assurrussa/goauth@v0.1.5` and
-`go get github.com/assurrussa/goauth@v0.1.5` until the dependent modules move.
-
-```sh
-go list -m -json github.com/assurrussa/goauth@v0.1.5
-go get github.com/assurrussa/goauth@v0.1.5
+```go
+postgres.Down(ctx, db, postgres.ResetConfirmation)
 ```
 
-After publishing the candidate tag, run the same clean checks against
-`github.com/assurrussa/goauth@v0.1.6` before updating dependent modules.
+There is no automatic v0.1 data conversion. A production-data migration would
+require a separately reviewed migration product and is outside this release.
 
-For local work, use `GOAUTH_LOCAL_PATH` only for explicit sibling-development checks, not as a required module-level replace.
+## Local release gate
 
-## Supported External Surface
-
-`reference/externalconsumer` is the source of truth for supported packages. It
-contains the compile-checked import manifest and the machine-readable
-`SupportedPackages` list used by `cmd/externalconsumerprobe`.
-
-Do not grow `HostSupportPackages` silently. Prefer moving host-facing behavior
-behind `integration/*`, `core`, `shared`, `migrations`, or other intentional
-stable packages.
-
-## Full Run
-
-From the repository root:
+Run preparation once, inspect its diff, then run the canonical non-mutating
+gate once:
 
 ```sh
-make
-```
-
-This runs the mutating preparation phase and then verification:
-
-- `go mod tidy`
-- `go generate ./...`
-- `go fmt`, `gofumpt`, and `gci`
-- `golangci-lint run --fix`
-- `go mod tidy -diff`
-- non-mutating `gofumpt` and `gci` checks
-- `go vet ./...`
-- `golangci-lint run`
-- one `go test -race -cover -count=1 ./...` pass
-- local external-consumer probe
-
-Repeated race stress and HTML coverage artifacts are explicit diagnostics:
-`make test-race` and `make cover-html`. Do not stack them onto a successful
-`make check` unless the release or investigation specifically requires them.
-
-For a non-mutating verification pass after preparation, run:
-
-```sh
+make prepare
 make check
+make integration
+make vulnerability-check
 ```
 
-## Release Readiness
+`make check` covers tidy diff, formatting, vet, lint, a single race/coverage
+test pass, the critical-package coverage floor, the exact public API manifest,
+and the runnable local clean-consumer probe. `make integration` requires the
+PostgreSQL and Redis test services described in `compose.integration.yml`.
 
-Before tagging a new version:
+## RC sequence
 
-```sh
-make release-readiness VERSION=<tag>
-```
+1. Create the RC tag from a clean commit and push it.
+2. Run the published-module probe:
 
-This includes `make check` plus a clean temporary consumer resolving the
-published version through `cmd/externalconsumerprobe`.
+   ```sh
+   make release-readiness VERSION=v0.2.0-rc.1
+   ```
 
-For the current candidate after tagging:
+3. Test consumer branches in dependency order: `goadmin`, `site/backend`,
+   OIDC demos, `platformctl` generated host, `vaultkey`, `gocms`, `gowebhooks`,
+   and the second host.
+4. Fix defects in a new commit and publish a new RC; do not move the prior RC.
+5. Put `v0.2.0` on the exact fully verified RC commit, then publish compatible
+   `goadmin` and `platformctl` versions and pin applications to stable tags.
 
-```sh
-make release-readiness VERSION=v0.1.6
-```
+## Consumer evidence
 
-## Host Consumer Validation
+Each consumer must record:
 
-After publishing, host repos should remove local replaces and run their own
-published-module gates. For `/Users/amir/dev/projects/my/site`, the expected
-post-split gate is:
+- the resolved `goauth` version and absence of a committed `replace`;
+- its canonical format, lint, test, migration, and PostgreSQL gates;
+- its realm membership and permission mapping checks;
+- explicit development/test schema reset evidence where applicable;
+- any remaining manual or production smoke separately from local verification.
 
-```sh
-cd /Users/amir/dev/projects/my/site
-task platform:published-check GOAUTH_VERSION=v0.1.6 GOADMIN_VERSION=v0.4.0-alpha.6
-```
-
-## Release-visible behavior
-
-- `integration/roles.WithRolePresets` lets hosts seed idempotent canonical role
-  policies alongside their permission definitions. Presets cannot override
-  built-in slugs or reference permissions outside the merged seed catalog.
-
-- `goauth/migrations` exposes public `DatabaseConfig` and `RunWithConfig` so
-  clean consumers can run canonical auth/RBAC migrations without importing
-  infrastructure packages.
-- `authjwtservice.WithProfileProvisioner`,
-  `localjwt.Options.ProfileProvisioner`, and `authcore.ProfileProvisioner`
-  expose the host projection provisioning hook.
-- Existing canonical subjects can create or restore host projections during
-  successful Local JWT login before token issuance.
-- canonical subjects can create or restore host projections during successful Local JWT login.
-
-## Notes
-
-- Do not add auth DDL or runtime compatibility fallbacks as part of a patch
-  release unless the migration story is explicit.
-- Keep host `users` and `administrations` tables as projections/memberships.
-- `Subject.Kind` is routing metadata, not the admin security boundary.
-- `cmd/externalconsumerprobe` is a release helper, not runtime API.
+After stable adoption, update the compatibility matrix and shared platform
+wiki. Do not claim a live deployment from tags or local gates alone.

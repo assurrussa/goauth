@@ -1,13 +1,13 @@
 module github.com/assurrussa/goauth
 
-go 1.26
+go 1.26.6
 
 require (
 	github.com/Masterminds/squirrel v1.5.4
 	github.com/assurrussa/gonotify v0.3.10
 	github.com/assurrussa/goshared v1.0.3
-	github.com/assurrussa/outbox v0.9.8
-	github.com/assurrussa/outbox/backends/pgsql v0.0.0-20260604173053-6e73a5543d74
+	github.com/assurrussa/outbox v0.10.2
+	github.com/assurrussa/outbox/backends/pgsql v0.10.2
 	github.com/georgysavva/scany/v2 v2.1.4
 	github.com/gofiber/fiber/v3 v3.3.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
@@ -18,6 +18,7 @@ require (
 	github.com/redis/go-redis/v9 v9.20.0
 	github.com/stretchr/testify v1.11.1
 	go.uber.org/mock v0.6.0
+	golang.org/x/crypto v0.52.0
 )
 
 require (
@@ -60,11 +61,10 @@ require (
 	github.com/vgarvardt/pgx-google-uuid/v5 v5.6.0 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.52.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
+	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	olympos.io/encoding/edn v0.0.0-20201019073823-d3554ca0b0a3 // indirect
 )

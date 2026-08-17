@@ -1,35 +1,18 @@
 package externalconsumer
 
-// StablePublicPackages are the packages intended to be the reusable goauth API
-// for non-host consumers after the first semver release.
+// StablePublicPackages is the complete supported v0.2 import surface. Packages
+// omitted from this list are implementation details even when Go can import
+// them for compatibility with an older v0.1 consumer.
 var StablePublicPackages = [...]string{
-	"github.com/assurrussa/goauth/core",
-	"github.com/assurrussa/goauth/http/fiber/rolesmiddleware",
-	"github.com/assurrussa/goauth/http/oidcctx",
-	"github.com/assurrussa/goauth/integration/adminsession",
-	"github.com/assurrussa/goauth/integration/localjwt",
-	"github.com/assurrussa/goauth/integration/oidc",
-	"github.com/assurrussa/goauth/integration/roles",
-	"github.com/assurrussa/goauth/integration/storage",
-	"github.com/assurrussa/goauth/local/emailchange",
-	"github.com/assurrussa/goauth/local/passwordauth",
-	"github.com/assurrussa/goauth/local/passwordchange",
-	"github.com/assurrussa/goauth/local/passwordreset",
-	"github.com/assurrussa/goauth/local/tokenauth",
-	"github.com/assurrussa/goauth/migrations",
+	"github.com/assurrussa/goauth",
+	"github.com/assurrussa/goauth/fiber",
 	"github.com/assurrussa/goauth/oidc",
 	"github.com/assurrussa/goauth/oidc/provider",
 	"github.com/assurrussa/goauth/oidc/verifier",
-	"github.com/assurrussa/goauth/service/authinvalidator",
-	"github.com/assurrussa/goauth/service/authjwtservice",
-	"github.com/assurrussa/goauth/service/confirmationcodeservice",
-	"github.com/assurrussa/goauth/session/adminaccount",
-	"github.com/assurrussa/goauth/session/runtime",
-	"github.com/assurrussa/goauth/shared",
-	"github.com/assurrussa/goauth/sso",
-	"github.com/assurrussa/goauth/sso/embeddedoidc",
-	"github.com/assurrussa/goauth/sso/externalidentity",
-	"github.com/assurrussa/goauth/sso/identitylink",
+	"github.com/assurrussa/goauth/postgres",
+	"github.com/assurrussa/goauth/rbac",
+	"github.com/assurrussa/goauth/redis",
+	"github.com/assurrussa/goauth/testkit",
 }
 
 // HostSupportPackages is a compatibility bucket for unavoidable host wiring

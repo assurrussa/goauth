@@ -8,13 +8,13 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
-	authcore "github.com/assurrussa/goauth/core"
+	"github.com/assurrussa/goauth"
 	"github.com/assurrussa/goauth/oidc"
 )
 
 func (s *Service) signAccessToken(
 	ctx context.Context,
-	subject authcore.Subject,
+	account goauth.Account,
 	clientID string,
 	scopes []string,
 ) (string, error) {
@@ -30,7 +30,7 @@ func (s *Service) signAccessToken(
 		TokenUse: tokenUseAccess,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    s.issuer,
-			Subject:   subject.CanonicalID(),
+			Subject:   account.Subject.ID.String(),
 			Audience:  jwt.ClaimStrings{clientID},
 			ExpiresAt: jwt.NewNumericDate(now.Add(s.accessTokenTTL)),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -43,7 +43,7 @@ func (s *Service) signAccessToken(
 
 func (s *Service) signIDToken(
 	ctx context.Context,
-	subject authcore.Subject,
+	account goauth.Account,
 	clientID string,
 	scopes []string,
 	authenticatedAt time.Time,
@@ -61,21 +61,21 @@ func (s *Service) signIDToken(
 		AuthTime: authenticatedAt.Unix(),
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    s.issuer,
-			Subject:   subject.CanonicalID(),
+			Subject:   account.Subject.ID.String(),
 			Audience:  jwt.ClaimStrings{clientID},
 			ExpiresAt: jwt.NewNumericDate(now.Add(s.accessTokenTTL)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
 		},
 	}
-	if oidc.HasScope(scopes, oidc.ScopeEmail) && subject.Email != "" {
-		claims.Email = subject.Email
-		verified := true
+	if oidc.HasScope(scopes, oidc.ScopeEmail) && account.PrimaryEmail.DisplayValue != "" {
+		claims.Email = account.PrimaryEmail.DisplayValue
+		verified := account.EmailVerified()
 		claims.EmailVerified = &verified
 	}
 	if oidc.HasScope(scopes, oidc.ScopeProfile) {
-		claims.Name = subject.Name
-		claims.PreferredUsername = subject.Username
+		claims.Name = account.Profile.DisplayName
+		claims.PreferredUsername = account.Profile.Username
 	}
 
 	return s.signToken(key, claims, "JWT")

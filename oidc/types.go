@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	authcore "github.com/assurrussa/goauth/core"
+	"github.com/assurrussa/goauth"
 )
 
 const (
@@ -90,7 +90,7 @@ type RefreshToken struct {
 	SubjectID       string
 	ClientID        string
 	Scopes          []string
-	PasswordVersion int64
+	SecurityVersion int64
 	AuthenticatedAt time.Time
 	CreatedAt       time.Time
 	ExpiresAt       time.Time
@@ -105,7 +105,7 @@ type SigningKey struct {
 }
 
 type AuthenticatedSubject struct {
-	Subject         authcore.Subject
+	Account         goauth.Account
 	AuthenticatedAt time.Time
 }
 

@@ -1,31 +1,13 @@
 package externalconsumer
 
 import (
-	_ "github.com/assurrussa/goauth/core" // dependency
-	_ "github.com/assurrussa/goauth/http/fiber/rolesmiddleware"
-	_ "github.com/assurrussa/goauth/http/oidcctx"
-	_ "github.com/assurrussa/goauth/integration/adminsession"
-	_ "github.com/assurrussa/goauth/integration/localjwt"
-	_ "github.com/assurrussa/goauth/integration/oidc"
-	_ "github.com/assurrussa/goauth/integration/roles"
-	_ "github.com/assurrussa/goauth/integration/storage"
-	_ "github.com/assurrussa/goauth/local/emailchange"
-	_ "github.com/assurrussa/goauth/local/passwordauth"
-	_ "github.com/assurrussa/goauth/local/passwordchange"
-	_ "github.com/assurrussa/goauth/local/passwordreset"
-	_ "github.com/assurrussa/goauth/local/tokenauth"
-	_ "github.com/assurrussa/goauth/migrations"
+	_ "github.com/assurrussa/goauth" // dependency
+	_ "github.com/assurrussa/goauth/fiber"
 	_ "github.com/assurrussa/goauth/oidc"
 	_ "github.com/assurrussa/goauth/oidc/provider"
 	_ "github.com/assurrussa/goauth/oidc/verifier"
-	_ "github.com/assurrussa/goauth/service/authinvalidator"
-	_ "github.com/assurrussa/goauth/service/authjwtservice"
-	_ "github.com/assurrussa/goauth/service/confirmationcodeservice"
-	_ "github.com/assurrussa/goauth/session/adminaccount"
-	_ "github.com/assurrussa/goauth/session/runtime"
-	_ "github.com/assurrussa/goauth/shared"
-	_ "github.com/assurrussa/goauth/sso"
-	_ "github.com/assurrussa/goauth/sso/embeddedoidc"
-	_ "github.com/assurrussa/goauth/sso/externalidentity"
-	_ "github.com/assurrussa/goauth/sso/identitylink"
+	_ "github.com/assurrussa/goauth/postgres"
+	_ "github.com/assurrussa/goauth/rbac"
+	_ "github.com/assurrussa/goauth/redis"
+	_ "github.com/assurrussa/goauth/testkit"
 )

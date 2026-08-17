@@ -5,13 +5,14 @@ import (
 	"errors"
 	"time"
 
-	authcore "github.com/assurrussa/goauth/core"
+	"github.com/assurrussa/goauth"
 )
 
 var (
 	ErrAuthorizationRequestNotFound = errors.New("authorization request not found")
 	ErrAuthorizationCodeNotFound    = errors.New("authorization code not found")
 	ErrRefreshTokenNotFound         = errors.New("oidc refresh token not found")
+	ErrRefreshTokenReplay           = errors.New("oidc refresh token replay detected")
 )
 
 type ClientStore interface {
@@ -21,13 +22,12 @@ type ClientStore interface {
 type AuthorizationRequestStore interface {
 	Save(ctx context.Context, request AuthorizationRequest) error
 	Get(ctx context.Context, challenge string) (AuthorizationRequest, error)
-	Delete(ctx context.Context, challenge string) error
+	Consume(ctx context.Context, challenge string) (AuthorizationRequest, error)
 }
 
 type AuthorizationCodeStore interface {
 	Save(ctx context.Context, code AuthorizationCode) error
-	Get(ctx context.Context, code string) (AuthorizationCode, error)
-	Delete(ctx context.Context, code string) error
+	Consume(ctx context.Context, code string) (AuthorizationCode, error)
 }
 
 type RefreshTokenStore interface {
@@ -44,5 +44,5 @@ type TokenSigningKeyStore interface {
 }
 
 type ClaimsResolver interface {
-	Resolve(ctx context.Context, subjectID string) (authcore.Subject, error)
+	Resolve(ctx context.Context, subjectID string) (goauth.Account, error)
 }

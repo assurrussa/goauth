@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: goauth_integration
+          POSTGRES_USER: goauth
+          POSTGRES_PASSWORD: goauth
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U goauth -d goauth_integration"
+          --health-interval 1s
+          --health-timeout 3s
+          --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 1s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      GOAUTH_TEST_POSTGRES_DSN: postgres://goauth:goauth@127.0.0.1:5432/goauth_integration?sslmode=disable
+      GOAUTH_TEST_REDIS_ADDRESS: 127.0.0.1:6379
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Install formatting and vulnerability tools
+        run: |
+          go install mvdan.cc/gofumpt@v0.11.0
+          go install github.com/daixiang0/gci@v0.14.0
+          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+          install-only: true
+      - name: Canonical unit and public API gate
+        run: make check
+      - name: PostgreSQL and Redis integration gate
+        run: make integration
+      - name: Aggregate coverage profile
+        run: make coverage-aggregate
+      - name: Reachable vulnerability gate
+        run: make vulnerability-check

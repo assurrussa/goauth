@@ -31,7 +31,7 @@ linters:
     - godox
     - goheader
     - gomoddirectives
-    - gomodguard
+    - gomodguard_v2
     - goprintffuncname
     - gosec
     - govet
@@ -85,7 +85,7 @@ linters:
             - go/token
             - go/parser
             - go/ast
-            - golang.org/x/crypto/bcrypt
+            - golang.org/x/crypto
             - golang.org/x/text
             - go.uber.org/mock/gomock
             - go.uber.org/goleak

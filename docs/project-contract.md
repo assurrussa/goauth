@@ -1,66 +1,37 @@
-# goauth Project Contract
+# goauth project contract
 
-## Role
+## Ownership
 
-`goauth` is the canonical auth/RBAC module for Go host applications. Its module
-path is `github.com/assurrussa/goauth`.
+`goauth` owns canonical identity state, identifiers, local credentials,
+realm-bound sessions and refresh families, recovery and email verification,
+identity links, OIDC protocol behavior, RBAC, PostgreSQL schema, Redis OIDC
+one-time state, encrypted notification events, and typed security audit events.
 
-The repository is maintained as a reusable platform module. It should remain
-independent from concrete host repositories such as `backend`, `blog`, or
-`goadmin`, except where those projects consume the published public surface.
+Hosts own HTTP route layout, cookies, redirects, frontend UX, membership and
+projection tables, profile extensions, permission catalogs, environment
+loading, delivery providers, and production rollout.
 
-## Ownership Boundary
+## Supported package boundary
 
-`goauth` owns:
+External consumers use the exact packages in
+`reference/externalconsumer.SupportedPackages`. The root package is the
+transport-neutral Runtime; `postgres`, `redis`, and `fiber` are adapters;
+`oidc`, `rbac`, and `testkit` are focused capabilities.
 
-- canonical auth reads and writes for subjects, local credentials, sessions,
-  refresh tokens, OIDC refresh tokens, password reset state, confirmation
-  state, email-change state, and SSO identity links;
-- canonical PostgreSQL migrations for the `auth_*`, OIDC, SSO, and RBAC tables;
-- transport-neutral services and use cases for Local JWT, password reset,
-  confirmation, token cleanup, admin email-change cleanup, and OIDC cleanup;
-- reusable subject RBAC storage contracts, services, guards, cache, use cases,
-  and seeders;
-- host-facing integration kits under `integration/*`;
-- clean-consumer release probes under `cmd/externalconsumerprobe`.
+Legacy `core`, `local`, `session`, `service`, `usecases`, `domain`, `storage`,
+`infrastructure`, `integration`, `http`, and `migrations` trees are migration
+implementation details under `internal/legacy` and are not v0.2 public API.
+The compiler rejects consumer imports of them.
 
-Host applications own:
+## Schema lifecycle
 
-- HTTP UX and cookie policy;
-- frontend routes and screens;
-- process-specific wiring and environment loading;
-- host projection tables such as `users` and `administrations`;
-- app-specific permission catalog extensions;
-- business-domain features that use auth/RBAC.
+The v0.2 baseline is authoritative for a fresh database. Detection of a v0.1
+schema fails with a typed non-destructive error. Development/test reset requires
+the exact confirmation constant; production migration is deliberately absent.
 
-## Package Boundaries
+## Consumer contract
 
-Use `core` and `shared` for stable contracts and DTOs. Use `integration/*` when
-building host wiring. Use `migrations` to run canonical auth/RBAC migrations
-without importing infrastructure packages.
-
-`domain/roles/*`, concrete `storage/*`, lower-level `http/fiber/*`, and
-`infrastructure/*` packages may be importable, but they are not automatically
-public API. Promote behavior through an integration facade when it is intended
-for external consumers.
-
-## Current External Consumer Model
-
-Clean consumers should import the stable packages listed in
-`reference/externalconsumer.SupportedPackages`.
-
-The expected new-project model is a separate consumer repository that imports
-published semver tags. Local `replace` directives are acceptable only for
-explicit sibling-development checks, not as evidence that the published module
-works for a real external consumer.
-
-## Identity Invariants
-
-`auth_subjects` owns stable auth identity. Host profile rows are projections or
-memberships keyed by canonical `subject_id`.
-
-Do not rebuild canonical subject IDs from numeric admin IDs, public IDs, or host
-projection UUIDs. If a canonical subject is missing a real `subject_id`, the
-auth adapter should fail hard instead of inventing a fallback identity.
-
-See `AUTH_INVARIANTS.md` for the detailed invariant set.
+Consumers resolve published semver tags without committed local replaces. A
+local sibling replace is development evidence only. Release readiness requires
+the runnable published clean-consumer probe plus each host's own schema,
+permission, and application gates.

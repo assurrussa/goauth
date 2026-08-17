@@ -15,7 +15,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
-	authcore "github.com/assurrussa/goauth/core"
+	"github.com/assurrussa/goauth"
 	"github.com/assurrussa/goauth/internal/generate_token"
 	"github.com/assurrussa/goauth/oidc"
 )
@@ -27,6 +27,7 @@ const (
 	codeChallengeMethodS256    = "S256"
 	tokenUseAccess             = "access"
 	tokenUseID                 = "id"
+	maxAccessTokenTTL          = 5 * time.Minute
 )
 
 type Options struct {
@@ -145,7 +146,10 @@ func New(opts Options) (*Service, error) {
 	}
 	accessTTL := opts.AccessTokenTTL
 	if accessTTL <= 0 {
-		accessTTL = 15 * time.Minute
+		accessTTL = maxAccessTokenTTL
+	}
+	if accessTTL > maxAccessTokenTTL {
+		return nil, fmt.Errorf("OIDC access token TTL must not exceed %s", maxAccessTokenTTL)
 	}
 	refreshTTL := opts.RefreshTokenTTL
 	if refreshTTL <= 0 {
@@ -232,7 +236,7 @@ func (s *Service) Authorize(
 		}, nil
 	}
 
-	if current == nil || current.Subject.IsZero() {
+	if current == nil || current.Account.IsZero() {
 		challenge, err := s.generateToken()
 		if err != nil {
 			return nil, fmt.Errorf("generate challenge: %w", err)
@@ -273,21 +277,34 @@ func (s *Service) ContinueAuthorization(
 	challenge string,
 	current *oidc.AuthenticatedSubject,
 ) (*oidc.AuthorizeResult, error) {
-	record, err := s.requests.Get(ctx, strings.TrimSpace(challenge))
+	challenge = strings.TrimSpace(challenge)
+	if current == nil || current.Account.IsZero() {
+		record, err := s.requests.Get(ctx, challenge)
+		if err != nil {
+			if errors.Is(err, oidc.ErrAuthorizationRequestNotFound) {
+				return nil, s.oauthError("invalid_request", "authorization challenge not found", http.StatusBadRequest)
+			}
+
+			return nil, fmt.Errorf("get authorization request: %w", err)
+		}
+		if s.now().After(record.ExpiresAt) {
+			_, _ = s.requests.Consume(ctx, record.Challenge)
+			return nil, s.oauthError("invalid_request", "authorization challenge expired", http.StatusBadRequest)
+		}
+
+		return &oidc.AuthorizeResult{RedirectURI: s.loginRedirect(record.Challenge)}, nil
+	}
+
+	record, err := s.requests.Consume(ctx, challenge)
 	if err != nil {
 		if errors.Is(err, oidc.ErrAuthorizationRequestNotFound) {
 			return nil, s.oauthError("invalid_request", "authorization challenge not found", http.StatusBadRequest)
 		}
 
-		return nil, fmt.Errorf("get authorization request: %w", err)
+		return nil, fmt.Errorf("consume authorization request: %w", err)
 	}
 	if s.now().After(record.ExpiresAt) {
-		_ = s.requests.Delete(ctx, record.Challenge)
 		return nil, s.oauthError("invalid_request", "authorization challenge expired", http.StatusBadRequest)
-	}
-
-	if current == nil || current.Subject.IsZero() {
-		return &oidc.AuthorizeResult{RedirectURI: s.loginRedirect(record.Challenge)}, nil
 	}
 
 	result, err := s.issueAuthorizationCode(
@@ -305,9 +322,6 @@ func (s *Service) ContinueAuthorization(
 	)
 	if err != nil {
 		return nil, err
-	}
-	if err := s.requests.Delete(ctx, record.Challenge); err != nil {
-		return nil, fmt.Errorf("delete authorization request: %w", err)
 	}
 
 	return result, nil
@@ -362,7 +376,7 @@ func (s *Service) UserInfo(ctx context.Context, accessToken string) (oidc.UserIn
 	if err != nil {
 		return oidc.UserInfo{}, fmt.Errorf("resolve subject: %w", err)
 	}
-	if subject.IsZero() {
+	if subject.IsZero() || subject.Subject.Status != goauth.SubjectStatusActive {
 		return oidc.UserInfo{}, s.oauthError("invalid_token", "subject not found", http.StatusUnauthorized)
 	}
 
@@ -383,7 +397,7 @@ func (s *Service) issueAuthorizationCode(
 	now := s.now()
 	if err := s.codes.Save(ctx, oidc.AuthorizationCode{
 		Code:                code,
-		SubjectID:           current.Subject.CanonicalID(),
+		SubjectID:           current.Account.Subject.ID.String(),
 		ClientID:            input.ClientID,
 		RedirectURI:         input.RedirectURI,
 		Scopes:              oidc.NormalizeScopes(input.Scopes),
@@ -420,16 +434,15 @@ func (s *Service) exchangeAuthorizationCode(ctx context.Context, req oidc.TokenR
 		return nil, s.oauthError("invalid_grant", "code is required", http.StatusBadRequest)
 	}
 
-	code, err := s.codes.Get(ctx, req.Code)
+	code, err := s.codes.Consume(ctx, req.Code)
 	if err != nil {
 		if errors.Is(err, oidc.ErrAuthorizationCodeNotFound) {
 			return nil, s.oauthError("invalid_grant", "authorization code not found", http.StatusBadRequest)
 		}
 
-		return nil, fmt.Errorf("get authorization code: %w", err)
+		return nil, fmt.Errorf("consume authorization code: %w", err)
 	}
 	if s.now().After(code.ExpiresAt) {
-		_ = s.codes.Delete(ctx, code.Code)
 		return nil, s.oauthError("invalid_grant", "authorization code expired", http.StatusBadRequest)
 	}
 	if code.ClientID != client.ID || code.RedirectURI != strings.TrimSpace(req.RedirectURI) {
@@ -443,16 +456,13 @@ func (s *Service) exchangeAuthorizationCode(ctx context.Context, req oidc.TokenR
 	if err != nil {
 		return nil, fmt.Errorf("resolve subject: %w", err)
 	}
-	if subject.IsZero() {
+	if subject.IsZero() || subject.Subject.Status != goauth.SubjectStatusActive {
 		return nil, s.oauthError("invalid_grant", "subject not found", http.StatusBadRequest)
 	}
 
 	response, err := s.issueTokens(ctx, subject, client, code.Scopes, code.AuthenticatedAt, code.Nonce, "")
 	if err != nil {
 		return nil, err
-	}
-	if err := s.codes.Delete(ctx, code.Code); err != nil {
-		return nil, fmt.Errorf("delete authorization code: %w", err)
 	}
 
 	return response, nil
@@ -487,7 +497,8 @@ func (s *Service) refreshToken(ctx context.Context, req oidc.TokenRequest) (*oid
 	if err != nil {
 		return nil, fmt.Errorf("resolve subject: %w", err)
 	}
-	if subject.IsZero() || subject.PasswordVersion != record.PasswordVersion {
+	if subject.IsZero() || subject.Subject.Status != goauth.SubjectStatusActive ||
+		subject.Subject.SecurityVersion != record.SecurityVersion {
 		_ = s.refreshTokens.Revoke(ctx, record.Token, s.now())
 		return nil, s.oauthError("invalid_grant", "refresh token is no longer valid", http.StatusBadRequest)
 	}
@@ -514,6 +525,9 @@ func (s *Service) refreshToken(ctx context.Context, req oidc.TokenRequest) (*oid
 	}
 	if nextRecord.Token != "" {
 		if err := s.refreshTokens.Rotate(ctx, record.Token, nextRecord, s.now()); err != nil {
+			if errors.Is(err, oidc.ErrRefreshTokenNotFound) || errors.Is(err, oidc.ErrRefreshTokenReplay) {
+				return nil, s.oauthError("invalid_grant", "refresh token was already rotated", http.StatusBadRequest)
+			}
 			return nil, fmt.Errorf("rotate refresh token: %w", err)
 		}
 	}
@@ -523,13 +537,13 @@ func (s *Service) refreshToken(ctx context.Context, req oidc.TokenRequest) (*oid
 
 func (s *Service) issueTokens(
 	ctx context.Context,
-	subject authcore.Subject,
+	account goauth.Account,
 	client oidc.Client,
 	scopes []string,
 	authenticatedAt time.Time,
 	nonce, refreshToken string,
 ) (*oidc.TokenResponse, error) {
-	response, nextRecord, err := s.issueTokensWithRefresh(ctx, subject, client, scopes, authenticatedAt, nonce, refreshToken)
+	response, nextRecord, err := s.issueTokensWithRefresh(ctx, account, client, scopes, authenticatedAt, nonce, refreshToken)
 	if err != nil {
 		return nil, err
 	}
@@ -544,17 +558,17 @@ func (s *Service) issueTokens(
 
 func (s *Service) issueTokensWithRefresh(
 	ctx context.Context,
-	subject authcore.Subject,
+	account goauth.Account,
 	client oidc.Client,
 	scopes []string,
 	authenticatedAt time.Time,
 	nonce, refreshToken string,
 ) (*oidc.TokenResponse, oidc.RefreshToken, error) {
-	accessToken, err := s.signAccessToken(ctx, subject, client.ID, scopes)
+	accessToken, err := s.signAccessToken(ctx, account, client.ID, scopes)
 	if err != nil {
 		return nil, oidc.RefreshToken{}, fmt.Errorf("sign access token: %w", err)
 	}
-	idToken, err := s.signIDToken(ctx, subject, client.ID, scopes, authenticatedAt, nonce)
+	idToken, err := s.signIDToken(ctx, account, client.ID, scopes, authenticatedAt, nonce)
 	if err != nil {
 		return nil, oidc.RefreshToken{}, fmt.Errorf("sign id token: %w", err)
 	}
@@ -579,10 +593,10 @@ func (s *Service) issueTokensWithRefresh(
 		now := s.now()
 		record = oidc.RefreshToken{
 			Token:           refreshToken,
-			SubjectID:       subject.CanonicalID(),
+			SubjectID:       account.Subject.ID.String(),
 			ClientID:        client.ID,
 			Scopes:          oidc.NormalizeScopes(scopes),
-			PasswordVersion: subject.PasswordVersion,
+			SecurityVersion: account.Subject.SecurityVersion,
 			AuthenticatedAt: authenticatedAt,
 			CreatedAt:       now,
 			ExpiresAt:       now.Add(s.refreshTokenTTL),
@@ -593,16 +607,16 @@ func (s *Service) issueTokensWithRefresh(
 	return response, record, nil
 }
 
-func (s *Service) buildUserInfo(subject authcore.Subject, scopes []string) oidc.UserInfo {
-	info := oidc.UserInfo{Subject: subject.CanonicalID()}
-	if oidc.HasScope(scopes, oidc.ScopeEmail) && subject.Email != "" {
-		info.Email = subject.Email
-		verified := subject.Email != ""
+func (s *Service) buildUserInfo(account goauth.Account, scopes []string) oidc.UserInfo {
+	info := oidc.UserInfo{Subject: account.Subject.ID.String()}
+	if oidc.HasScope(scopes, oidc.ScopeEmail) && account.PrimaryEmail.DisplayValue != "" {
+		info.Email = account.PrimaryEmail.DisplayValue
+		verified := account.EmailVerified()
 		info.EmailVerified = &verified
 	}
 	if oidc.HasScope(scopes, oidc.ScopeProfile) {
-		info.Name = subject.Name
-		info.PreferredUsername = subject.Username
+		info.Name = account.Profile.DisplayName
+		info.PreferredUsername = account.Profile.Username
 	}
 
 	return info

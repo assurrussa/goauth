@@ -1,52 +1,67 @@
-# Auth Invariants
+# Auth invariants
 
-## Canonical identity split
+## Canonical identity
 
-- `auth_subjects` is the canonical identity table.
-- It owns stable auth identity and state:
-  - `subject_id`
-  - `kind`
-  - `public_id`
-  - `email`
-  - `confirmed_email_at`
-  - `password_version`
-- `auth_local_credentials` is intentionally separate.
-- It stores only the local secret material keyed by canonical `subject_id`:
-  - `password_hash`
-  - `password_algo`
+- `auth_subjects` contains only canonical ID, `active|suspended|disabled`
+  status, security version, and timestamps.
+- Identifiers, basic profile, local credentials, memberships, identity links,
+  sessions, and RBAC assignments are separate relations keyed by canonical
+  `subject_id`.
+- Host `users` and `administrations` rows are projections or memberships. Host
+  numeric IDs and public IDs never substitute for canonical `subject_id`.
+- Email uniqueness is `(scheme, normalized_value)`. Display spelling is stored
+  separately; built-in email normalization is lowercase after validation.
 
-## Transaction boundary
+## Realms and authorization
 
-- `local/passwordchange.Service` stays thin when only a password writer is
-  configured because `storage/pgsql/subjectrepo.UpdatePassword` already performs
-  the atomic write for:
-  - `auth_local_credentials.password_hash`
-  - `auth_subjects.password_version`
-- When password-change notifications are configured, the service may use the
-  provided transaction manager to wrap the password write and outbox enqueue in
-  one transaction.
-- `local/passwordreset.Service` keeps an outer transaction because it spans multiple
-  storages and side effects:
-  - password write
-  - reset-token deletion
-  - auth artifact invalidation
-  - outbox notifications
-- `local/emailchange.Service` is also a multi-step flow and therefore remains an
-  outer transaction/outbox workflow rather than a single writer call.
+- `user` and `admin` are realms, not subject kinds.
+- An unverified user can receive only a confirmation-scoped user session.
+- Admin and custom realms require a verified email and a successful host
+  `MembershipGate`; RBAC remains the permission boundary.
+- Realm and scope are persisted in the session and included in access claims.
+  Sensitive routes introspect server-side session state.
+- Suspending, disabling, resetting or changing a password, or confirming an
+  email change increments security version and revokes sessions and refresh
+  families in one PostgreSQL transaction.
+  Offline access tokens never live longer than five minutes.
 
-## Subject IDs
+## One-time state
 
-- Canonical auth relations must always use the real canonical `subject_id`.
-- Admin flows must not rebuild canonical IDs from numeric admin IDs when the UUID-backed
-  subject already exists.
-- Admin auth adapters must hard-fail when a canonical subject lacks `subject_id`.
-  Projection `uuid` / `PublicID` and numeric admin IDs are projection identifiers
-  only; they must not be used as runtime auth fallback identities.
+- Refresh, password-reset, OIDC code, and OIDC challenge paths are atomic
+  consume or rotate operations. A public `Get` followed by `Delete` is not an
+  acceptable single-use contract.
+- Refresh replay revokes its family and session and emits a security event.
+- OIDC refresh tokens also persist only selector plus HMAC digest; replay of a
+  rotated token revokes the complete OIDC family and emits an audit event.
+- Password reset is selector-based, contains no email in the URL, and updates
+  the credential, security version, reset record, sessions, and refresh
+  families in one transaction.
+- Email confirmation records are append-only. Wrong attempts commit before the
+  typed error returns. Issuance uses atomic rolling-window events.
+- Email-change records are separate from account verification, digest-only,
+  attempt-limited, and consumed in the same transaction as identifier update
+  and security-state revocation.
 
-## Host projections
+## Secret material
 
-- Host `users` and `administrations` rows are projections or memberships keyed
-  by canonical `subject_id`.
-- Projection provisioning must return a real canonical `subject_id`; otherwise
-  the canonical write plus projection write is considered failed and must be
-  retried or repaired outside the runtime auth path.
+- Passwords use versioned Argon2id PHC strings with at least 19 MiB, two
+  iterations, and one lane. Runtime policy is 8-128 Unicode code points plus a
+  common-password deny list.
+- Refresh and reset tokens are selector plus HMAC-protected secret. Email codes
+  are stored only as HMAC digests.
+- JWT, token-HMAC, and outbox-AEAD key rings are distinct and versioned. Runtime
+  construction rejects reused key material.
+- A raw reset token or email code may exist only in memory and inside an
+  AES-256-GCM encrypted event envelope. Delivery acknowledgement deletes the
+  ciphertext; retention cleanup removes undelivered expired envelopes.
+- Security audit attributes must never contain credentials, raw tokens, codes,
+  connection strings, or cryptographic key material.
+
+## SSO and OIDC
+
+- Email-based auto-linking requires the same normalized email to be verified by
+  both the IdP and the local identifier. Otherwise linking requires a recent,
+  introspected authenticated session.
+- An SSO-only account has no local credential row.
+- OIDC authorization code and challenge stores consume state atomically.
+- OIDC `email_verified` comes only from identifier verification state.

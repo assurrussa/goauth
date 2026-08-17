@@ -61,7 +61,7 @@ func TestBuildProbeTestImportsSupportedPackages(t *testing.T) {
 
 	require.Contains(t, content, `package probe`)
 	for _, pkg := range externalconsumer.SupportedPackages {
-		require.Contains(t, content, `_ "`+pkg+`"`)
+		require.Contains(t, content, `"`+pkg+`"`)
 	}
-	require.Contains(t, content, "func TestSupportedPackagesCompile")
+	require.Contains(t, content, "func TestRuntimeFiberOIDCAndRBACWiring")
 }

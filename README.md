@@ -1,51 +1,68 @@
 # goauth
 
-`goauth` is the standalone canonical auth/RBAC module for Go host applications.
-It owns transport-neutral auth behavior, canonical auth storage, canonical
-migrations, and subject-based RBAC.
+`goauth` is the canonical authentication, identity, OIDC, session, and RBAC
+Runtime for Go hosts using PostgreSQL, Redis, and Fiber.
 
-## Scope
+The currently published compatibility line is `v0.1.6`. The next breaking
+line is `v0.2.0`; consumers must migrate through an RC and explicitly reset
+development or test auth state. Existing v0.1 tags and migrations remain
+immutable.
 
-`goauth` owns:
+## Supported API
 
-- canonical auth reads and writes for subjects, local credentials, sessions,
-  refresh tokens, OIDC refresh tokens, password reset state, confirmation state,
-  email-change state, and SSO identity links;
-- reusable subject RBAC storage, services, use cases, cache, guards, and seeders
-  under `domain/roles`;
-- canonical migrations under `migrations/`;
-- transport-neutral services and integration kits used by host apps and
-  `goadmin`.
+The supported v0.2 imports are intentionally small:
 
-`goauth` does not own host HTTP UX, cookies, frontend policy, host projection
-tables, or app-specific permission catalogs.
+- `github.com/assurrussa/goauth`
+- `github.com/assurrussa/goauth/postgres`
+- `github.com/assurrussa/goauth/redis`
+- `github.com/assurrussa/goauth/fiber`
+- `github.com/assurrussa/goauth/oidc`
+- `github.com/assurrussa/goauth/oidc/provider`
+- `github.com/assurrussa/goauth/oidc/verifier`
+- `github.com/assurrussa/goauth/rbac`
+- `github.com/assurrussa/goauth/testkit`
 
-## Supported External Surface
+`reference/externalconsumer.SupportedPackages` is the machine-readable source
+of truth. The compile-checked v0.1 implementation is isolated under
+`internal/legacy`; Go's internal-package rule prevents consumers from using it.
 
-`reference/externalconsumer` is the source of truth for supported package
-imports. If a package is not listed in `SupportedPackages`, it is not stable
-public API even if it exists in the module.
+## Runtime contract
 
-New consumers should prefer `integration/*`, `core`, `shared`, `migrations`, and
-other packages listed in the manifest instead of direct implementation packages.
+`postgres.NewRuntime` assembles the canonical store, Argon2id password hashing,
+realm sessions, refresh families, password reset, email confirmation, identity
+links, trusted bootstrap, password/profile/email lifecycle, logout, audit
+persistence, cleanup, atomic rate limiting, and a digest-only OIDC refresh
+store. Optional OIDC and RBAC are assembled through Runtime methods.
+The host supplies:
 
-`integration/roles` lets hosts extend the canonical seed with permission
-definitions and idempotent role presets. A preset may reference only permissions
-from the combined seed catalog; built-in role slugs cannot be overridden.
+- a PostgreSQL connection or DSN;
+- distinct versioned keys for JWT signing, token HMAC, and outbox AES-256-GCM;
+- an encrypted event sink with delivery acknowledgement and retention cleanup;
+- a password-reset URL builder;
+- optional membership, claims, identifier, notification, and audit hooks.
 
-## Commands
+Fiber owns only JSON handlers, typed error mapping, and realm middleware. Hosts
+continue to own route prefixes, cookies, redirects, UI, projection tables, and
+application permission catalogs.
+
+See [docs/v0.2-runtime.md](docs/v0.2-runtime.md) for the model and
+[AUTH_INVARIANTS.md](AUTH_INVARIANTS.md) for security invariants.
+
+## Verification
 
 ```sh
-make
 make prepare
 make check
-make test-race
-make cover-html
-make release-readiness VERSION=v0.1.4
+make integration
+make vulnerability-check
 make externalconsumer-local
-make externalconsumer-published VERSION=v0.1.4
 ```
 
-See [RELEASING.md](RELEASING.md) for the release checklist and
-[AUTH_INVARIANTS.md](AUTH_INVARIANTS.md) for identity, projection, and subject
-ID invariants.
+For an RC or stable tag:
+
+```sh
+make release-readiness VERSION=v0.2.0-rc.1
+```
+
+The published clean-consumer probe runs an executable wiring example for the
+Runtime, Fiber, OIDC/Redis, and RBAC; it is not a blank-import check.
