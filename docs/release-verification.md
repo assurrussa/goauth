@@ -26,10 +26,11 @@ concurrency.
 
 ## Coverage and vulnerabilities
 
-`make coverage-check` builds an aggregate atomic profile and enforces at least
-80% statement coverage for the security-critical root, PostgreSQL, Redis,
-OIDC-provider, and RBAC packages. `make vulnerability-check` runs
-`govulncheck ./...`. A finding must be upgraded away or documented with
+`make check` and `make integration` enforce at least 80% statement coverage for
+the security-critical root, PostgreSQL, Redis, OIDC-provider, and RBAC packages.
+After both gates, `make coverage-aggregate` merges their atomic profiles for
+inspection. `make vulnerability-check` runs the version pinned in `go.mod` via
+`go tool govulncheck ./...`. A finding must be upgraded away or documented with
 reachability evidence before release; a database-only result is not silently
 treated as clean.
 

@@ -44,11 +44,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
-      - name: Install formatting and vulnerability tools
+      - name: Install formatting tools
         run: |
           go install mvdan.cc/gofumpt@v0.11.0
           go install github.com/daixiang0/gci@v0.14.0
-          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
       - name: Install golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:

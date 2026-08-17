@@ -102,7 +102,7 @@ integration-local: integration-up
 		exit $$status
 
 vulnerability-check:
-	govulncheck ./...
+	go tool govulncheck ./...
 
 externalconsumer-local:
 	go run ./cmd/externalconsumerprobe --local-path "$(CURDIR)" --go-mod-cache "$(GOMODCACHE)"
