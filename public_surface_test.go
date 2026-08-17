@@ -63,7 +63,8 @@ func TestV02PublicSurfaceCompiles(t *testing.T) {
 	_ = postgres.NewOIDCRefreshTokenStore
 	_ = postgres.Migrate
 	_ = postgres.Down
-	_ = postgres.ResetConfirmation
+	_ = postgres.ResetConfirmation("")
+	_ = postgres.ConfirmResetAuthState
 	_ = postgres.ErrLegacySchemaRequiresReset
 	_ = (*postgres.Runtime).OIDCProvider
 	_ = (*postgres.Runtime).OIDCRefreshTokens

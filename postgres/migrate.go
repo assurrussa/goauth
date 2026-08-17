@@ -8,10 +8,15 @@ import (
 	"fmt"
 )
 
-const (
-	schemaVersion     = 2
-	ResetConfirmation = "RESET GOAUTH AUTH STATE"
-)
+const schemaVersion = 2
+
+// ResetConfirmation is intentionally a distinct type so destructive schema
+// resets cannot receive an arbitrary runtime string by accident.
+type ResetConfirmation string
+
+// ConfirmResetAuthState must be passed explicitly to Down. Keeping the value
+// typed prevents ordinary runtime strings from crossing the destructive API.
+const ConfirmResetAuthState ResetConfirmation = "RESET GOAUTH AUTH STATE"
 
 var (
 	ErrLegacySchemaRequiresReset = errors.New("goauth v0.1 schema requires an explicit dev/test reset")
@@ -59,10 +64,11 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-// Down removes only the v0.2 schema and requires an exact confirmation string.
-// It is intended for isolated development and test databases.
-func Down(ctx context.Context, db *sql.DB, confirmation string) error {
-	if confirmation != ResetConfirmation {
+// Down removes canonical v0.1 or v0.2 auth state and requires an exact
+// confirmation value. It is intended for isolated development and test
+// databases; Migrate never calls it implicitly.
+func Down(ctx context.Context, db *sql.DB, confirmation ResetConfirmation) error {
+	if confirmation != ConfirmResetAuthState {
 		return ErrResetConfirmationRequired
 	}
 	if db == nil {
@@ -85,11 +91,26 @@ DROP TABLE IF EXISTS auth_oidc_refresh_families;
 DROP TABLE IF EXISTS auth_refresh_tokens;
 DROP TABLE IF EXISTS auth_refresh_families;
 DROP TABLE IF EXISTS auth_sessions;
+
+-- v0.1-only tables are intentionally removable only through this confirmed
+-- development/test reset path. Published v0.1 migrations remain immutable.
+DROP TABLE IF EXISTS auth_confirmation_codes;
+DROP TABLE IF EXISTS auth_confirmations;
+DROP TABLE IF EXISTS auth_email_change_requests;
+DROP TABLE IF EXISTS auth_external_identities;
+DROP TABLE IF EXISTS auth_password_reset_tokens;
+DROP TABLE IF EXISTS auth_sso_identity_links;
+DROP TABLE IF EXISTS role_hierarchy;
+DROP TABLE IF EXISTS role_permissions;
+DROP TABLE IF EXISTS roles;
+DROP TABLE IF EXISTS permissions;
+
 DROP TABLE IF EXISTS auth_local_credentials;
 DROP TABLE IF EXISTS auth_basic_profiles;
 DROP TABLE IF EXISTS auth_identifiers;
 DROP TABLE IF EXISTS auth_subjects;
-DROP TABLE IF EXISTS goauth_schema_version;`
+DROP TABLE IF EXISTS goauth_schema_version;
+DROP TABLE IF EXISTS goauth_goose_db_version;`
 
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
@@ -97,7 +118,7 @@ DROP TABLE IF EXISTS goauth_schema_version;`
 	}
 	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, statement); err != nil {
-		return fmt.Errorf("reset goauth v0.2 schema: %w", err)
+		return fmt.Errorf("reset goauth auth schema: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit goauth schema reset: %w", err)

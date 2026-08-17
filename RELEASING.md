@@ -18,11 +18,14 @@ schema and returns `postgres.ErrLegacySchemaRequiresReset` without deleting
 data. Only isolated development and test databases may call:
 
 ```go
-postgres.Down(ctx, db, postgres.ResetConfirmation)
+postgres.Down(ctx, db, postgres.ConfirmResetAuthState)
 ```
 
 There is no automatic v0.1 data conversion. A production-data migration would
 require a separately reviewed migration product and is outside this release.
+The reset is transactional and refuses to drop `auth_subjects` while host
+projection foreign keys still depend on it; each consumer reset must remove its
+own auth projections first.
 
 ## Local release gate
 

@@ -63,10 +63,21 @@ WHERE table_schema = 'public'
   AND constraint_type = 'FOREIGN KEY'`).Scan(&identifierForeignKeys))
 	require.Equal(t, 1, identifierForeignKeys)
 
-	require.NoError(t, postgres.Down(context.Background(), db, postgres.ResetConfirmation))
+	_, err := db.Exec(`CREATE TABLE host_auth_projection (
+subject_id UUID PRIMARY KEY REFERENCES auth_subjects(id)
+)`)
+	require.NoError(t, err)
+	require.Error(t, postgres.Down(context.Background(), db, postgres.ConfirmResetAuthState))
+	var subjectsAfterRejectedReset sql.NullString
+	require.NoError(t, db.QueryRow(`SELECT to_regclass('public.auth_subjects')::text`).Scan(&subjectsAfterRejectedReset))
+	require.True(t, subjectsAfterRejectedReset.Valid, "failed reset must roll back canonical schema drops")
+	_, err = db.Exec(`DROP TABLE host_auth_projection`)
+	require.NoError(t, err)
+
+	require.NoError(t, postgres.Down(context.Background(), db, postgres.ConfirmResetAuthState))
 	require.NoError(t, postgres.Migrate(context.Background(), db))
-	require.NoError(t, postgres.Down(context.Background(), db, postgres.ResetConfirmation))
-	_, err := db.Exec(`CREATE TABLE auth_subjects (id UUID PRIMARY KEY, email TEXT NOT NULL)`)
+	require.NoError(t, postgres.Down(context.Background(), db, postgres.ConfirmResetAuthState))
+	_, err = db.Exec(`CREATE TABLE auth_subjects (id UUID PRIMARY KEY, email TEXT NOT NULL)`)
 	require.NoError(t, err)
 	_, err = db.Exec(`INSERT INTO auth_subjects (id, email) VALUES ('123e4567-e89b-12d3-a456-426614174000', 'legacy@example.test')`)
 	require.NoError(t, err)
@@ -74,6 +85,22 @@ WHERE table_schema = 'public'
 	var legacyRows int
 	require.NoError(t, db.QueryRow(`SELECT count(*) FROM auth_subjects`).Scan(&legacyRows))
 	require.Equal(t, 1, legacyRows, "legacy detection must not delete data")
+	_, err = db.Exec(`
+CREATE TABLE auth_confirmation_codes (id BIGSERIAL PRIMARY KEY);
+CREATE TABLE auth_external_identities (id BIGSERIAL PRIMARY KEY);
+CREATE TABLE role_hierarchy (id BIGSERIAL PRIMARY KEY);
+CREATE TABLE goauth_goose_db_version (id BIGSERIAL PRIMARY KEY);`)
+	require.NoError(t, err)
+	require.NoError(t, postgres.Down(context.Background(), db, postgres.ConfirmResetAuthState))
+	for _, table := range []string{
+		"auth_subjects", "auth_confirmation_codes", "auth_external_identities",
+		"role_hierarchy", "goauth_goose_db_version",
+	} {
+		var relation sql.NullString
+		require.NoError(t, db.QueryRow(`SELECT to_regclass($1)::text`, "public."+table).Scan(&relation))
+		require.False(t, relation.Valid, table)
+	}
+	require.NoError(t, postgres.Migrate(context.Background(), db))
 
 	resetSchema(t, db)
 	_, err = db.Exec(`CREATE TABLE auth_subjects (id UUID PRIMARY KEY)`)
@@ -1142,8 +1169,8 @@ func TestPostgresAdapterValidationAndDSNOwnership(t *testing.T) {
 	require.EqualError(t, err, "PostgreSQL database is required")
 	_, err = postgres.NewRuntime(postgres.Config{})
 	require.EqualError(t, err, "PostgreSQL DB or DSN is required")
-	require.ErrorIs(t, postgres.Down(context.Background(), nil, "wrong"), postgres.ErrResetConfirmationRequired)
-	require.Error(t, postgres.Down(context.Background(), nil, postgres.ResetConfirmation))
+	require.ErrorIs(t, postgres.Down(context.Background(), nil, postgres.ResetConfirmation("wrong")), postgres.ErrResetConfirmationRequired)
+	require.Error(t, postgres.Down(context.Background(), nil, postgres.ConfirmResetAuthState))
 
 	db := integrationDB(t)
 	runtime, _, _ := integrationRuntime(t, db)
@@ -1561,7 +1588,7 @@ func integrationDB(t *testing.T) *sql.DB {
 
 func resetSchema(t *testing.T, db *sql.DB) {
 	t.Helper()
-	require.NoError(t, postgres.Down(context.Background(), db, postgres.ResetConfirmation))
+	require.NoError(t, postgres.Down(context.Background(), db, postgres.ConfirmResetAuthState))
 }
 
 func keyRing(t *testing.T, id string, fill byte) goauth.KeyRing {
