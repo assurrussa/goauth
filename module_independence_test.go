@@ -19,7 +19,15 @@ func TestModuleDoesNotDependOnGoadmin(t *testing.T) {
 
 	err = filepath.WalkDir(".", func(path string, d os.DirEntry, walkErr error) error {
 		require.NoError(t, walkErr)
-		if d.IsDir() || filepath.Ext(path) != ".go" {
+		if d.IsDir() {
+			switch d.Name() {
+			case ".cache", ".git", ".go-cache", "tmp", "vendor":
+				return filepath.SkipDir
+			default:
+				return nil
+			}
+		}
+		if filepath.Ext(path) != ".go" {
 			return nil
 		}
 		if path == "module_independence_test.go" {

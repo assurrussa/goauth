@@ -3,8 +3,8 @@
 `goauth` is the canonical authentication, identity, OIDC, session, and RBAC
 Runtime for Go hosts using PostgreSQL, Redis, and Fiber.
 
-The currently published compatibility line is `v0.1.6`. The next breaking
-line is `v0.2.0`; consumers must migrate through an RC and explicitly reset
+The current stable compatibility line is `v0.2.0`. The frozen v0.1 line ends
+at `v0.1.6`; consumers crossing that boundary must explicitly reset isolated
 development or test auth state. Existing v0.1 tags and migrations remain
 immutable.
 
@@ -45,8 +45,9 @@ Fiber owns only JSON handlers, typed error mapping, and realm middleware. Hosts
 continue to own route prefixes, cookies, redirects, UI, projection tables, and
 application permission catalogs.
 
-See [docs/v0.2-runtime.md](docs/v0.2-runtime.md) for the model and
-[AUTH_INVARIANTS.md](AUTH_INVARIANTS.md) for security invariants.
+See [docs/v0.2-runtime.md](docs/v0.2-runtime.md) for the model,
+[docs/compatibility.md](docs/compatibility.md) for the verified consumer line,
+and [AUTH_INVARIANTS.md](AUTH_INVARIANTS.md) for security invariants.
 
 ## Verification
 
@@ -58,10 +59,10 @@ make vulnerability-check
 make externalconsumer-local
 ```
 
-For an RC or stable tag:
+For the current stable tag:
 
 ```sh
-make release-readiness VERSION=v0.2.0-rc.1
+make release-readiness VERSION=v0.2.0
 ```
 
 The published clean-consumer probe runs an executable wiring example for the

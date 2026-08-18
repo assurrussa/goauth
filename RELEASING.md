@@ -4,9 +4,10 @@ The module path is `github.com/assurrussa/goauth`.
 
 ## Version state
 
-- Current published compatibility baseline: `v0.1.6`.
-- Next release train: `v0.2.0-rc.1`, subsequent immutable RCs as needed, then
-  `v0.2.0` on the exact commit of the last RC that passed every consumer gate.
+- Current published stable baseline: `v0.2.0` at `cd8bb98`.
+- `v0.2.0-rc.1` and `v0.2.0` resolve to the same fully verified commit. Both
+  tags are immutable; future fixes require a new semver tag.
+- The frozen v0.1 compatibility line ends at `v0.1.6`.
 - Never move or replace an existing tag. Never publish a committed local
   `replace` directive.
 - Publication is not production deployment.
@@ -44,21 +45,22 @@ test pass, the critical-package coverage floor, the exact public API manifest,
 and the runnable local clean-consumer probe. `make integration` requires the
 PostgreSQL and Redis test services described in `compose.integration.yml`.
 
-## RC sequence
+## RC sequence for a future release train
 
 1. Create the RC tag from a clean commit and push it.
 2. Run the published-module probe:
 
    ```sh
-   make release-readiness VERSION=v0.2.0-rc.1
+   make release-readiness VERSION=<candidate-tag>
    ```
 
 3. Test consumer branches in dependency order: `goadmin`, `site/backend`,
    OIDC demos, `platformctl` generated host, `vaultkey`, `gocms`, `gowebhooks`,
    and the second host.
 4. Fix defects in a new commit and publish a new RC; do not move the prior RC.
-5. Put `v0.2.0` on the exact fully verified RC commit, then publish compatible
-   `goadmin` and `platformctl` versions and pin applications to stable tags.
+5. Put the stable tag on the exact fully verified RC commit, then publish
+   compatible `goadmin` and `platformctl` versions and pin applications to
+   stable tags.
 
 ## Consumer evidence
 
@@ -70,5 +72,7 @@ Each consumer must record:
 - explicit development/test schema reset evidence where applicable;
 - any remaining manual or production smoke separately from local verification.
 
-After stable adoption, update the compatibility matrix and shared platform
-wiki. Do not claim a live deployment from tags or local gates alone.
+The verified v0.2 release train is recorded in
+[docs/compatibility.md](docs/compatibility.md). Keep that matrix and the shared
+platform wiki current after stable adoption. Do not claim a live deployment
+from tags or local gates alone.

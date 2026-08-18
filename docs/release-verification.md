@@ -38,8 +38,8 @@ treated as clean.
 
 ```sh
 make externalconsumer-local
-make externalconsumer-published VERSION=v0.2.0-rc.1
-make release-readiness VERSION=v0.2.0-rc.1
+make externalconsumer-published VERSION=v0.2.0
+make release-readiness VERSION=v0.2.0
 ```
 
 The probe creates a temporary module without a committed replace for published
