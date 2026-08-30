@@ -48,6 +48,15 @@ test pass, the critical-package coverage floor, the exact public API manifest,
 and the runnable local clean-consumer probe. `make integration` requires the
 PostgreSQL and Redis test services described in `compose.integration.yml`.
 
+## GitHub Actions prerequisite
+
+The repository must define `PRIVATE_GO_MODULES_TOKEN` as an Actions repository
+secret. Use a dedicated least-privilege token with read-only Contents access to
+the private `github.com/assurrussa/*` modules required by `go.mod`; do not use a
+deployment or package-publishing credential. GitHub does not pass repository
+secrets to workflows opened from forks, so those pull requests cannot run the
+private-module gates without a separately reviewed trust model.
+
 ## RC sequence for a future release train
 
 1. Create the RC tag from a clean commit and push it.

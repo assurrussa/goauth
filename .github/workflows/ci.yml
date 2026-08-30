@@ -40,6 +40,10 @@ jobs:
       GOAUTH_TEST_REDIS_ADDRESS: 127.0.0.1:6379
     steps:
       - uses: actions/checkout@v7
+      - name: Require private Go module token
+        env:
+          PRIVATE_GO_MODULES_TOKEN: ${{ secrets.PRIVATE_GO_MODULES_TOKEN }}
+        run: test -n "$PRIVATE_GO_MODULES_TOKEN"
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -54,10 +58,19 @@ jobs:
           version: v2.12.2
           install-only: true
       - name: Canonical unit and public API gate
+        env: &private-go
+          GOPRIVATE: github.com/assurrussa/*
+          GONOSUMDB: github.com/assurrussa/*
+          GIT_CONFIG_COUNT: 1
+          GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.PRIVATE_GO_MODULES_TOKEN }}@github.com/.insteadOf
+          GIT_CONFIG_VALUE_0: https://github.com/
         run: make check
       - name: PostgreSQL and Redis integration gate
+        env: *private-go
         run: make integration
       - name: Aggregate coverage profile
+        env: *private-go
         run: make coverage-aggregate
       - name: Reachable vulnerability gate
+        env: *private-go
         run: make vulnerability-check
