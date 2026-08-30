@@ -78,6 +78,7 @@ func (subjectWriterStub) UpdatePassword(context.Context, authcore.Subject, strin
 type passwordResetStoreStub struct{}
 
 func (passwordResetStoreStub) Upsert(context.Context, authcore.PasswordResetToken) error { return nil }
+
 func (passwordResetStoreStub) GetByEmail(context.Context, string) (authcore.PasswordResetToken, error) {
 	return authcore.PasswordResetToken{}, nil
 }

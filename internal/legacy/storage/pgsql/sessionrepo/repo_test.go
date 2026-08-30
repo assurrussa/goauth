@@ -183,7 +183,9 @@ func (db *fakeSessionDB) Execx(ctx context.Context, op string, sqlizer outbox.St
 func (db *fakeSessionDB) Queryx(context.Context, string, outbox.StoragePgsqlSqlizer) (pgx.Rows, error) {
 	return nil, errors.New("unexpected Queryx call")
 }
+
 func (db *fakeSessionDB) SendBatch(context.Context, string, *pgx.Batch) pgx.BatchResults { return nil }
+
 func (db *fakeSessionDB) CopyFrom(context.Context, string, pgx.Identifier, []string, pgx.CopyFromSource) (int64, error) {
 	return 0, errors.New("unexpected CopyFrom call")
 }

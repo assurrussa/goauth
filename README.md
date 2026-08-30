@@ -3,8 +3,8 @@
 `goauth` is the canonical authentication, identity, OIDC, session, and RBAC
 Runtime for Go hosts using PostgreSQL, Redis, and Fiber.
 
-The current stable compatibility line is `v0.2.0`. The frozen v0.1 line ends
-at `v0.1.6`; consumers crossing that boundary must explicitly reset isolated
+The current stable compatibility line is `v0.2.1`. The frozen v0.1 line ends
+at `v0.1.7`; consumers crossing that boundary must explicitly reset isolated
 development or test auth state. Existing v0.1 tags and migrations remain
 immutable.
 
@@ -62,7 +62,7 @@ make externalconsumer-local
 For the current stable tag:
 
 ```sh
-make release-readiness VERSION=v0.2.0
+make release-readiness VERSION=v0.2.1
 ```
 
 The published clean-consumer probe runs an executable wiring example for the

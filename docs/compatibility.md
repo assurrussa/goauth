@@ -2,7 +2,12 @@
 
 ## Stable v0.2 release train
 
-The verified authentication platform line is:
+The current module release is `goauth v0.2.1`. It is a backward-compatible
+security and dependency update over `v0.2.0`; the supported package manifest is
+unchanged. The coordinated downstream target is `goadmin v0.5.0` and
+`site v0.0.30`, verified and published separately after this module release.
+
+The previous `v0.2.0` platform verification baseline was:
 
 | Component | Published version or branch | Verified commit |
 | --- | --- | --- |
@@ -14,9 +19,10 @@ The verified authentication platform line is:
 | gocms | `tasks/goauth-v0.2-consumer` | `8f59727` |
 | gowebhooks | `tasks/goauth-v0.2-consumer` | `57abb66` |
 
-The platformctl BOM is `cms-platform-2026-08-18.1`. Generated hosts and direct
-consumers pin `goauth v0.2.0` and `goadmin v0.5.0-alpha.1` without committed
-local `replace` directives.
+The platformctl BOM for that historical baseline was
+`cms-platform-2026-08-18.1`. Generated hosts and direct consumers pinned
+`goauth v0.2.0` and `goadmin v0.5.0-alpha.1` without committed local `replace`
+directives.
 
 ## Compatibility guarantees
 

@@ -4,10 +4,10 @@ go 1.26.6
 
 require (
 	github.com/Masterminds/squirrel v1.5.4
-	github.com/assurrussa/gonotify v0.3.10
+	github.com/assurrussa/gonotify v0.3.11
 	github.com/assurrussa/goshared v1.0.3
-	github.com/assurrussa/outbox v0.10.2
-	github.com/assurrussa/outbox/backends/pgsql v0.10.2
+	github.com/assurrussa/outbox v0.12.0
+	github.com/assurrussa/outbox/backends/pgsql v0.12.0
 	github.com/georgysavva/scany/v2 v2.1.4
 	github.com/gofiber/fiber/v3 v3.4.0
 	github.com/golang-jwt/jwt/v5 v5.3.1

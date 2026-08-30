@@ -115,6 +115,54 @@ func TestPasswordResetIsConsumedOnceWithConcurrentPasswords(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestUnverifiedAccountCanResetPasswordWithoutBecomingVerified(t *testing.T) {
+	t.Parallel()
+	fixture := newFixture(t)
+	registered := registerAccount(t, fixture, "unverified.reset@example.test")
+	require.False(t, registered.Account.EmailVerified())
+
+	eventsBefore := len(fixture.Events.Events())
+	require.NoError(t, fixture.Runtime.RequestPasswordReset(context.Background(), "unverified.reset@example.test"))
+	events := fixture.Events.Events()
+	require.Len(t, events, eventsBefore+1)
+	require.Equal(t, "password_reset", events[len(events)-1].Type)
+	notification, err := testkit.DecryptNotification(fixture.EnvelopeKeys, events[len(events)-1].Envelope)
+	require.NoError(t, err)
+	resetURL, err := url.Parse(notification.Data["reset_url"])
+	require.NoError(t, err)
+	resetToken := resetURL.Query().Get("token")
+	require.NotEmpty(t, resetToken)
+
+	const replacementPassword = "Replacement-Unverified-1"
+	require.NoError(t, fixture.Runtime.ResetPassword(context.Background(), resetToken, replacementPassword))
+	require.ErrorIs(
+		t,
+		fixture.Runtime.ResetPassword(context.Background(), resetToken, "Replacement-Unverified-2"),
+		goauth.ErrResetAlreadyUsed,
+	)
+	_, err = fixture.Runtime.Login(
+		context.Background(),
+		loginRequest("unverified.reset@example.test", testPassword, goauth.RealmUser),
+	)
+	require.ErrorIs(t, err, goauth.ErrInvalidCredentials)
+	login, err := fixture.Runtime.Login(
+		context.Background(),
+		loginRequest("unverified.reset@example.test", replacementPassword, goauth.RealmUser),
+	)
+	require.NoError(t, err)
+	require.False(t, login.Account.EmailVerified())
+	require.Equal(t, goauth.SessionScopeConfirmation, login.Tokens.Session.Scope)
+}
+
+func TestPasswordResetDoesNotEmitForMissingOrInvalidEmail(t *testing.T) {
+	t.Parallel()
+	fixture := newFixture(t)
+
+	require.NoError(t, fixture.Runtime.RequestPasswordReset(context.Background(), "missing@example.test"))
+	require.NoError(t, fixture.Runtime.RequestPasswordReset(context.Background(), invalidTestEmail))
+	require.Empty(t, fixture.Events.Events())
+}
+
 func TestEmailChallengePersistsFiveWrongAttemptsAndBlocksSixth(t *testing.T) {
 	t.Parallel()
 	fixture := newFixture(t)

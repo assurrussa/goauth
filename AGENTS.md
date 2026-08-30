@@ -94,9 +94,9 @@ Important invariants:
   vet, lint, and the local consumer probe.
 - Explicit stress rerun: `make test-race`.
 - Explicit HTML coverage artifact: `make cover-html`.
-- Published release readiness: `make release-readiness VERSION=v0.2.0-rc.1`
+- Published release readiness: `make release-readiness VERSION=v0.2.1`
 - Local clean-consumer probe: `make externalconsumer-local`
-- Published clean-consumer probe: `make externalconsumer-published VERSION=v0.2.0-rc.1`
+- Published clean-consumer probe: `make externalconsumer-published VERSION=v0.2.1`
 
 The Makefile exports repo-local `GOCACHE`, `GOMODCACHE`, and `GOPATH` under
 `.go-cache/`. Prefer Makefile targets for verification. If running raw `go`
@@ -118,8 +118,8 @@ once after a coherent batch; do not stack it with `make test`,
 Do not rewrite existing tags. If `make` changes generated code, formatting,
 `go.mod`, or `go.sum`, commit those changes and publish a new semver tag.
 
-Current published compatibility baseline is `v0.1.6`; the active breaking
-release train starts at `v0.2.0-rc.1`.
+The frozen compatibility baseline ends at `v0.1.7`; the active breaking
+release train is `v0.2`, with `v0.2.1` as the current release.
 
 Before claiming release readiness:
 

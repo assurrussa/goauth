@@ -77,7 +77,9 @@ func (db *fakePasswordResetDB) ScanOnex(context.Context, string, any, outbox.Sto
 func (db *fakePasswordResetDB) ScanAllx(context.Context, string, any, outbox.StoragePgsqlSqlizer) error {
 	return errors.New("unexpected ScanAllx call")
 }
+
 func (db *fakePasswordResetDB) QueryRow(context.Context, string, string, ...any) pgx.Row { return nil }
+
 func (db *fakePasswordResetDB) Query(context.Context, string, string, ...any) (pgx.Rows, error) {
 	return nil, errors.New("unexpected Query call")
 }

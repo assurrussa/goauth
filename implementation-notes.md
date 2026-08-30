@@ -71,3 +71,12 @@
 - The stable RBAC facade includes hierarchy-free management operations needed
   by host admin UIs. PostgreSQL role and permission replacement is
   transactional, while presentation DTOs remain host-owned.
+
+## v0.2.1 canonical master integration (2026-08-30)
+
+- Merged the frozen v0.1.7 maintenance line into the v0.2 Runtime line without
+  changing the v0.2 schema or supported package manifest.
+- Aligned `gonotify` to `v0.3.11` and Outbox core/PostgreSQL to `v0.12.0`.
+- Locked the enumeration-safe recovery contract: an active unverified local
+  account receives a one-time reset notification, but a successful password
+  reset does not verify its email or promote its confirmation-scoped session.

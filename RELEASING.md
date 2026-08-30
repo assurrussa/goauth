@@ -4,10 +4,13 @@ The module path is `github.com/assurrussa/goauth`.
 
 ## Version state
 
-- Current published stable baseline: `v0.2.0` at `cd8bb98`.
+- Current release version: `v0.2.1`; previous stable baseline: `v0.2.0` at
+  `cd8bb98`.
 - `v0.2.0-rc.1` and `v0.2.0` resolve to the same fully verified commit. Both
   tags are immutable; future fixes require a new semver tag.
-- The frozen v0.1 compatibility line ends at `v0.1.6`.
+- The frozen v0.1 compatibility line ends at `v0.1.7`.
+- `v0.2.1` aligns `gonotify` to `v0.3.11` and Outbox core/PostgreSQL to
+  `v0.12.0` without changing the supported package manifest or v0.2 schema.
 - Never move or replace an existing tag. Never publish a committed local
   `replace` directive.
 - Publication is not production deployment.
