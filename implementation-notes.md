@@ -45,3 +45,13 @@
 - Kept five-run race stress and HTML coverage as explicit diagnostics so
   investigations and release policy can still request them without charging
   every normal verification run.
+
+## Maintenance dependency alignment (2026-08-30)
+
+- Prepared `v0.1.7` from the `master` maintenance line without merging or
+  modifying the separate `v0.2` line.
+- Aligned `gonotify` to `v0.3.11` and both Outbox core and PostgreSQL backend
+  modules to `v0.12.0`; no goauth runtime, migration, or supported-package
+  contract changed.
+- Kept publication exact-versioned because the already published `v0.2.0`
+  remains the version selected by `@latest`.

@@ -141,7 +141,9 @@ func (db *fakeDB) Getx(ctx context.Context, op string, dest any, sqlizer outbox.
 	}
 	return db.getxFn(ctx, op, dest, sqlizer)
 }
+
 func (db *fakeDB) Selectx(context.Context, string, any, outbox.StoragePgsqlSqlizer) error { return nil }
+
 func (db *fakeDB) Execx(ctx context.Context, op string, sqlizer outbox.StoragePgsqlSqlizer) (pgconn.CommandTag, error) {
 	if db.execxFn == nil {
 		return pgconn.NewCommandTag(""), nil

@@ -2,7 +2,8 @@
 
 ## Baseline
 
-Current verified baseline: `v0.1.4`.
+Current verified baseline: `v0.1.6`. The next maintenance candidate is
+`v0.1.7`.
 
 Do not rewrite existing tags. If preparation or verification changes generated
 files, formatting, `go.mod`, or `go.sum`, commit those changes and release a new
@@ -25,10 +26,13 @@ This runs preparation and verification:
 - `go mod tidy -diff`
 - `go vet ./...`
 - `golangci-lint run`
-- `go test ./...`
-- `go test -race -count=5 ./...`
-- coverage HTML generation
+- non-mutating `gofumpt` and `gci` checks
+- one `go test -race -cover -count=1 ./...` pass
 - local external-consumer probe
+
+Repeated race stress and HTML coverage are explicit diagnostics through
+`make test-race` and `make cover-html`; do not stack them onto an unchanged
+successful `make check` run.
 
 For non-mutating verification after preparation:
 
@@ -47,13 +51,13 @@ make externalconsumer-local
 Published module probe:
 
 ```sh
-make externalconsumer-published VERSION=v0.1.4
+make externalconsumer-published VERSION=v0.1.7
 ```
 
 Full release-readiness gate:
 
 ```sh
-make release-readiness VERSION=v0.1.4
+make release-readiness VERSION=v0.1.7
 ```
 
 `cmd/externalconsumerprobe` creates a temporary Go module, imports the packages
@@ -83,11 +87,11 @@ go test ./...
 After publishing a new `goauth` tag, known host repositories should remove local
 `replace` directives and verify against the published module version.
 
-For `/Users/amir/dev/projects/my/site`, `RELEASING.md` currently documents:
+For a sibling `site` checkout, `RELEASING.md` currently documents:
 
 ```sh
-cd /Users/amir/dev/projects/my/site
-task platform:published-check GOAUTH_VERSION=v0.1.4 GOADMIN_VERSION=v0.2.3
+cd ../site
+task platform:published-check GOAUTH_VERSION=v0.1.7 GOADMIN_VERSION=v0.4.0-alpha.14
 ```
 
 Treat local `replace` success as sibling-development evidence only. It is not

@@ -41,9 +41,9 @@ make prepare
 make check
 make test-race
 make cover-html
-make release-readiness VERSION=v0.1.4
+make release-readiness VERSION=v0.1.7
 make externalconsumer-local
-make externalconsumer-published VERSION=v0.1.4
+make externalconsumer-published VERSION=v0.1.7
 ```
 
 See [RELEASING.md](RELEASING.md) for the release checklist and
