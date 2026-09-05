@@ -162,36 +162,32 @@ and release gates. Read this repo's `AGENTS.md`, `README.md`, `docs/`
 or `reference/`, task files, code, tests, and configs before shared wiki
 pages.
 
-When shared context is available, read these paths from the resolved wiki
-root:
-- `streams/wiki/index.md`
-- `streams/wiki/glossary.md`
+When shared context is needed, follow `streams/AGENTS.md` and its query route.
+Reuse already loaded root rules, PII policy and glossary. Open the known hub
+and only the topic relevant to the task:
+
 - `streams/wiki/platforms/goauth.md`
+
+For integration work, open only the affected neighbour hub:
+
 - `streams/wiki/platforms/goadmin.md`
 
+Use `streams/wiki/index.md` only to locate an unknown area or answer an overview
+question. This is a task router, not a mandatory list of wiki pages.
+
 If local verified docs/code conflict with the shared wiki, treat the wiki
-as stale and update the relevant platform page after verification. Do not
+as stale. When documentation upkeep is in scope, update the relevant
+platform page after verification. Do not
 copy whole README files into wiki; keep shared pages concise and
 contract-focused.
 
 ## Dependency Documentation
 
-When the task asks about a library, framework, SDK, API, CLI tool, or cloud
-service, fetch current docs with the Context7 CLI before answering or changing
-library-specific code:
-
-```sh
-npx ctx7@latest library <name> "<user question>"
-npx ctx7@latest docs <libraryId> "<user question>"
-```
-
-Use the official library name and do not run more than three Context7 commands
-per question. If the command fails with DNS or network errors inside the
-sandbox, rerun it outside the sandbox with approval. If it fails because of
-quota, tell the user to run `npx ctx7@latest login` or set `CONTEXT7_API_KEY`.
-
-Do not use Context7 for general refactors, scripts from scratch, business-logic
-debugging, code review, or general programming concepts.
+Use `$find-docs` for version-sensitive library, framework, SDK, API and CLI
+questions. It selects an available documentation tool, resolves the version and
+owns query limits and fallback. Reuse applicable docs already fetched in this
+task. Ordinary refactors, scripts, business logic and reviews need no lookup
+unless an external API contract is the unresolved question.
 
 ## Working Tree Discipline
 
