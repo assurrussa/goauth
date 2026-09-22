@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	logger "github.com/assurrussa/gologger"
 	rcu2 "github.com/assurrussa/goshared/pkg/cache/rcu"
-	"github.com/assurrussa/goshared/pkg/logger"
 
 	"github.com/assurrussa/goauth/internal/legacy/domain/roles/model"
 	listallroles "github.com/assurrussa/goauth/internal/legacy/domain/roles/usecases/query/list_all_roles"

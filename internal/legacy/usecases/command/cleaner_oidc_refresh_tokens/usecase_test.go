@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/assurrussa/goshared/pkg/logger"
+	logger "github.com/assurrussa/gologger"
 	"github.com/stretchr/testify/require"
 
 	cleaneroidcrefreshtokens "github.com/assurrussa/goauth/internal/legacy/usecases/command/cleaner_oidc_refresh_tokens"

@@ -4,7 +4,7 @@
 
 GO_MODULE := $(shell awk '$$1 == "module" { print $$2; exit }' go.mod)
 GO_FILES := $(shell find . -type f -name '*.go' -not -path './.cache/*' -not -path './.go-cache/*' -not -path './tmp/*' -not -path './vendor/*')
-VERSION ?= v0.2.1
+VERSION ?= v0.3.0
 GOCACHE ?= $(CURDIR)/.go-cache/gocache
 GOMODCACHE ?= $(CURDIR)/.go-cache/gomodcache
 GOPATH ?= $(CURDIR)/.go-cache/gopath

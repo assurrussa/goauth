@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	logger3 "github.com/assurrussa/goshared/pkg/logger"
+	logger3 "github.com/assurrussa/gologger"
 
 	authcore "github.com/assurrussa/goauth/internal/legacy/core"
 	outbox "github.com/assurrussa/goauth/internal/legacy/infrastructure/outbox"

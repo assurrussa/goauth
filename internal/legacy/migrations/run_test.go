@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	logger "github.com/assurrussa/goshared/pkg/logger"
+	logger "github.com/assurrussa/gologger"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 

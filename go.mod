@@ -1,11 +1,14 @@
 module github.com/assurrussa/goauth
 
-go 1.26.6
+go 1.27.0
+
+toolchain go1.27.1
 
 require (
 	github.com/Masterminds/squirrel v1.5.4
-	github.com/assurrussa/gonotify v0.3.11
-	github.com/assurrussa/goshared v1.0.3
+	github.com/assurrussa/gologger v0.1.0
+	github.com/assurrussa/gonotify v0.4.0
+	github.com/assurrussa/goshared v1.1.0
 	github.com/assurrussa/outbox v0.12.0
 	github.com/assurrussa/outbox/backends/pgsql v0.12.0
 	github.com/georgysavva/scany/v2 v2.1.4
@@ -24,9 +27,7 @@ require (
 require (
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/andybalholm/brotli v1.2.2 // indirect
-	github.com/bluele/gcache v0.0.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/cornelk/hashmap v1.0.8 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
@@ -50,10 +51,6 @@ require (
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/samber/lo v1.53.0 // indirect
-	github.com/samber/slog-common v0.22.0 // indirect
-	github.com/samber/slog-multi v1.8.0 // indirect
-	github.com/samber/slog-sampling v1.6.0 // indirect
 	github.com/sethvargo/go-retry v0.3.0 // indirect
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect

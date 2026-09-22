@@ -93,6 +93,7 @@ linters:
             - github.com/assurrussa/outbox
             - github.com/assurrussa/goshared
             - github.com/assurrussa/gonotify
+            - github.com/assurrussa/gologger
             - github.com/stretchr/testify
             - github.com/Masterminds/squirrel
             - github.com/georgysavva/scany/v2

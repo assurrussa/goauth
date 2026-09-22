@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/assurrussa/goshared/pkg/logger"
+	logger "github.com/assurrussa/gologger"
 
 	authcore "github.com/assurrussa/goauth/internal/legacy/core"
 )

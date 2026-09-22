@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	logger "github.com/assurrussa/goshared/pkg/logger"
+	logger "github.com/assurrussa/gologger"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/assurrussa/goauth/internal/legacy/infrastructure/outbox"

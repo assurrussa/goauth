@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/assurrussa/goshared/pkg/logger"
+	logger "github.com/assurrussa/gologger"
 	"github.com/jackc/pgx/v5"
 
 	authcore "github.com/assurrussa/goauth/internal/legacy/core"

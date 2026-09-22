@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/assurrussa/goshared/pkg/logger"
+	logger "github.com/assurrussa/gologger"
 
 	authcore "github.com/assurrussa/goauth/internal/legacy/core"
 	"github.com/assurrussa/goauth/internal/legacy/local/confirmation"

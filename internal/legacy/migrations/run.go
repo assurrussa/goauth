@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"sync"
 
-	logger "github.com/assurrussa/goshared/pkg/logger"
+	logger "github.com/assurrussa/gologger"
 	_ "github.com/jackc/pgx/v5/stdlib" // pgx driver
 	"github.com/pressly/goose/v3"
 

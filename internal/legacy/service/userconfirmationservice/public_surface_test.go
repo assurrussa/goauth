@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/assurrussa/goshared/pkg/logger"
+	logger "github.com/assurrussa/gologger"
 	"github.com/stretchr/testify/require"
 
 	authcore "github.com/assurrussa/goauth/internal/legacy/core"

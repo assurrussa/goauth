@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/assurrussa/goshared/pkg/logger"
+	logger "github.com/assurrussa/gologger"
 	"github.com/assurrussa/goshared/pkg/sharedtypes"
 	"github.com/assurrussa/goshared/pkg/tests"
 	"github.com/stretchr/testify/assert"

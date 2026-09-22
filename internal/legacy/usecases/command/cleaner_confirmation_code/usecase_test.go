@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/assurrussa/goshared/pkg/logger"
+	logger "github.com/assurrussa/gologger"
 	"github.com/assurrussa/goshared/pkg/tests"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"

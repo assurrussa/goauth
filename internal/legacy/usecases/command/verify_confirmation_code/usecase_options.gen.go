@@ -5,7 +5,7 @@ package verifyconfirmationcode
 import (
 	fmt461e464ebed9 "fmt"
 
-	logger3 "github.com/assurrussa/goshared/pkg/logger"
+	logger3 "github.com/assurrussa/gologger"
 	errors461e464ebed9 "github.com/kazhuravlev/options-gen/pkg/errors"
 	validator461e464ebed9 "github.com/kazhuravlev/options-gen/pkg/validator"
 

@@ -3,7 +3,7 @@ package localjwt
 import (
 	"context"
 
-	"github.com/assurrussa/goshared/pkg/logger"
+	logger "github.com/assurrussa/gologger"
 
 	authcore "github.com/assurrussa/goauth/internal/legacy/core"
 	cleanerconfirmationcode "github.com/assurrussa/goauth/internal/legacy/usecases/command/cleaner_confirmation_code"

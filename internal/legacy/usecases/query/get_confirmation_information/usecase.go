@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/assurrussa/goshared/pkg/logger"
+	logger "github.com/assurrussa/gologger"
 	"github.com/assurrussa/goshared/pkg/pointer"
 
 	authcore "github.com/assurrussa/goauth/internal/legacy/core"

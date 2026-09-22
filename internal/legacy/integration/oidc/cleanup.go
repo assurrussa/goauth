@@ -3,7 +3,7 @@ package oidc
 import (
 	"context"
 
-	"github.com/assurrussa/goshared/pkg/logger"
+	logger "github.com/assurrussa/gologger"
 
 	authcore "github.com/assurrussa/goauth/internal/legacy/core"
 	cleaneroidcrefreshtokens "github.com/assurrussa/goauth/internal/legacy/usecases/command/cleaner_oidc_refresh_tokens"

@@ -40,7 +40,7 @@ func (c Config) BuildGoMod() (string, error) {
 	var builder strings.Builder
 	_, _ = builder.WriteString("module ")
 	_, _ = builder.WriteString(cfg.ProbeModule)
-	_, _ = builder.WriteString("\n\ngo 1.26.6\n\ntoolchain go1.26.6\n\nrequire ")
+	_, _ = builder.WriteString("\n\ngo 1.27.0\n\ntoolchain go1.27.1\n\nrequire ")
 	_, _ = builder.WriteString(cfg.ModulePath)
 	_, _ = builder.WriteString(" ")
 	_, _ = builder.WriteString(cfg.targetVersion())

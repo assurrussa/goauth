@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/assurrussa/goshared/pkg/logger"
+	logger "github.com/assurrussa/gologger"
 	"github.com/stretchr/testify/require"
 
 	"github.com/assurrussa/goauth/internal/legacy/domain/roles/model"

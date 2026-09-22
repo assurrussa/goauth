@@ -3,7 +3,7 @@ package roles
 import (
 	"context"
 
-	"github.com/assurrussa/goshared/pkg/logger"
+	logger "github.com/assurrussa/gologger"
 
 	rcucacheguard "github.com/assurrussa/goauth/internal/legacy/domain/roles/cache/rcu/guard"
 	"github.com/assurrussa/goauth/internal/legacy/domain/roles/model"
