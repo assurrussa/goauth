@@ -5,6 +5,8 @@ github.com/Masterminds/squirrel v1.5.4 h1:uUcX/aBc8O7Fg9kaISIUsHXdKuqehiXAMQTYX8
 github.com/Masterminds/squirrel v1.5.4/go.mod h1:NNaOrjSoIDfDA40n7sr2tPNZRfjzjA400rg+riTZj10=
 github.com/andybalholm/brotli v1.2.2 h1:HzTuoo2ErYQqf5qvcJInB8uvqSVxRttzkFexPWtnceM=
 github.com/andybalholm/brotli v1.2.2/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
+github.com/assurrussa/gocache v0.2.1 h1:5DtDfEooT6WJV7ouUwTWBQ3Cu7N2zBXBeDGCc1jQD5M=
+github.com/assurrussa/gocache v0.2.1/go.mod h1:2phNxsjBMsJ8l9pu04tuhAKEOOVR2ZmU799DLgQZEo8=
 github.com/assurrussa/gologger v0.1.0 h1:jo5VXaznPUReNXEruMrNOEfIbRLUctjfeRdElocU4F8=
 github.com/assurrussa/gologger v0.1.0/go.mod h1:/F/8c0qo2pd755T/YJ7A1hkCmbp/abM2747bsMta6ec=
 github.com/assurrussa/gonotify v0.4.0 h1:s8kxxbvuNGRrdYfu5EHu5R3hVz+RhEmXtaJUuUSw31o=
