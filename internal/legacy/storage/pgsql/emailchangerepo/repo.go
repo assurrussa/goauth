@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/squirrel"
-	querybuilder "github.com/assurrussa/goshared/pkg/query_builder"
+	querybuilder "github.com/assurrussa/outbox/shared/query_builder"
 	"github.com/jackc/pgx/v5"
 
 	outbox "github.com/assurrussa/goauth/internal/legacy/infrastructure/outbox"
