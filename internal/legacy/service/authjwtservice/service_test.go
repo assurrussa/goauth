@@ -8,6 +8,7 @@ import (
 	sharedtypes "github.com/assurrussa/goshared/pkg/sharedtypes"
 	passwordhasher "github.com/assurrussa/goshared/services/password_hasher"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/bcrypt"
 
 	authcore "github.com/assurrussa/goauth/internal/legacy/core"
 	"github.com/assurrussa/goauth/internal/legacy/service/authjwtservice"
@@ -230,7 +231,7 @@ func TestLoginIssuesAndPersistsTokenPair(t *testing.T) {
 	ctx := context.Background()
 	subjects := newSubjectStoreStub()
 	tokens := newRefreshTokenStoreStub()
-	hasher := passwordhasher.NewService()
+	hasher := passwordhasher.NewService(passwordhasher.WithCost(bcrypt.MinCost))
 	hash, err := hasher.GenerateHash("secret")
 	require.NoError(t, err)
 
@@ -283,7 +284,7 @@ func TestLoginProvisionsProfileBeforeIssuingTokenPair(t *testing.T) {
 	ctx := context.Background()
 	subjects := newSubjectStoreStub()
 	tokens := newRefreshTokenStoreStub()
-	hasher := passwordhasher.NewService()
+	hasher := passwordhasher.NewService(passwordhasher.WithCost(bcrypt.MinCost))
 	hash, err := hasher.GenerateHash("secret")
 	require.NoError(t, err)
 
@@ -349,7 +350,7 @@ func TestRegisterPreservesProvidedName(t *testing.T) {
 	ctx := context.Background()
 	subjects := newSubjectStoreStub()
 	tokens := newRefreshTokenStoreStub()
-	hasher := passwordhasher.NewService()
+	hasher := passwordhasher.NewService(passwordhasher.WithCost(bcrypt.MinCost))
 
 	service := authjwtservice.Must(authjwtservice.NewOptions(
 		subjects,
@@ -382,7 +383,7 @@ func TestRefreshRotatesStoredSession(t *testing.T) {
 	ctx := context.Background()
 	subjects := newSubjectStoreStub()
 	tokens := newRefreshTokenStoreStub()
-	hasher := passwordhasher.NewService()
+	hasher := passwordhasher.NewService(passwordhasher.WithCost(bcrypt.MinCost))
 
 	userID := sharedtypes.NewUserID()
 	subjectID := authshared.NewSubjectID()
