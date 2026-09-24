@@ -8,7 +8,6 @@ import (
 	sharedtypes "github.com/assurrussa/goshared/pkg/sharedtypes"
 	passwordhasher "github.com/assurrussa/goshared/services/password_hasher"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/bcrypt"
 
 	authcore "github.com/assurrussa/goauth/internal/legacy/core"
 	"github.com/assurrussa/goauth/internal/legacy/service/authjwtservice"
@@ -231,7 +230,7 @@ func TestLoginIssuesAndPersistsTokenPair(t *testing.T) {
 	ctx := context.Background()
 	subjects := newSubjectStoreStub()
 	tokens := newRefreshTokenStoreStub()
-	hasher := passwordhasher.NewService(passwordhasher.WithCost(bcrypt.MinCost))
+	hasher := passwordhasher.NewArgon2idService(passwordhasher.WithArgon2idMemory(8*1024), passwordhasher.WithArgon2idIterations(1))
 	hash, err := hasher.GenerateHash("secret")
 	require.NoError(t, err)
 
@@ -284,7 +283,7 @@ func TestLoginProvisionsProfileBeforeIssuingTokenPair(t *testing.T) {
 	ctx := context.Background()
 	subjects := newSubjectStoreStub()
 	tokens := newRefreshTokenStoreStub()
-	hasher := passwordhasher.NewService(passwordhasher.WithCost(bcrypt.MinCost))
+	hasher := passwordhasher.NewArgon2idService(passwordhasher.WithArgon2idMemory(8*1024), passwordhasher.WithArgon2idIterations(1))
 	hash, err := hasher.GenerateHash("secret")
 	require.NoError(t, err)
 
@@ -350,7 +349,7 @@ func TestRegisterPreservesProvidedName(t *testing.T) {
 	ctx := context.Background()
 	subjects := newSubjectStoreStub()
 	tokens := newRefreshTokenStoreStub()
-	hasher := passwordhasher.NewService(passwordhasher.WithCost(bcrypt.MinCost))
+	hasher := passwordhasher.NewArgon2idService(passwordhasher.WithArgon2idMemory(8*1024), passwordhasher.WithArgon2idIterations(1))
 
 	service := authjwtservice.Must(authjwtservice.NewOptions(
 		subjects,
@@ -383,7 +382,7 @@ func TestRefreshRotatesStoredSession(t *testing.T) {
 	ctx := context.Background()
 	subjects := newSubjectStoreStub()
 	tokens := newRefreshTokenStoreStub()
-	hasher := passwordhasher.NewService(passwordhasher.WithCost(bcrypt.MinCost))
+	hasher := passwordhasher.NewArgon2idService(passwordhasher.WithArgon2idMemory(8*1024), passwordhasher.WithArgon2idIterations(1))
 
 	userID := sharedtypes.NewUserID()
 	subjectID := authshared.NewSubjectID()

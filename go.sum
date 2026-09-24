@@ -11,8 +11,8 @@ github.com/assurrussa/gologger v0.1.0 h1:jo5VXaznPUReNXEruMrNOEfIbRLUctjfeRdEloc
 github.com/assurrussa/gologger v0.1.0/go.mod h1:/F/8c0qo2pd755T/YJ7A1hkCmbp/abM2747bsMta6ec=
 github.com/assurrussa/gonotify v0.4.0 h1:s8kxxbvuNGRrdYfu5EHu5R3hVz+RhEmXtaJUuUSw31o=
 github.com/assurrussa/gonotify v0.4.0/go.mod h1:rB1g3QzfuyFMCxRYcNAEz/9hSgapR6CFGByvz4vwASA=
-github.com/assurrussa/goshared v1.4.0 h1:H6ScsoPAWJSYvzlX+Him+4BpsW/JRbTKW1SQNMKrrhs=
-github.com/assurrussa/goshared v1.4.0/go.mod h1:zmg2pYltOzdw7rQ0Z9ASTaSb7Cqzd8U97W7kX3sk3ws=
+github.com/assurrussa/goshared v1.4.1 h1:TLXs4j2dt8OusQOQIo0FqrnDaNnb5esbm3YsfHr/4Lo=
+github.com/assurrussa/goshared v1.4.1/go.mod h1:zmg2pYltOzdw7rQ0Z9ASTaSb7Cqzd8U97W7kX3sk3ws=
 github.com/assurrussa/outbox v0.12.0 h1:ChnUueyc0rWPpLU9RS5Xcgq1xHPQdiGq6m7T6hY9mWc=
 github.com/assurrussa/outbox v0.12.0/go.mod h1:fzNmhtaNHltUtnUsj5KMQPNlnEB9tY/Z5MfsxJYvBgg=
 github.com/assurrussa/outbox/backends/pgsql v0.12.0 h1:24X++Mt2oFbW8gRBbIfPKEUMqBc8+OsaCgdZii2WC9A=

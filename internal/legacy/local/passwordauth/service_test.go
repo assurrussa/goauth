@@ -7,7 +7,6 @@ import (
 
 	passwordhasher "github.com/assurrussa/goshared/services/password_hasher"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/bcrypt"
 
 	authcore "github.com/assurrussa/goauth/internal/legacy/core"
 	"github.com/assurrussa/goauth/internal/legacy/local/passwordauth"
@@ -26,7 +25,7 @@ func TestAuthenticateSuccess(t *testing.T) {
 	t.Parallel()
 
 	subjectID := authcore.MustParseSubjectIDString("123e4567-e89b-12d3-a456-426614174000")
-	hasher := passwordhasher.NewService(passwordhasher.WithCost(bcrypt.MinCost))
+	hasher := passwordhasher.NewArgon2idService(passwordhasher.WithArgon2idMemory(8*1024), passwordhasher.WithArgon2idIterations(1))
 	hash, err := hasher.GenerateHash("password")
 	require.NoError(t, err)
 
@@ -52,7 +51,7 @@ func TestAuthenticateSuccess(t *testing.T) {
 func TestAuthenticateInvalidCredentials(t *testing.T) {
 	t.Parallel()
 
-	hasher := passwordhasher.NewService(passwordhasher.WithCost(bcrypt.MinCost))
+	hasher := passwordhasher.NewArgon2idService(passwordhasher.WithArgon2idMemory(8*1024), passwordhasher.WithArgon2idIterations(1))
 	hash, err := hasher.GenerateHash("password")
 	require.NoError(t, err)
 	subjectID := authcore.MustParseSubjectIDString("123e4567-e89b-12d3-a456-426614174001")
@@ -87,7 +86,7 @@ func TestAuthenticateReaderError(t *testing.T) {
 	svc := passwordauth.Must(passwordauth.Options{
 		Reader:      subjectReaderStub{err: expectedErr},
 		Credentials: authcore.StaticSubjectCredentials{},
-		Hasher:      passwordhasher.NewService(passwordhasher.WithCost(bcrypt.MinCost)),
+		Hasher:      passwordhasher.NewArgon2idService(passwordhasher.WithArgon2idMemory(8*1024), passwordhasher.WithArgon2idIterations(1)),
 	})
 
 	_, err := svc.Authenticate(context.Background(), authcore.Credential{

@@ -9,7 +9,7 @@ require (
 	github.com/assurrussa/gocache v0.2.1
 	github.com/assurrussa/gologger v0.1.0
 	github.com/assurrussa/gonotify v0.4.0
-	github.com/assurrussa/goshared v1.4.0
+	github.com/assurrussa/goshared v1.4.1
 	github.com/assurrussa/outbox v0.12.0
 	github.com/assurrussa/outbox/backends/pgsql v0.12.0
 	github.com/georgysavva/scany/v2 v2.1.4
