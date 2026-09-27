@@ -110,7 +110,12 @@ the host must expose its chosen logout routes and token storage policy.
 
 `NotificationSender.SendNotification(ctx, delivery)` receives the typed
 notification, a stable delivery ID, and its validity deadline. Return success
-only after the host delivery provider accepts it; retries may repeat an ID.
+only after the host delivery provider accepts responsibility; it does not mean
+that the recipient received the message. Retries may repeat an ID, and expiry
+or the attempt limit can end processing without a successful send. The sender
+must honor context cancellation and set network timeouts so shutdown can join
+the worker. `NotificationWorkerConfig.OnBlocked` reports a delivery ID and safe
+reason when decryption fails; alert on this signal without logging payloads.
 Run `auth.RunNotifications(ctx)` in a supervised worker, cancel and join it on
 shutdown, schedule `auth.Cleanup(ctx, postgres.CleanupPolicy{})`, and close the
 Runtime when the process stops. The host chooses how to serve the Fiber app.
@@ -124,9 +129,14 @@ Managed delivery cannot be combined with a custom `EventSink`,
 PostgreSQL adapter can use a custom event sink without managed delivery; custom
 transaction wiring belongs to direct root Runtime assembly. A custom
 `NotificationTransaction` keeps its configured `NotificationRenderer` and
-event sink. Direct `RuntimeStore` implementations must guard reset issuance
+event sink. The managed PostgreSQL transaction covers participating writes in
+notification operations; it is not a general unit of work for arbitrary
+Runtime calls. Direct `RuntimeStore` implementations must guard reset issuance
 against the expected primary email, security version, and active status and
 invalidate outstanding reset records on password, email, or status changes.
+They must also reject email-challenge issuance when the expected primary email
+or security version no longer matches, and invalidate old challenges when the
+primary email changes.
 
 ## Runtime contract
 

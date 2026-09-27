@@ -115,8 +115,12 @@ func (s *Store) notificationCurrent(ctx context.Context, event goauth.EncryptedE
 	case "email_challenge":
 		err := s.db.QueryRowContext(ctx, `SELECT EXISTS (
     SELECT 1 FROM auth_email_challenges c
+    JOIN auth_identifiers i ON i.id = c.identifier_id AND i.subject_id = c.subject_id
+    JOIN auth_subjects s ON s.id = c.subject_id
     WHERE c.id = $1 AND c.subject_id = $2 AND c.verified_at IS NULL
       AND c.expires_at > $3 AND c.attempts < c.max_attempts
+      AND s.status = 'active' AND i.scheme = 'email' AND i.is_primary = true
+      AND i.updated_at <= c.created_at
       AND c.id = (SELECT latest.id FROM auth_email_challenges latest
         WHERE latest.subject_id = c.subject_id AND latest.purpose = c.purpose
         ORDER BY latest.created_at DESC, latest.id DESC LIMIT 1)
@@ -125,8 +129,10 @@ func (s *Store) notificationCurrent(ctx context.Context, event goauth.EncryptedE
 	case "email_change":
 		err := s.db.QueryRowContext(ctx, `SELECT EXISTS (
     SELECT 1 FROM auth_email_change_records c
+    JOIN auth_subjects s ON s.id = c.subject_id
     WHERE c.id = $1 AND c.subject_id = $2 AND c.consumed_at IS NULL
       AND c.expires_at > $3 AND c.attempts < c.max_attempts
+      AND s.status = 'active'
       AND c.id = (SELECT latest.id FROM auth_email_change_records latest
         WHERE latest.subject_id = c.subject_id
         ORDER BY latest.created_at DESC, latest.id DESC LIMIT 1)
@@ -137,10 +143,38 @@ func (s *Store) notificationCurrent(ctx context.Context, event goauth.EncryptedE
 	}
 }
 
+// reserveNotificationSend counts a possible external call before it begins.
+// A lease takeover or exhausted budget cannot reserve another call.
+func (s *Store) reserveNotificationSend(ctx context.Context, claim notificationClaim, maxAttempts int) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `
+UPDATE auth_notification_deliveries
+SET attempts = attempts + 1
+WHERE id = $1 AND lease_token = $2 AND state = 'leased' AND attempts < $3`,
+		claim.event.ID, claim.leaseToken, maxAttempts)
+	if err != nil {
+		return false, fmt.Errorf("reserve managed notification send: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("check managed notification send reservation: %w", err)
+	}
+	return rows == 1, nil
+}
+
 func (s *Store) finishNotification(ctx context.Context, claim notificationClaim, state, failure string, next time.Time) error {
+	_, err := s.finishNotificationResult(ctx, claim, state, failure, next)
+	return err
+}
+
+func (s *Store) finishNotificationResult(
+	ctx context.Context,
+	claim notificationClaim,
+	state, failure string,
+	next time.Time,
+) (bool, error) {
 	if state != notificationPending && state != notificationBlocked && state != notificationExhausted &&
 		state != notificationExpired && state != notificationDelivered {
-		return errors.New("invalid notification finish state")
+		return false, errors.New("invalid notification finish state")
 	}
 	var deliveredAt any
 	if state == notificationDelivered {
@@ -153,7 +187,7 @@ func (s *Store) finishNotification(ctx context.Context, claim notificationClaim,
 	clearPayload := state == notificationDelivered || state == notificationExhausted || state == notificationExpired
 	result, err := s.db.ExecContext(ctx, `
 UPDATE auth_notification_deliveries
-SET state = $3, attempts = attempts + CASE WHEN $3 IN ('pending', 'exhausted') THEN 1 ELSE 0 END,
+SET state = $3,
     next_attempt_at = COALESCE($4, next_attempt_at),
     last_failure = NULLIF($5, ''), delivered_at = $6,
     ciphertext = CASE WHEN $7 THEN NULL ELSE ciphertext END,
@@ -163,21 +197,21 @@ SET state = $3, attempts = attempts + CASE WHEN $3 IN ('pending', 'exhausted') T
 WHERE id = $1 AND lease_token = $2 AND state = 'leased'`,
 		claim.event.ID, claim.leaseToken, state, nextAttempt, failure, deliveredAt, clearPayload)
 	if err != nil {
-		return fmt.Errorf("finish managed notification: %w", err)
+		return false, fmt.Errorf("finish managed notification: %w", err)
 	}
 	rows, err := result.RowsAffected()
 	if err != nil {
-		return fmt.Errorf("check managed notification completion: %w", err)
+		return false, fmt.Errorf("check managed notification completion: %w", err)
 	}
 	// Cleanup may expire an in-flight notification, or another worker may
 	// reclaim an elapsed lease. Neither case lets this worker change the row.
 	if rows == 0 {
-		return nil
+		return false, nil
 	}
 	if rows != 1 {
-		return errors.New("managed notification completion updated multiple rows")
+		return false, errors.New("managed notification completion updated multiple rows")
 	}
-	return nil
+	return true, nil
 }
 
 func (s *Store) notificationCounts(ctx context.Context) (NotificationQueueStats, error) {

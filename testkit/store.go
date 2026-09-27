@@ -526,6 +526,21 @@ func (s *Store) IssueEmailChallenge(
 ) (goauth.EmailChallengeIssueResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if record.ExpectedSecurityVersion > 0 || record.ExpectedNormalizedEmail != "" {
+		account, ok := s.accounts[record.SubjectID.String()]
+		if !ok {
+			return goauth.EmailChallengeIssueResult{}, goauth.ErrAccountNotFound
+		}
+		if account.Subject.Status != goauth.SubjectStatusActive {
+			return goauth.EmailChallengeIssueResult{}, goauth.ErrAccountUnavailable
+		}
+		if record.ExpectedSecurityVersion <= 0 || record.ExpectedNormalizedEmail == "" ||
+			account.Subject.SecurityVersion != record.ExpectedSecurityVersion ||
+			account.PrimaryEmail.ID != record.IdentifierID ||
+			account.PrimaryEmail.NormalizedValue != record.ExpectedNormalizedEmail {
+			return goauth.EmailChallengeIssueResult{}, goauth.ErrInvalidIdentifier
+		}
+	}
 
 	key := challengeKey(record.SubjectID, record.Purpose)
 	rateKey := rateBucketKey(record.RateDigest, "email_challenge:"+string(record.Purpose))
@@ -770,6 +785,11 @@ func (s *Store) VerifyEmailChange(
 	record.ConsumedAt = &consumedAt
 	s.revokeSubjectSecurityLocked(request.SubjectID, request.Now)
 	s.invalidatePasswordResetsLocked(request.SubjectID, request.Now)
+	for _, challenge := range s.challenges[challengeKey(request.SubjectID, goauth.EmailChallengePurposeVerification)] {
+		if challenge.VerifiedAt == nil {
+			challenge.Attempts = challenge.Record.MaxAttempts
+		}
+	}
 
 	return goauth.EmailChangeVerifyResult{
 		Status:   goauth.EmailChangeVerified,

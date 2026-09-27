@@ -5,7 +5,8 @@ import (
 	"time"
 )
 
-// NotificationDelivery is delivered at least once. A sender must use ID as its
+// NotificationDelivery may be sent more than once before it is accepted,
+// expires, or exhausts the attempt limit. A sender must use ID as its
 // idempotency key when the underlying transport supports deduplication.
 type NotificationDelivery struct {
 	ID           string
@@ -25,8 +26,9 @@ func (f NotificationSenderFunc) SendNotification(ctx context.Context, delivery N
 	return f(ctx, delivery)
 }
 
-// NotificationTransaction runs the auth write, encrypted enqueue, and audit
-// write in one transaction. PostgreSQL provides this for managed delivery.
+// NotificationTransaction joins participating auth writes, encrypted enqueue,
+// and audit writes in one transaction. PostgreSQL provides this for managed
+// notification operations; it is not a general Runtime unit of work.
 type NotificationTransaction interface {
 	InNotificationTransaction(ctx context.Context, fn func(context.Context) error) error
 }

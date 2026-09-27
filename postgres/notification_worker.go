@@ -19,6 +19,15 @@ type NotificationWorkerConfig struct {
 	RetryMin      time.Duration
 	RetryMax      time.Duration
 	MaxAttempts   int
+	// OnBlocked receives a safe diagnostic after a decrypt failure is persisted.
+	// It should return promptly; the worker continues with other deliveries.
+	OnBlocked func(NotificationBlockedEvent)
+}
+
+// NotificationBlockedEvent contains no payload, key material, or raw error.
+type NotificationBlockedEvent struct {
+	DeliveryID string
+	Reason     string
 }
 
 func (c NotificationWorkerConfig) withDefaults() (NotificationWorkerConfig, error) {
@@ -144,6 +153,9 @@ func (r *Runtime) notificationLoop(ctx context.Context) error {
 
 func (r *Runtime) deliverNotification(ctx context.Context, claim notificationClaim) error {
 	now := r.notificationNow().UTC()
+	if claim.attempts >= r.notificationWorker.MaxAttempts {
+		return r.store.finishNotification(ctx, claim, notificationExhausted, "sender", time.Time{})
+	}
 	current, err := r.store.notificationCurrent(ctx, claim.event, now)
 	if err != nil {
 		return fmt.Errorf("check queued notification: %w", err)
@@ -157,7 +169,21 @@ func (r *Runtime) deliverNotification(ctx context.Context, claim notificationCla
 		if errors.Is(err, goauth.ErrKeyRingInvalid) {
 			failure = "key_unavailable"
 		}
-		return r.store.finishNotification(ctx, claim, notificationBlocked, failure, now.Add(time.Minute))
+		finished, err := r.store.finishNotificationResult(ctx, claim, notificationBlocked, failure, now.Add(time.Minute))
+		if err != nil {
+			return err
+		}
+		if finished && r.notificationWorker.OnBlocked != nil {
+			r.notificationWorker.OnBlocked(NotificationBlockedEvent{DeliveryID: claim.event.ID, Reason: failure})
+		}
+		return nil
+	}
+	reserved, err := r.store.reserveNotificationSend(ctx, claim, r.notificationWorker.MaxAttempts)
+	if err != nil {
+		return err
+	}
+	if !reserved {
+		return nil // The lease was lost before the sender call.
 	}
 	deadline := time.Now().Add(r.notificationWorker.SendTimeout)
 	if claim.event.ValidUntil.Before(deadline) {

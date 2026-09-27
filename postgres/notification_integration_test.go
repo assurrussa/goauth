@@ -126,7 +126,7 @@ FROM auth_notification_deliveries WHERE id = $1`, id).Scan(
 	require.True(t, ciphertextGone)
 	require.Zero(t, nonceLength)
 	require.Zero(t, additionalDataLength)
-	require.Zero(t, attempts)
+	require.Equal(t, 1, attempts, "sender call is reserved before delivery")
 	stats, err = runtime.NotificationStats(context.Background())
 	require.NoError(t, err)
 	require.EqualValues(t, 1, stats.Delivered)
@@ -174,7 +174,7 @@ func TestManagedNotificationRetryUsesStableDeliveryID(t *testing.T) {
 	require.EqualValues(t, 2, calls.Load())
 	var attempts int
 	require.NoError(t, db.QueryRow(`SELECT attempts FROM auth_notification_deliveries WHERE id = $1`, id).Scan(&attempts))
-	require.Equal(t, 1, attempts)
+	require.Equal(t, 2, attempts)
 }
 
 func TestManagedNotificationRetryStartsAfterFailedSend(t *testing.T) {
@@ -486,6 +486,171 @@ FROM auth_notification_deliveries WHERE id = $1`, poisonedID).Scan(&failure, &ci
 	require.True(t, ciphertextRetained, "missing-key events must remain retryable after key restoration")
 }
 
+func TestManagedNotificationBlockedObserverKeepsQueueRunning(t *testing.T) {
+	db := integrationDB(t)
+	blocked := make(chan postgres.NotificationBlockedEvent, 1)
+	deliveries := make(chan goauth.NotificationDelivery, 1)
+	runtime := managedNotificationRuntimeWithWorker(t, db, goauth.NotificationSenderFunc(
+		func(_ context.Context, delivery goauth.NotificationDelivery) error {
+			deliveries <- delivery
+			return nil
+		}), postgres.NotificationWorkerConfig{
+		PollInterval: 10 * time.Millisecond, SendTimeout: time.Second,
+		LeaseDuration: 2 * time.Second, RetryMin: 20 * time.Millisecond,
+		RetryMax: 50 * time.Millisecond, MaxAttempts: 3,
+		OnBlocked: func(event postgres.NotificationBlockedEvent) { blocked <- event },
+	})
+	poisoned := register(t, runtime, "notification.observer-poisoned@example.test")
+	require.NoError(t, runtime.SendEmailChallenge(context.Background(), poisoned.Account.Subject.ID,
+		goauth.EmailChallengePurposeVerification))
+	poisonedID := managedNotificationID(t, db, poisoned.Account.Subject.ID)
+	_, err := db.Exec(`UPDATE auth_notification_deliveries SET key_id = 'missing-key' WHERE id = $1`, poisonedID)
+	require.NoError(t, err)
+	healthy := register(t, runtime, "notification.observer-healthy@example.test")
+	require.NoError(t, runtime.SendEmailChallenge(context.Background(), healthy.Account.Subject.ID,
+		goauth.EmailChallengePurposeVerification))
+	healthyID := managedNotificationID(t, db, healthy.Account.Subject.ID)
+	startManagedNotificationWorker(t, runtime)
+	select {
+	case event := <-blocked:
+		require.Equal(t, postgres.NotificationBlockedEvent{DeliveryID: poisonedID, Reason: "key_unavailable"}, event)
+	case <-time.After(5 * time.Second):
+		t.Fatal("blocked delivery was not reported")
+	}
+	waitManagedNotificationState(t, db, poisonedID, "blocked")
+	waitManagedNotificationState(t, db, healthyID, "delivered")
+	require.Equal(t, healthyID, awaitManagedDelivery(t, deliveries).ID)
+	var attempts int
+	require.NoError(t, db.QueryRow(`SELECT attempts FROM auth_notification_deliveries WHERE id = $1`, poisonedID).Scan(&attempts))
+	require.Zero(t, attempts, "decrypt failure must not spend a sender call")
+}
+
+func TestManagedNotificationSendBudgetSurvivesLeaseTakeover(t *testing.T) {
+	db := integrationDB(t)
+	var calls atomic.Int32
+	var cancelCurrent context.CancelFunc
+	runtime := managedNotificationRuntime(t, db, goauth.NotificationSenderFunc(
+		func(context.Context, goauth.NotificationDelivery) error {
+			calls.Add(1)
+			cancelCurrent() // Simulate a process stopping after the provider call.
+			return nil
+		}))
+	registered := register(t, runtime, "notification.crash-budget@example.test")
+	require.NoError(t, runtime.SendEmailChallenge(context.Background(), registered.Account.Subject.ID,
+		goauth.EmailChallengePurposeVerification))
+	id := managedNotificationID(t, db, registered.Account.Subject.ID)
+	for range 3 {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancelCurrent = cancel
+		result := make(chan error, 1)
+		go func() { result <- runtime.RunNotifications(ctx) }()
+		select {
+		case <-result:
+		case <-time.After(5 * time.Second):
+			cancel()
+			t.Fatal("worker did not stop after simulated crash")
+		}
+		_, err := db.Exec(`UPDATE auth_notification_deliveries SET leased_until = now() - interval '1 second' WHERE id = $1`, id)
+		require.NoError(t, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() { result <- runtime.RunNotifications(ctx) }()
+	waitManagedNotificationState(t, db, id, "exhausted")
+	cancel()
+	<-result
+	require.EqualValues(t, 3, calls.Load())
+	var attempts int
+	require.NoError(t, db.QueryRow(`SELECT attempts FROM auth_notification_deliveries WHERE id = $1`, id).Scan(&attempts))
+	require.Equal(t, 3, attempts)
+}
+
+func TestManagedNotificationSkipsOldVerificationAndDisabledSubjects(t *testing.T) {
+	for _, scenario := range []string{"changed_email", "disabled_challenge", "disabled_change"} {
+		t.Run(scenario, func(t *testing.T) {
+			db := integrationDB(t)
+			deliveries := make(chan goauth.NotificationDelivery, 4)
+			runtime := managedNotificationRuntime(t, db, goauth.NotificationSenderFunc(
+				func(_ context.Context, delivery goauth.NotificationDelivery) error {
+					deliveries <- delivery
+					return nil
+				}))
+			registered := register(t, runtime, "notification-stale-"+scenario+"@example.test")
+			subjectID := registered.Account.Subject.ID
+			require.NoError(t, runtime.SendEmailChallenge(context.Background(), subjectID,
+				goauth.EmailChallengePurposeVerification))
+			challengeID := managedNotificationID(t, db, subjectID)
+			var changeID string
+			if scenario == "changed_email" || scenario == "disabled_change" {
+				require.NoError(t, runtime.RequestEmailChange(context.Background(), subjectID,
+					"notification-new-"+scenario+"@example.test"))
+				var change goauth.Notification
+				changeID, change = queuedNotification(t, db, subjectID, "email_change")
+				if scenario == "changed_email" {
+					_, err := runtime.ConfirmEmailChange(context.Background(), subjectID, change.Data["code"])
+					require.NoError(t, err)
+				}
+			}
+			if scenario != "changed_email" {
+				_, err := runtime.SetSubjectStatus(context.Background(), subjectID, goauth.SubjectStatusDisabled)
+				require.NoError(t, err)
+			} else {
+				var attempts, maxAttempts int
+				require.NoError(t, db.QueryRow(`
+SELECT attempts, max_attempts FROM auth_email_challenges
+WHERE subject_id = $1 ORDER BY created_at DESC LIMIT 1`, subjectID).Scan(&attempts, &maxAttempts))
+				require.Equal(t, maxAttempts, attempts, "old verification code must be invalidated")
+			}
+			startManagedNotificationWorker(t, runtime)
+			waitManagedNotificationState(t, db, challengeID, "expired")
+			if changeID != "" {
+				waitManagedNotificationState(t, db, changeID, "expired")
+			}
+			select {
+			case delivery := <-deliveries:
+				require.NotEqual(t, challengeID, delivery.ID)
+				require.NotEqual(t, changeID, delivery.ID)
+			default:
+			}
+		})
+	}
+}
+
+func TestEmailChallengeIssuanceRejectsStaleEmailSnapshot(t *testing.T) {
+	db := integrationDB(t)
+	runtime := managedNotificationRuntime(t, db, goauth.NotificationSenderFunc(
+		func(context.Context, goauth.NotificationDelivery) error { return nil }))
+	registered := register(t, runtime, "stale-issue-old@example.test")
+	oldAccount := registered.Account
+	subjectID := oldAccount.Subject.ID
+	require.NoError(t, runtime.RequestEmailChange(context.Background(), subjectID, "stale-issue-new@example.test"))
+	_, change := queuedNotification(t, db, subjectID, "email_change")
+	_, err := runtime.ConfirmEmailChange(context.Background(), subjectID, change.Data["code"])
+	require.NoError(t, err)
+
+	store, err := postgres.NewStore(db)
+	require.NoError(t, err)
+	now := time.Now().UTC()
+	_, err = store.IssueEmailChallenge(context.Background(), goauth.EmailChallengeRecord{
+		ID:                      goauth.NewSubjectID().String(),
+		SubjectID:               subjectID,
+		IdentifierID:            oldAccount.PrimaryEmail.ID,
+		ExpectedNormalizedEmail: oldAccount.PrimaryEmail.NormalizedValue,
+		ExpectedSecurityVersion: oldAccount.Subject.SecurityVersion,
+		Purpose:                 goauth.EmailChallengePurposeVerification,
+		Digest:                  goauth.SecretDigest{KeyID: "test-key", Digest: make([]byte, 32)},
+		RateDigest:              goauth.SecretDigest{KeyID: "rate-key", Digest: make([]byte, 32)},
+		MaxAttempts:             5,
+		CreatedAt:               now,
+		ExpiresAt:               now.Add(time.Hour),
+	}, goauth.EmailChallengeLimits{MinResendInterval: time.Minute, PerHour: 5, PerDay: 10})
+	require.ErrorIs(t, err, goauth.ErrInvalidIdentifier)
+	var challenges int
+	require.NoError(t, db.QueryRow(`SELECT count(*) FROM auth_email_challenges WHERE subject_id = $1`,
+		subjectID).Scan(&challenges))
+	require.Zero(t, challenges, "a code for a stale destination must not be persisted")
+}
+
 func TestManagedNotificationRetriesAfterKeyRecovery(t *testing.T) {
 	db := integrationDB(t)
 	deliveries := make(chan goauth.NotificationDelivery, 1)
@@ -636,6 +801,14 @@ WHERE subject_id = $1`, registered.Account.Subject.ID)
 }
 
 func managedNotificationRuntime(t *testing.T, db *sql.DB, sender goauth.NotificationSender) *postgres.Runtime {
+	return managedNotificationRuntimeWithWorker(t, db, sender, postgres.NotificationWorkerConfig{
+		PollInterval: 10 * time.Millisecond, SendTimeout: time.Second,
+		LeaseDuration: 2 * time.Second, RetryMin: 20 * time.Millisecond,
+		RetryMax: 50 * time.Millisecond, MaxAttempts: 3,
+	})
+}
+
+func managedNotificationRuntimeWithWorker(t *testing.T, db *sql.DB, sender goauth.NotificationSender, worker postgres.NotificationWorkerConfig) *postgres.Runtime {
 	t.Helper()
 	resetSchema(t, db)
 	require.NoError(t, postgres.Migrate(context.Background(), db))
@@ -645,14 +818,7 @@ func managedNotificationRuntime(t *testing.T, db *sql.DB, sender goauth.Notifica
 		DB:                 db,
 		Runtime:            config,
 		NotificationSender: sender,
-		NotificationWorker: postgres.NotificationWorkerConfig{
-			PollInterval:  10 * time.Millisecond,
-			SendTimeout:   time.Second,
-			LeaseDuration: 2 * time.Second,
-			RetryMin:      20 * time.Millisecond,
-			RetryMax:      50 * time.Millisecond,
-			MaxAttempts:   3,
-		},
+		NotificationWorker: worker,
 	})
 	require.NoError(t, err)
 	return runtime

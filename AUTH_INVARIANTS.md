@@ -41,7 +41,10 @@
   invalidate outstanding reset records; custom stores must preserve these
   guards.
 - Email confirmation records are append-only. Wrong attempts commit before the
-  typed error returns. Issuance uses atomic rolling-window events.
+  typed error returns. Issuance uses atomic rolling-window events and rejects
+  an account snapshot whose primary email or security version changed before
+  the challenge was stored. Direct store implementations must honor these
+  expected fields when the Runtime supplies them.
 - Email-change records are separate from account verification, digest-only,
   attempt-limited, and consumed in the same transaction as identifier update
   and security-state revocation.

@@ -22,6 +22,13 @@ The integration suite executes the v0.2 migration, Down/Up, v0.1 refusal,
 atomic refresh/reset/challenge behavior, case-insensitive identifier uniqueness,
 SSO policy, status revocation, secret-at-rest assertions, native notification
 queue delivery and retry, and Redis GETDEL concurrency.
+It also runs the PostgreSQL external consumer probe against
+`GOAUTH_TEST_POSTGRES_DSN`. The probe constructs `postgres.NewRuntime`, starts
+and stops `RunNotifications`, checks an email challenge was delivered and
+acknowledged, verifies the code, then exercises authenticated login, an
+introspected Fiber route, PostgreSQL RBAC, logout, password reset, and cleanup.
+It requires a reachable, disposable integration database and fails if the DSN
+is missing or the database is down.
 
 ## Coverage and vulnerabilities
 
@@ -38,6 +45,11 @@ treated as clean.
 ```sh
 make externalconsumer-local
 ```
+
+`make check` includes only this database-free probe. To run the real PostgreSQL
+consumer path alone, set `GOAUTH_TEST_POSTGRES_DSN` and run
+`make externalconsumer-postgres-local`; the Makefile's default DSN targets the
+database in `compose.integration.yml`.
 
 For the full unpublished candidate gate, start the integration services:
 

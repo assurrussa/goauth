@@ -22,6 +22,10 @@ func (s *Store) IssueEmailChallenge(
 		limits.MinResendInterval < 0 || limits.PerHour <= 0 || limits.PerDay <= 0 {
 		return goauth.EmailChallengeIssueResult{}, errors.New("invalid email challenge record or limits")
 	}
+	if (record.ExpectedNormalizedEmail == "") != (record.ExpectedSecurityVersion == 0) ||
+		record.ExpectedSecurityVersion < 0 {
+		return goauth.EmailChallengeIssueResult{}, errors.New("invalid email challenge account snapshot")
+	}
 	action := "email_challenge:" + string(record.Purpose)
 	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
@@ -32,6 +36,9 @@ func (s *Store) IssueEmailChallenge(
 	lockKey := record.RateDigest.KeyID + ":" + hex.EncodeToString(record.RateDigest.Digest) + ":" + action
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, lockKey); err != nil {
 		return goauth.EmailChallengeIssueResult{}, fmt.Errorf("lock email challenge rate limit: %w", err)
+	}
+	if err := validateEmailChallengeSnapshot(ctx, tx, record); err != nil {
+		return goauth.EmailChallengeIssueResult{}, err
 	}
 	var (
 		lastSend sql.NullTime
@@ -105,6 +112,43 @@ VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8, $9)`,
 	}
 
 	return goauth.EmailChallengeIssueResult{Status: goauth.EmailChallengeIssued}, nil
+}
+
+func validateEmailChallengeSnapshot(ctx context.Context, tx *sql.Tx, record goauth.EmailChallengeRecord) error {
+	if record.ExpectedSecurityVersion == 0 {
+		return nil
+	}
+	// Email change updates the identifier before the subject. Lock in that
+	// order, then compare the same snapshot used for the notification's To.
+	var currentEmail string
+	err := tx.QueryRowContext(ctx, `
+SELECT normalized_value FROM auth_identifiers
+WHERE id = $1 AND subject_id = $2 AND scheme = 'email' AND is_primary = true
+FOR UPDATE`, record.IdentifierID, record.SubjectID).Scan(&currentEmail)
+	if errors.Is(err, sql.ErrNoRows) {
+		return goauth.ErrInvalidIdentifier
+	}
+	if err != nil {
+		return fmt.Errorf("lock email challenge identifier: %w", err)
+	}
+	var status string
+	var securityVersion int64
+	err = tx.QueryRowContext(ctx, `
+SELECT status, security_version FROM auth_subjects WHERE id = $1 FOR UPDATE`,
+		record.SubjectID).Scan(&status, &securityVersion)
+	if errors.Is(err, sql.ErrNoRows) {
+		return goauth.ErrAccountNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("lock email challenge subject: %w", err)
+	}
+	if status != string(goauth.SubjectStatusActive) {
+		return goauth.ErrAccountUnavailable
+	}
+	if currentEmail != record.ExpectedNormalizedEmail || securityVersion != record.ExpectedSecurityVersion {
+		return goauth.ErrInvalidIdentifier
+	}
+	return nil
 }
 
 func (s *Store) VerifyEmailChallenge(

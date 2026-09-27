@@ -190,15 +190,17 @@ func (r *Runtime) SendEmailChallenge(
 	var outcomeErr error
 	err = r.inNotificationTransaction(ctx, func(txCtx context.Context) error {
 		issue, err := r.store.IssueEmailChallenge(txCtx, EmailChallengeRecord{
-			ID:           challengeID,
-			SubjectID:    subjectID,
-			IdentifierID: account.PrimaryEmail.ID,
-			Purpose:      purpose,
-			Digest:       digest,
-			RateDigest:   rateDigest,
-			MaxAttempts:  5,
-			ExpiresAt:    now.Add(r.challengeTTL),
-			CreatedAt:    now,
+			ID:                      challengeID,
+			SubjectID:               subjectID,
+			IdentifierID:            account.PrimaryEmail.ID,
+			ExpectedNormalizedEmail: account.PrimaryEmail.NormalizedValue,
+			ExpectedSecurityVersion: account.Subject.SecurityVersion,
+			Purpose:                 purpose,
+			Digest:                  digest,
+			RateDigest:              rateDigest,
+			MaxAttempts:             5,
+			ExpiresAt:               now.Add(r.challengeTTL),
+			CreatedAt:               now,
 		}, EmailChallengeLimits{
 			MinResendInterval: time.Minute,
 			PerHour:           5,

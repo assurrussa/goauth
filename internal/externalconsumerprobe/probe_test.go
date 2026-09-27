@@ -2,6 +2,8 @@
 package externalconsumerprobe
 
 import (
+	"go/parser"
+	"go/token"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -64,4 +66,13 @@ func TestBuildProbeTestImportsSupportedPackages(t *testing.T) {
 		require.Contains(t, content, `"`+pkg+`"`)
 	}
 	require.Contains(t, content, "func TestRuntimeFiberOIDCAndRBACWiring")
+}
+
+func TestBuildPostgresProbeTestIsValidGo(t *testing.T) {
+	content, err := Config{LocalPath: t.TempDir()}.BuildPostgresProbeTest()
+	require.NoError(t, err)
+	_, err = parser.ParseFile(token.NewFileSet(), "externalconsumer_postgres_test.go", content, parser.AllErrors)
+	require.NoError(t, err)
+	require.Contains(t, content, `github.com/assurrussa/goauth/postgres`)
+	require.Contains(t, content, "func TestPostgresRuntimeExternalConsumer")
 }

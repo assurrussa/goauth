@@ -31,6 +31,13 @@ The reset is transactional and refuses to drop `auth_subjects` while host
 projection foreign keys still depend on it; each consumer reset must remove its
 own auth projections first.
 
+The v0.4 notification migration advances the schema version from 2 to 3 while
+preserving v0.2 auth rows. An older binary that verifies version 2 will reject
+the upgraded database, even if its `AutoMigrate` option is enabled. Roll back
+the application only to a binary that accepts version 3; otherwise restore a
+pre-migration database snapshot after accounting for writes made since it was
+taken. Do not run `Down` against production data as a rollback mechanism.
+
 ## Local release gate
 
 Run preparation once, inspect its diff, then run the canonical non-mutating

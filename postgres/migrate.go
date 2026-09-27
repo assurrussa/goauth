@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"time"
 )
 
 const schemaVersion = 3
@@ -36,79 +35,68 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if db == nil {
 		return errors.New("PostgreSQL database is required")
 	}
-	conn, err := db.Conn(ctx)
+	// READ COMMITTED gives the schema inspection a new snapshot after a
+	// concurrent migrator commits and releases the advisory lock.
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
-		return fmt.Errorf("reserve goauth migration connection: %w", err)
+		return fmt.Errorf("begin goauth migration: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = tx.Rollback() }()
 	const lockID int64 = 6686167654426882759
-	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, lockID); err != nil {
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, lockID); err != nil {
 		return fmt.Errorf("lock goauth migrations: %w", err)
 	}
-	defer func() {
-		// Use a fresh context: cancellation of the migration request must not
-		// return a session-level advisory lock to the connection pool.
-		unlockCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		defer cancel()
-		_, _ = conn.ExecContext(unlockCtx, `SELECT pg_advisory_unlock($1)`, lockID)
-	}()
 
-	state, err := detectSchema(ctx, conn)
+	state, err := detectSchema(ctx, tx)
 	if err != nil {
 		return err
 	}
 	switch state {
 	case schemaStateV3:
-		return verifySchema(ctx, conn)
+		// No schema change is needed, but still finish the transaction to release
+		// the lock before reporting a successful verification.
 	case schemaStateFuture:
 		return ErrFutureSchema
 	case schemaStateLegacy:
 		return ErrLegacySchemaRequiresReset
 	case schemaStateEmpty:
-		if err := applyBaseline(ctx, conn); err != nil {
+		if err := applyBaseline(ctx, tx); err != nil {
 			return err
 		}
+		fallthrough
 	case schemaStateV2:
+		if err := applyNotificationMigration(ctx, tx); err != nil {
+			return err
+		}
 	default:
 		return errors.New("unknown goauth schema state")
 	}
-	if err := applyNotificationMigration(ctx, conn); err != nil {
+	if err := verifySchema(ctx, tx); err != nil {
 		return err
 	}
-	return verifySchema(ctx, conn)
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit goauth migration: %w", err)
+	}
+	return nil
 }
 
-func applyBaseline(ctx context.Context, conn *sql.Conn) error {
+func applyBaseline(ctx context.Context, tx *sql.Tx) error {
 	sqlBytes, err := migrationFiles.ReadFile("migrations/00001_v0_2_baseline.sql")
 	if err != nil {
 		return fmt.Errorf("read embedded goauth v0.2 migration: %w", err)
 	}
-	tx, err := conn.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
-	if err != nil {
-		return fmt.Errorf("begin goauth v0.2 migration: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, string(sqlBytes)); err != nil {
 		return fmt.Errorf("apply goauth v0.2 baseline: %w", err)
 	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit goauth v0.2 baseline: %w", err)
-	}
-
 	return nil
 }
 
-func applyNotificationMigration(ctx context.Context, conn *sql.Conn) error {
+func applyNotificationMigration(ctx context.Context, tx *sql.Tx) error {
 	sqlBytes, err := migrationFiles.ReadFile("migrations/00002_notifications.sql")
 	if err != nil {
 		return fmt.Errorf("read embedded notification migration: %w", err)
 	}
 	checksum := sha256.Sum256(sqlBytes)
-	tx, err := conn.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
-	if err != nil {
-		return fmt.Errorf("begin notification migration: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, string(sqlBytes)); err != nil {
 		return fmt.Errorf("apply notification migration: %w", err)
 	}
@@ -119,15 +107,13 @@ func applyNotificationMigration(ctx context.Context, conn *sql.Conn) error {
 	if _, err := tx.ExecContext(ctx, `INSERT INTO goauth_schema_version (version) VALUES ($1)`, schemaVersion); err != nil {
 		return fmt.Errorf("record notification schema version: %w", err)
 	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit notification migration: %w", err)
-	}
 	return nil
 }
 
-// VerifySchema rejects stale, incomplete, altered, or future schemas without
-// changing database state. Callers with AutoMigrate disabled get this check at
-// Runtime construction.
+// VerifySchema checks the schema version, notification migration checksum,
+// required tables, and notification queue column names without changing the
+// database. It does not compare every type, index, foreign key, or constraint.
+// Callers with AutoMigrate disabled get this check at Runtime construction.
 func VerifySchema(ctx context.Context, db *sql.DB) error {
 	if db == nil {
 		return errors.New("PostgreSQL database is required")

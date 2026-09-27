@@ -289,6 +289,14 @@ WHERE id = $1 AND consumed_at IS NULL`, id, request.Now)
 	if err := invalidatePasswordResets(ctx, tx, request.SubjectID, request.Now); err != nil {
 		return goauth.EmailChangeVerifyResult{}, err
 	}
+	// A verification code issued for the former primary email must not remain
+	// usable, even if its notification has not left the queue yet.
+	if _, err := tx.ExecContext(ctx, `
+UPDATE auth_email_challenges
+SET attempts = max_attempts
+WHERE subject_id = $1 AND verified_at IS NULL AND attempts < max_attempts`, request.SubjectID); err != nil {
+		return goauth.EmailChangeVerifyResult{}, fmt.Errorf("invalidate previous email challenges: %w", err)
+	}
 	account, err := getAccount(ctx, tx, request.SubjectID)
 	if err != nil {
 		return goauth.EmailChangeVerifyResult{}, err

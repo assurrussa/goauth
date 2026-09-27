@@ -46,6 +46,7 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = goauth.PendingEmailChange{}
 	_ = goauth.EmailChangeRecord{}
 	_ = goauth.PasswordResetRecord{ExpectedNormalizedEmail: "", ExpectedSecurityVersion: 1}
+	_ = goauth.EmailChallengeRecord{ExpectedNormalizedEmail: "", ExpectedSecurityVersion: 1}
 	_ = goauth.ErrPasswordChangeConflict
 	_ = goauth.ErrEmailChangeNotFound
 	_ = goauth.NotificationDelivery{}
@@ -79,6 +80,8 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 		NotificationWorker: postgres.NotificationWorkerConfig{},
 	}
 	_ = postgres.NotificationQueueStats{}
+	_ = postgres.NotificationBlockedEvent{}
+	_ = postgres.NotificationWorkerConfig{OnBlocked: func(postgres.NotificationBlockedEvent) {}}
 	_ = (*postgres.Runtime).RunNotifications
 	_ = (*postgres.Runtime).NotificationStats
 	_ = (*postgres.Runtime).OIDCProvider
