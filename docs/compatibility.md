@@ -1,9 +1,9 @@
 # Compatibility policy
 
-## Stable v0.2 release train
+## Historical v0.2 release train
 
-The current module release is `goauth v0.2.1`. It is a backward-compatible
-security and dependency update over `v0.2.0`; the supported package manifest is
+`goauth v0.2.1` was a backward-compatible
+security and dependency update over `v0.2.0`; the supported package manifest was
 unchanged. The coordinated downstream target is `goadmin v0.5.0` and
 `site v0.0.30`, verified and published separately after this module release.
 
@@ -50,3 +50,7 @@ reviewed migration; it is not part of v0.2.
 Publication, consumer adoption, and production deployment are separate events.
 This matrix records local and published-module verification, not a production
 rollout.
+
+The latest existing goauth tag is `v0.3.0`. The standalone public-readiness
+changes target `v0.4.0`, which is not yet tagged or published. This historical
+matrix does not establish compatibility of the new candidate with these hosts.

@@ -27,67 +27,76 @@ const (
 )
 
 type Config struct {
-	Store                  RuntimeStore
-	Signing                SigningConfig
-	TokenHMACKeys          KeyRing
-	OutboxAEADKeys         KeyRing
-	EventSink              EncryptedEventSink
-	IdentifierResolvers    map[IdentifierScheme]IdentifierResolver
-	MembershipGate         MembershipGate
-	ClaimsEnricher         ClaimsEnricher
-	NotificationRenderer   NotificationRenderer
-	URLBuilder             URLBuilder
-	AuditSink              AuditSink
-	PasswordHasher         PasswordHasher
-	PasswordPolicy         PasswordPolicy
-	AdditionalRealms       []Realm
-	AccessTTL              time.Duration
-	SessionTTL             time.Duration
-	RefreshTTL             time.Duration
-	PasswordResetTTL       time.Duration
-	ChallengeTTL           time.Duration
-	EmailChangeTTL         time.Duration
-	EnvelopeRetention      time.Duration
-	ResetResponseFloor     time.Duration
-	IdentityLinkAuthMaxAge time.Duration
-	LoginRateLimit         RateLimitPolicy
-	PasswordResetRateLimit RateLimitPolicy
-	Now                    func() time.Time
-	Random                 io.Reader
+	Store                   RuntimeStore
+	Signing                 SigningConfig
+	TokenHMACKeys           KeyRing
+	OutboxAEADKeys          KeyRing
+	EventSink               EncryptedEventSink
+	NotificationTransaction NotificationTransaction
+	// ManagedNotificationDelivery enables typed, lease-owned PostgreSQL delivery.
+	// A custom transaction alone keeps the configured renderer and event sink.
+	ManagedNotificationDelivery bool
+	IdentifierResolvers         map[IdentifierScheme]IdentifierResolver
+	MembershipGate              MembershipGate
+	ClaimsEnricher              ClaimsEnricher
+	NotificationRenderer        NotificationRenderer
+	URLBuilder                  URLBuilder
+	AuditSink                   AuditSink
+	PasswordHasher              PasswordHasher
+	PasswordPolicy              PasswordPolicy
+	AdditionalRealms            []Realm
+	AccessTTL                   time.Duration
+	SessionTTL                  time.Duration
+	RefreshTTL                  time.Duration
+	PasswordResetTTL            time.Duration
+	ChallengeTTL                time.Duration
+	EmailChangeTTL              time.Duration
+	EnvelopeRetention           time.Duration
+	ResetResponseFloor          time.Duration
+	IdentityLinkAuthMaxAge      time.Duration
+	LoginRateLimit              RateLimitPolicy
+	PasswordResetRateLimit      RateLimitPolicy
+	Now                         func() time.Time
+	Random                      io.Reader
 }
 
 type Runtime struct {
-	store                  RuntimeStore
-	identifiers            map[IdentifierScheme]IdentifierResolver
-	membership             MembershipGate
-	claims                 ClaimsEnricher
-	renderer               NotificationRenderer
-	urlBuilder             URLBuilder
-	eventSink              EncryptedEventSink
-	audit                  AuditSink
-	hasher                 PasswordHasher
-	passwordPolicy         PasswordPolicy
-	realms                 map[Realm]struct{}
-	secretCodec            *secretCodec
-	envelopes              *envelopeCipher
-	jwt                    *jwtIssuer
-	dummyPasswordPHC       string
-	accessTTL              time.Duration
-	sessionTTL             time.Duration
-	refreshTTL             time.Duration
-	passwordResetTTL       time.Duration
-	challengeTTL           time.Duration
-	emailChangeTTL         time.Duration
-	envelopeRetention      time.Duration
-	resetResponseFloor     time.Duration
-	identityLinkAuthMaxAge time.Duration
-	loginRateLimit         RateLimitPolicy
-	passwordResetRateLimit RateLimitPolicy
-	now                    func() time.Time
-	random                 io.Reader
+	store                       RuntimeStore
+	identifiers                 map[IdentifierScheme]IdentifierResolver
+	membership                  MembershipGate
+	claims                      ClaimsEnricher
+	renderer                    NotificationRenderer
+	urlBuilder                  URLBuilder
+	eventSink                   EncryptedEventSink
+	notificationTransaction     NotificationTransaction
+	managedNotificationDelivery bool
+	audit                       AuditSink
+	hasher                      PasswordHasher
+	passwordPolicy              PasswordPolicy
+	realms                      map[Realm]struct{}
+	secretCodec                 *secretCodec
+	envelopes                   *envelopeCipher
+	jwt                         *jwtIssuer
+	dummyPasswordPHC            string
+	accessTTL                   time.Duration
+	sessionTTL                  time.Duration
+	refreshTTL                  time.Duration
+	passwordResetTTL            time.Duration
+	challengeTTL                time.Duration
+	emailChangeTTL              time.Duration
+	envelopeRetention           time.Duration
+	resetResponseFloor          time.Duration
+	identityLinkAuthMaxAge      time.Duration
+	loginRateLimit              RateLimitPolicy
+	passwordResetRateLimit      RateLimitPolicy
+	now                         func() time.Time
+	random                      io.Reader
 }
 
 func NewRuntime(config Config) (*Runtime, error) {
+	if config.ManagedNotificationDelivery && config.NotificationRenderer != nil {
+		return nil, errors.New("managed notification delivery does not support a custom renderer")
+	}
 	config = applyRuntimeDefaults(config)
 	if err := validateRuntimeConfig(config); err != nil {
 		return nil, err
@@ -122,34 +131,36 @@ func NewRuntime(config Config) (*Runtime, error) {
 	}
 
 	return &Runtime{
-		store:                  config.Store,
-		identifiers:            identifierResolvers,
-		membership:             config.MembershipGate,
-		claims:                 config.ClaimsEnricher,
-		renderer:               config.NotificationRenderer,
-		urlBuilder:             config.URLBuilder,
-		eventSink:              config.EventSink,
-		audit:                  config.AuditSink,
-		hasher:                 config.PasswordHasher,
-		passwordPolicy:         config.PasswordPolicy,
-		realms:                 realms,
-		secretCodec:            newSecretCodec(config.TokenHMACKeys, config.Random),
-		envelopes:              newEnvelopeCipher(config.OutboxAEADKeys, config.Random, config.Now),
-		jwt:                    jwt,
-		dummyPasswordPHC:       dummyPHC,
-		accessTTL:              config.AccessTTL,
-		sessionTTL:             config.SessionTTL,
-		refreshTTL:             config.RefreshTTL,
-		passwordResetTTL:       config.PasswordResetTTL,
-		challengeTTL:           config.ChallengeTTL,
-		emailChangeTTL:         config.EmailChangeTTL,
-		envelopeRetention:      config.EnvelopeRetention,
-		resetResponseFloor:     config.ResetResponseFloor,
-		identityLinkAuthMaxAge: config.IdentityLinkAuthMaxAge,
-		loginRateLimit:         config.LoginRateLimit,
-		passwordResetRateLimit: config.PasswordResetRateLimit,
-		now:                    config.Now,
-		random:                 config.Random,
+		store:                       config.Store,
+		identifiers:                 identifierResolvers,
+		membership:                  config.MembershipGate,
+		claims:                      config.ClaimsEnricher,
+		renderer:                    config.NotificationRenderer,
+		urlBuilder:                  config.URLBuilder,
+		eventSink:                   config.EventSink,
+		notificationTransaction:     config.NotificationTransaction,
+		managedNotificationDelivery: config.ManagedNotificationDelivery,
+		audit:                       config.AuditSink,
+		hasher:                      config.PasswordHasher,
+		passwordPolicy:              config.PasswordPolicy,
+		realms:                      realms,
+		secretCodec:                 newSecretCodec(config.TokenHMACKeys, config.Random),
+		envelopes:                   newEnvelopeCipher(config.OutboxAEADKeys, config.Random, config.Now),
+		jwt:                         jwt,
+		dummyPasswordPHC:            dummyPHC,
+		accessTTL:                   config.AccessTTL,
+		sessionTTL:                  config.SessionTTL,
+		refreshTTL:                  config.RefreshTTL,
+		passwordResetTTL:            config.PasswordResetTTL,
+		challengeTTL:                config.ChallengeTTL,
+		emailChangeTTL:              config.EmailChangeTTL,
+		envelopeRetention:           config.EnvelopeRetention,
+		resetResponseFloor:          config.ResetResponseFloor,
+		identityLinkAuthMaxAge:      config.IdentityLinkAuthMaxAge,
+		loginRateLimit:              config.LoginRateLimit,
+		passwordResetRateLimit:      config.PasswordResetRateLimit,
+		now:                         config.Now,
+		random:                      config.Random,
 	}, nil
 }
 
@@ -204,6 +215,9 @@ func applyRuntimeDefaults(config Config) Config {
 }
 
 func validateRuntimeConfig(config Config) error {
+	if config.ManagedNotificationDelivery && config.NotificationTransaction == nil {
+		return errors.New("managed notification delivery requires a notification transaction")
+	}
 	if config.Store == nil {
 		return errors.New("runtime store is required")
 	}

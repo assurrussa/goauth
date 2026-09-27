@@ -2,13 +2,16 @@ package postgres
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"embed"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"time"
 )
 
-const schemaVersion = 2
+const schemaVersion = 3
 
 // ResetConfirmation is intentionally a distinct type so destructive schema
 // resets cannot receive an arbitrary runtime string by accident.
@@ -21,6 +24,9 @@ const ConfirmResetAuthState ResetConfirmation = "RESET GOAUTH AUTH STATE"
 var (
 	ErrLegacySchemaRequiresReset = errors.New("goauth v0.1 schema requires an explicit dev/test reset")
 	ErrResetConfirmationRequired = errors.New("explicit goauth reset confirmation is required")
+	ErrFutureSchema              = errors.New("goauth database schema is newer than this library")
+	ErrSchemaNeedsMigration      = errors.New("goauth database schema requires migration")
+	ErrSchemaChecksumMismatch    = errors.New("goauth migration checksum mismatch")
 )
 
 //go:embed migrations/*.sql
@@ -30,26 +36,54 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if db == nil {
 		return errors.New("PostgreSQL database is required")
 	}
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("reserve goauth migration connection: %w", err)
+	}
+	defer conn.Close()
+	const lockID int64 = 6686167654426882759
+	if _, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock($1)`, lockID); err != nil {
+		return fmt.Errorf("lock goauth migrations: %w", err)
+	}
+	defer func() {
+		// Use a fresh context: cancellation of the migration request must not
+		// return a session-level advisory lock to the connection pool.
+		unlockCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		_, _ = conn.ExecContext(unlockCtx, `SELECT pg_advisory_unlock($1)`, lockID)
+	}()
 
-	state, err := detectSchema(ctx, db)
+	state, err := detectSchema(ctx, conn)
 	if err != nil {
 		return err
 	}
 	switch state {
-	case schemaStateV2:
-		return nil
+	case schemaStateV3:
+		return verifySchema(ctx, conn)
+	case schemaStateFuture:
+		return ErrFutureSchema
 	case schemaStateLegacy:
 		return ErrLegacySchemaRequiresReset
 	case schemaStateEmpty:
+		if err := applyBaseline(ctx, conn); err != nil {
+			return err
+		}
+	case schemaStateV2:
 	default:
 		return errors.New("unknown goauth schema state")
 	}
+	if err := applyNotificationMigration(ctx, conn); err != nil {
+		return err
+	}
+	return verifySchema(ctx, conn)
+}
 
+func applyBaseline(ctx context.Context, conn *sql.Conn) error {
 	sqlBytes, err := migrationFiles.ReadFile("migrations/00001_v0_2_baseline.sql")
 	if err != nil {
 		return fmt.Errorf("read embedded goauth v0.2 migration: %w", err)
 	}
-	tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	tx, err := conn.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return fmt.Errorf("begin goauth v0.2 migration: %w", err)
 	}
@@ -64,7 +98,95 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
-// Down removes canonical v0.1 or v0.2 auth state and requires an exact
+func applyNotificationMigration(ctx context.Context, conn *sql.Conn) error {
+	sqlBytes, err := migrationFiles.ReadFile("migrations/00002_notifications.sql")
+	if err != nil {
+		return fmt.Errorf("read embedded notification migration: %w", err)
+	}
+	checksum := sha256.Sum256(sqlBytes)
+	tx, err := conn.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return fmt.Errorf("begin notification migration: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, string(sqlBytes)); err != nil {
+		return fmt.Errorf("apply notification migration: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO goauth_migration_history (version, checksum) VALUES ($1, $2)`,
+		schemaVersion, hex.EncodeToString(checksum[:])); err != nil {
+		return fmt.Errorf("record notification migration checksum: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO goauth_schema_version (version) VALUES ($1)`, schemaVersion); err != nil {
+		return fmt.Errorf("record notification schema version: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit notification migration: %w", err)
+	}
+	return nil
+}
+
+// VerifySchema rejects stale, incomplete, altered, or future schemas without
+// changing database state. Callers with AutoMigrate disabled get this check at
+// Runtime construction.
+func VerifySchema(ctx context.Context, db *sql.DB) error {
+	if db == nil {
+		return errors.New("PostgreSQL database is required")
+	}
+	return verifySchema(ctx, db)
+}
+
+func verifySchema(ctx context.Context, db queryRower) error {
+	state, err := detectSchema(ctx, db)
+	if err != nil {
+		return err
+	}
+	if state == schemaStateFuture {
+		return ErrFutureSchema
+	}
+	if state != schemaStateV3 {
+		return ErrSchemaNeedsMigration
+	}
+	var historyTable, queueTable sql.NullString
+	if err := db.QueryRowContext(ctx, `
+SELECT to_regclass('public.goauth_migration_history')::text,
+       to_regclass('public.auth_notification_deliveries')::text`).Scan(&historyTable, &queueTable); err != nil {
+		return fmt.Errorf("inspect goauth migration tables: %w", err)
+	}
+	if !historyTable.Valid || !queueTable.Valid {
+		return ErrSchemaNeedsMigration
+	}
+	sqlBytes, err := migrationFiles.ReadFile("migrations/00002_notifications.sql")
+	if err != nil {
+		return err
+	}
+	checksum := sha256.Sum256(sqlBytes)
+	var recorded string
+	if err := db.QueryRowContext(ctx, `SELECT checksum FROM goauth_migration_history WHERE version = $1`,
+		schemaVersion).Scan(&recorded); err != nil {
+		return fmt.Errorf("read goauth migration history: %w", err)
+	}
+	if recorded != hex.EncodeToString(checksum[:]) {
+		return ErrSchemaChecksumMismatch
+	}
+	var requiredColumns int
+	if err := db.QueryRowContext(ctx, `
+SELECT count(*) FROM information_schema.columns
+WHERE table_schema = 'public' AND table_name = 'auth_notification_deliveries'
+  AND column_name IN (
+    'id', 'subject_id', 'event_type', 'reference_id', 'valid_until',
+    'key_id', 'nonce', 'ciphertext', 'additional_data', 'created_at',
+    'delete_after', 'state', 'attempts', 'next_attempt_at', 'lease_token',
+    'leased_until', 'delivered_at', 'last_failure'
+  )`).Scan(&requiredColumns); err != nil {
+		return fmt.Errorf("inspect notification columns: %w", err)
+	}
+	if requiredColumns != 18 {
+		return ErrSchemaNeedsMigration
+	}
+	return nil
+}
+
+// Down removes canonical auth state, including managed notifications, and requires an exact
 // confirmation value. It is intended for isolated development and test
 // databases; Migrate never calls it implicitly.
 func Down(ctx context.Context, db *sql.DB, confirmation ResetConfirmation) error {
@@ -77,6 +199,8 @@ func Down(ctx context.Context, db *sql.DB, confirmation ResetConfirmation) error
 
 	const statement = `
 DROP TABLE IF EXISTS auth_security_audit_events;
+DROP TABLE IF EXISTS auth_notification_deliveries;
+DROP TABLE IF EXISTS goauth_migration_history;
 DROP TABLE IF EXISTS auth_rate_limit_events;
 DROP TABLE IF EXISTS auth_subject_roles;
 DROP TABLE IF EXISTS auth_role_permissions;
@@ -133,9 +257,11 @@ const (
 	schemaStateEmpty schemaState = iota
 	schemaStateLegacy
 	schemaStateV2
+	schemaStateV3
+	schemaStateFuture
 )
 
-func detectSchema(ctx context.Context, db *sql.DB) (schemaState, error) {
+func detectSchema(ctx context.Context, db queryRower) (schemaState, error) {
 	var subjectsTable sql.NullString
 	if err := db.QueryRowContext(ctx, `SELECT to_regclass('public.auth_subjects')::text`).Scan(&subjectsTable); err != nil {
 		return schemaStateEmpty, fmt.Errorf("detect auth_subjects table: %w", err)
@@ -156,7 +282,10 @@ func detectSchema(ctx context.Context, db *sql.DB) (schemaState, error) {
 	if err := db.QueryRowContext(ctx, `SELECT max(version) FROM goauth_schema_version`).Scan(&version); err != nil {
 		return schemaStateEmpty, fmt.Errorf("read goauth schema version: %w", err)
 	}
-	if version != schemaVersion {
+	if version > schemaVersion {
+		return schemaStateFuture, nil
+	}
+	if version != 2 && version != schemaVersion {
 		return schemaStateLegacy, nil
 	}
 
@@ -173,5 +302,8 @@ WHERE table_schema = 'public'
 		return schemaStateLegacy, nil
 	}
 
+	if version == schemaVersion {
+		return schemaStateV3, nil
+	}
 	return schemaStateV2, nil
 }

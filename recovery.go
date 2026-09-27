@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -57,15 +58,6 @@ func (r *Runtime) RequestPasswordReset(ctx context.Context, email string) error 
 		return err
 	}
 	now := r.now().UTC()
-	if err := r.store.CreatePasswordReset(ctx, PasswordResetRecord{
-		SubjectID: record.Account.Subject.ID,
-		Selector:  token.selector,
-		Digest:    digest,
-		ExpiresAt: now.Add(r.passwordResetTTL),
-		CreatedAt: now,
-	}); err != nil {
-		return fmt.Errorf("create password reset: %w", err)
-	}
 	resetURL, err := r.urlBuilder.PasswordResetURL(ctx, token.raw)
 	if err != nil {
 		return fmt.Errorf("build password reset URL: %w", err)
@@ -73,20 +65,36 @@ func (r *Runtime) RequestPasswordReset(ctx context.Context, email string) error 
 	if err := validatePasswordResetURL(resetURL); err != nil {
 		return err
 	}
-	if err := r.enqueueNotification(ctx, "password_reset", record.Account, Notification{
-		Template: "password_reset",
-		To:       record.Account.PrimaryEmail.DisplayValue,
-		Data: map[string]string{
-			"reset_url":            resetURL,
-			notificationExpiresKey: r.passwordResetTTL.String(),
-		},
-	}); err != nil {
-		return err
-	}
-	return r.recordAudit(ctx, SecurityEvent{
-		Type:      SecurityEventPasswordResetIssued,
-		SubjectID: record.Account.Subject.ID,
-		At:        now,
+	return r.inNotificationTransaction(ctx, func(txCtx context.Context) error {
+		if err := r.store.CreatePasswordReset(txCtx, PasswordResetRecord{
+			SubjectID:               record.Account.Subject.ID,
+			Selector:                token.selector,
+			Digest:                  digest,
+			ExpectedNormalizedEmail: record.Account.PrimaryEmail.NormalizedValue,
+			ExpectedSecurityVersion: record.Account.Subject.SecurityVersion,
+			ExpiresAt:               now.Add(r.passwordResetTTL),
+			CreatedAt:               now,
+		}); err != nil {
+			if errors.Is(err, ErrAccountNotFound) {
+				return nil
+			}
+			return fmt.Errorf("create password reset: %w", err)
+		}
+		if err := r.enqueueNotification(txCtx, "password_reset", record.Account, Notification{
+			Template: "password_reset",
+			To:       record.Account.PrimaryEmail.DisplayValue,
+			Data: map[string]string{
+				"reset_url":            resetURL,
+				notificationExpiresKey: r.passwordResetTTL.String(),
+			},
+		}, notificationMetadata{referenceID: token.selector, validUntil: now.Add(r.passwordResetTTL)}); err != nil {
+			return err
+		}
+		return r.recordAudit(txCtx, SecurityEvent{
+			Type:      SecurityEventPasswordResetIssued,
+			SubjectID: record.Account.Subject.ID,
+			At:        now,
+		})
 	})
 }
 
@@ -103,37 +111,45 @@ func (r *Runtime) ResetPassword(ctx context.Context, rawToken, newPassword strin
 		return fmt.Errorf("hash replacement password: %w", err)
 	}
 	now := r.now().UTC()
-	result, err := r.store.ConsumePasswordReset(ctx, PasswordResetConsumeRequest{
-		Selector:    token.selector,
-		Digest:      digest,
-		PasswordPHC: passwordPHC,
-		Now:         now,
+	var outcomeErr error
+	err = r.inNotificationTransaction(ctx, func(txCtx context.Context) error {
+		result, err := r.store.ConsumePasswordReset(txCtx, PasswordResetConsumeRequest{
+			Selector:    token.selector,
+			Digest:      digest,
+			PasswordPHC: passwordPHC,
+			Now:         now,
+		})
+		if err != nil {
+			return fmt.Errorf("consume password reset: %w", err)
+		}
+		switch result.Status {
+		case PasswordResetConsumed:
+		case PasswordResetExpired:
+			outcomeErr = ErrExpiredToken
+			return nil
+		case PasswordResetUsed:
+			outcomeErr = ErrResetAlreadyUsed
+			return nil
+		default:
+			outcomeErr = ErrInvalidToken
+			return nil
+		}
+		if err := r.enqueueNotification(txCtx, "password_reset_success", result.Account, Notification{
+			Template: "password_reset_success",
+			To:       result.Account.PrimaryEmail.DisplayValue,
+		}); err != nil {
+			return err
+		}
+		return r.recordAudit(txCtx, SecurityEvent{
+			Type:      SecurityEventPasswordResetUsed,
+			SubjectID: result.Account.Subject.ID,
+			At:        now,
+		})
 	})
 	if err != nil {
-		return fmt.Errorf("consume password reset: %w", err)
-	}
-	switch result.Status {
-	case PasswordResetConsumed:
-	case PasswordResetExpired:
-		return ErrExpiredToken
-	case PasswordResetUsed:
-		return ErrResetAlreadyUsed
-	case PasswordResetInvalid:
-		return ErrInvalidToken
-	default:
-		return ErrInvalidToken
-	}
-	if err := r.enqueueNotification(ctx, "password_reset_success", result.Account, Notification{
-		Template: "password_reset_success",
-		To:       result.Account.PrimaryEmail.DisplayValue,
-	}); err != nil {
 		return err
 	}
-	return r.recordAudit(ctx, SecurityEvent{
-		Type:      SecurityEventPasswordResetUsed,
-		SubjectID: result.Account.Subject.ID,
-		At:        now,
-	})
+	return outcomeErr
 }
 
 func (r *Runtime) SendEmailChallenge(
@@ -170,48 +186,56 @@ func (r *Runtime) SendEmailChallenge(
 		return err
 	}
 	now := r.now().UTC()
-	issue, err := r.store.IssueEmailChallenge(ctx, EmailChallengeRecord{
-		ID:           uuid.NewString(),
-		SubjectID:    subjectID,
-		IdentifierID: account.PrimaryEmail.ID,
-		Purpose:      purpose,
-		Digest:       digest,
-		RateDigest:   rateDigest,
-		MaxAttempts:  5,
-		ExpiresAt:    now.Add(r.challengeTTL),
-		CreatedAt:    now,
-	}, EmailChallengeLimits{
-		MinResendInterval: time.Minute,
-		PerHour:           5,
-		PerDay:            10,
+	challengeID := uuid.NewString()
+	var outcomeErr error
+	err = r.inNotificationTransaction(ctx, func(txCtx context.Context) error {
+		issue, err := r.store.IssueEmailChallenge(txCtx, EmailChallengeRecord{
+			ID:           challengeID,
+			SubjectID:    subjectID,
+			IdentifierID: account.PrimaryEmail.ID,
+			Purpose:      purpose,
+			Digest:       digest,
+			RateDigest:   rateDigest,
+			MaxAttempts:  5,
+			ExpiresAt:    now.Add(r.challengeTTL),
+			CreatedAt:    now,
+		}, EmailChallengeLimits{
+			MinResendInterval: time.Minute,
+			PerHour:           5,
+			PerDay:            10,
+		})
+		if err != nil {
+			return fmt.Errorf("issue email challenge: %w", err)
+		}
+		switch issue.Status {
+		case EmailChallengeIssued:
+		case EmailChallengeWait:
+			outcomeErr = ErrConfirmationResendDelay
+			return nil
+		default:
+			outcomeErr = ErrConfirmationRateLimited
+			return nil
+		}
+		if err := r.enqueueNotification(txCtx, "email_challenge", account, Notification{
+			Template: "email_challenge",
+			To:       account.PrimaryEmail.DisplayValue,
+			Data: map[string]string{
+				"code":                 code,
+				notificationExpiresKey: r.challengeTTL.String(),
+			},
+		}, notificationMetadata{referenceID: challengeID, validUntil: now.Add(r.challengeTTL)}); err != nil {
+			return err
+		}
+		return r.recordAudit(txCtx, SecurityEvent{
+			Type:      SecurityEventEmailChallengeIssued,
+			SubjectID: subjectID,
+			At:        now,
+		})
 	})
 	if err != nil {
-		return fmt.Errorf("issue email challenge: %w", err)
-	}
-	switch issue.Status {
-	case EmailChallengeIssued:
-	case EmailChallengeWait:
-		return ErrConfirmationResendDelay
-	case EmailChallengeHourlyLimit, EmailChallengeDailyLimit:
-		return ErrConfirmationRateLimited
-	default:
-		return ErrConfirmationRateLimited
-	}
-	if err := r.enqueueNotification(ctx, "email_challenge", account, Notification{
-		Template: "email_challenge",
-		To:       account.PrimaryEmail.DisplayValue,
-		Data: map[string]string{
-			"code":                 code,
-			notificationExpiresKey: r.challengeTTL.String(),
-		},
-	}); err != nil {
 		return err
 	}
-	return r.recordAudit(ctx, SecurityEvent{
-		Type:      SecurityEventEmailChallengeIssued,
-		SubjectID: subjectID,
-		At:        now,
-	})
+	return outcomeErr
 }
 
 type RateLimitPolicy struct {
@@ -327,8 +351,17 @@ func (r *Runtime) enqueueNotification(
 	eventType string,
 	account Account,
 	notification Notification,
+	metadata ...notificationMetadata,
 ) error {
-	payload, err := r.renderer.RenderNotification(ctx, notification)
+	var (
+		payload []byte
+		err     error
+	)
+	if r.managedNotificationDelivery {
+		payload, err = json.Marshal(notification)
+	} else {
+		payload, err = r.renderer.RenderNotification(ctx, notification)
+	}
 	if err != nil {
 		return fmt.Errorf("render encrypted notification: %w", err)
 	}
@@ -336,7 +369,24 @@ func (r *Runtime) enqueueNotification(
 		delete(notification.Data, key)
 		_ = value
 	}
-	additionalData := []byte(eventType + ":" + account.Subject.ID.String())
+	event := EncryptedEvent{
+		ID:        uuid.NewString(),
+		Type:      eventType,
+		SubjectID: account.Subject.ID,
+	}
+	if r.managedNotificationDelivery {
+		event.ValidUntil = r.now().UTC().Add(r.envelopeRetention)
+		if len(metadata) > 0 {
+			event.ReferenceID = metadata[0].referenceID
+			if !metadata[0].validUntil.IsZero() && metadata[0].validUntil.Before(event.ValidUntil) {
+				event.ValidUntil = metadata[0].validUntil.UTC()
+			}
+		}
+		// PostgreSQL timestamps have microsecond precision. Bind the value
+		// that will actually round-trip from the durable queue to the AEAD.
+		event.ValidUntil = event.ValidUntil.Truncate(time.Microsecond)
+	}
+	additionalData := notificationAdditionalData(event)
 	envelope, err := r.envelopes.Encrypt(payload, additionalData, r.envelopeRetention)
 	for index := range payload {
 		payload[index] = 0
@@ -344,12 +394,8 @@ func (r *Runtime) enqueueNotification(
 	if err != nil {
 		return fmt.Errorf("encrypt notification: %w", err)
 	}
-	if err := r.eventSink.EnqueueEncrypted(ctx, EncryptedEvent{
-		ID:        uuid.NewString(),
-		Type:      eventType,
-		SubjectID: account.Subject.ID,
-		Envelope:  envelope,
-	}); err != nil {
+	event.Envelope = envelope
+	if err := r.eventSink.EnqueueEncrypted(ctx, event); err != nil {
 		return fmt.Errorf("enqueue encrypted notification: %w", err)
 	}
 
@@ -357,6 +403,9 @@ func (r *Runtime) enqueueNotification(
 }
 
 func (r *Runtime) AcknowledgeEncryptedEvent(ctx context.Context, eventID string) error {
+	if r.managedNotificationDelivery {
+		return errors.New("managed notifications can only be acknowledged by the lease-owning worker")
+	}
 	eventID = strings.TrimSpace(eventID)
 	if eventID == "" {
 		return errors.New("encrypted event ID is required")
@@ -369,7 +418,7 @@ func (r *Runtime) AcknowledgeEncryptedEvent(ctx context.Context, eventID string)
 }
 
 func (r *Runtime) DecryptNotificationEvent(event EncryptedEvent) (Notification, error) {
-	expectedAdditionalData := []byte(event.Type + ":" + event.SubjectID.String())
+	expectedAdditionalData := notificationAdditionalData(event)
 	if event.ID == "" || event.Type == "" || event.SubjectID.IsZero() ||
 		!bytes.Equal(event.Envelope.AdditionalData, expectedAdditionalData) {
 		return Notification{}, errors.New("invalid encrypted notification event")
@@ -392,6 +441,16 @@ func (r *Runtime) DecryptNotificationEvent(event EncryptedEvent) (Notification, 
 	}
 
 	return notification, nil
+}
+
+func notificationAdditionalData(event EncryptedEvent) []byte {
+	if event.ValidUntil.IsZero() {
+		return []byte(event.Type + ":" + event.SubjectID.String())
+	}
+	return []byte("goauth-notification:v1:" +
+		strconv.Quote(event.ID) + ":" + strconv.Quote(event.Type) + ":" +
+		strconv.Quote(event.SubjectID.String()) + ":" + strconv.Quote(event.ReferenceID) + ":" +
+		strconv.FormatInt(event.ValidUntil.UTC().UnixMicro(), 10))
 }
 
 func (r *Runtime) CleanupExpiredEncryptedEvents(ctx context.Context) (int64, error) {

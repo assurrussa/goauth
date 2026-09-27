@@ -9,31 +9,35 @@ import (
 )
 
 type CleanupPolicy struct {
-	ExpiredRecordRetention time.Duration
-	RateEventRetention     time.Duration
-	AuditEventRetention    time.Duration
-	Now                    func() time.Time
+	ExpiredRecordRetention       time.Duration
+	RateEventRetention           time.Duration
+	AuditEventRetention          time.Duration
+	NotificationReceiptRetention time.Duration
+	Now                          func() time.Time
 }
 
 type CleanupResult struct {
-	PasswordResets      int64
-	EmailChallenges     int64
-	EmailChanges        int64
-	RefreshTokens       int64
-	RefreshFamilies     int64
-	OIDCRefreshTokens   int64
-	OIDCRefreshFamilies int64
-	Sessions            int64
-	RateEvents          int64
-	AuditEvents         int64
+	PasswordResets       int64
+	EmailChallenges      int64
+	EmailChanges         int64
+	RefreshTokens        int64
+	RefreshFamilies      int64
+	OIDCRefreshTokens    int64
+	OIDCRefreshFamilies  int64
+	Sessions             int64
+	RateEvents           int64
+	AuditEvents          int64
+	NotificationsExpired int64
+	NotificationReceipts int64
 }
 
 func DefaultCleanupPolicy() CleanupPolicy {
 	return CleanupPolicy{
-		ExpiredRecordRetention: 24 * time.Hour,
-		RateEventRetention:     25 * time.Hour,
-		AuditEventRetention:    90 * 24 * time.Hour,
-		Now:                    time.Now,
+		ExpiredRecordRetention:       24 * time.Hour,
+		RateEventRetention:           25 * time.Hour,
+		AuditEventRetention:          90 * 24 * time.Hour,
+		NotificationReceiptRetention: 7 * 24 * time.Hour,
+		Now:                          time.Now,
 	}
 }
 
@@ -51,15 +55,22 @@ func (r *Runtime) Cleanup(ctx context.Context, policy CleanupPolicy) (CleanupRes
 	if policy.AuditEventRetention == 0 {
 		policy.AuditEventRetention = defaults.AuditEventRetention
 	}
+	if policy.NotificationReceiptRetention == 0 {
+		policy.NotificationReceiptRetention = defaults.NotificationReceiptRetention
+	}
 	if policy.Now == nil {
 		policy.Now = time.Now
 	}
 	if policy.ExpiredRecordRetention < 0 || policy.RateEventRetention < 24*time.Hour ||
-		policy.AuditEventRetention < 24*time.Hour {
+		policy.AuditEventRetention < 24*time.Hour || policy.NotificationReceiptRetention < 24*time.Hour {
 		return CleanupResult{}, errors.New("invalid goauth cleanup retention")
 	}
 
 	now := policy.Now().UTC()
+	notificationExpired, err := r.store.DeleteExpiredEncrypted(ctx, now)
+	if err != nil {
+		return CleanupResult{}, err
+	}
 	expiredBefore := now.Add(-policy.ExpiredRecordRetention)
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
@@ -67,7 +78,7 @@ func (r *Runtime) Cleanup(ctx context.Context, policy CleanupPolicy) (CleanupRes
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	var result CleanupResult
+	result := CleanupResult{NotificationsExpired: notificationExpired}
 	deletions := []struct {
 		query string
 		arg   time.Time
@@ -84,6 +95,11 @@ WHERE expires_at < $1 OR revoked_at < $1 OR replayed_at < $1`, expiredBefore, &r
 		{`DELETE FROM auth_sessions WHERE expires_at < $1 OR revoked_at < $1`, expiredBefore, &result.Sessions},
 		{`DELETE FROM auth_rate_limit_events WHERE occurred_at < $1`, now.Add(-policy.RateEventRetention), &result.RateEvents},
 		{`DELETE FROM auth_security_audit_events WHERE occurred_at < $1`, now.Add(-policy.AuditEventRetention), &result.AuditEvents},
+		{
+			`DELETE FROM auth_notification_deliveries
+WHERE ciphertext IS NULL AND COALESCE(delivered_at, valid_until) < $1`,
+			now.Add(-policy.NotificationReceiptRetention), &result.NotificationReceipts,
+		},
 	}
 	for _, deletion := range deletions {
 		execResult, err := tx.ExecContext(ctx, deletion.query, deletion.arg)

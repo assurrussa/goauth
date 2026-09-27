@@ -160,7 +160,26 @@ func TestRuntimeFiberOIDCAndRBACWiring(t *testing.T) {
 	}
 
 	_ = oidc.ScopeOpenID
-	_ = postgres.Config{}
+	sender := goauth.NotificationSenderFunc(func(_ context.Context, delivery goauth.NotificationDelivery) error {
+		if delivery.ID != "probe" || delivery.Notification.Template != "probe" {
+			t.Fatal("managed notification delivery lost its identity or template")
+		}
+		return nil
+	})
+	if err := sender.SendNotification(context.Background(), goauth.NotificationDelivery{
+		ID: "probe", Notification: goauth.Notification{Template: "probe"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	managed := postgres.Config{
+		NotificationSender: sender,
+		NotificationWorker: postgres.NotificationWorkerConfig{Workers: 1},
+	}
+	if managed.NotificationSender == nil {
+		t.Fatal("managed notification sender is missing")
+	}
+	_ = (*postgres.Runtime).RunNotifications
+	_ = (*postgres.Runtime).NotificationStats
 	_ = postgres.NewOIDCRefreshTokenStore
 	_ = (*postgres.Runtime).OIDCProvider
 	_ = (*postgres.Runtime).RBAC

@@ -23,11 +23,11 @@ func (s *Store) IssueEmailChallenge(
 		return goauth.EmailChallengeIssueResult{}, errors.New("invalid email challenge record or limits")
 	}
 	action := "email_challenge:" + string(record.Purpose)
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
 		return goauth.EmailChallengeIssueResult{}, fmt.Errorf("begin email challenge issue: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackWrite(tx, owned)
 
 	lockKey := record.RateDigest.KeyID + ":" + hex.EncodeToString(record.RateDigest.Digest) + ":" + action
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, lockKey); err != nil {
@@ -100,7 +100,7 @@ VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8, $9)`,
 	); err != nil {
 		return goauth.EmailChallengeIssueResult{}, fmt.Errorf("insert email challenge: %w", err)
 	}
-	if err := tx.Commit(); err != nil {
+	if err := finishWrite(tx, owned); err != nil {
 		return goauth.EmailChallengeIssueResult{}, fmt.Errorf("commit email challenge issue: %w", err)
 	}
 
@@ -111,11 +111,11 @@ func (s *Store) VerifyEmailChallenge(
 	ctx context.Context,
 	request goauth.EmailChallengeVerifyRequest,
 ) (goauth.EmailChallengeVerifyResult, error) {
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
 		return goauth.EmailChallengeVerifyResult{}, fmt.Errorf("begin email challenge verify: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackWrite(tx, owned)
 
 	var (
 		challengeID  string
@@ -184,7 +184,7 @@ WHERE id = $1 AND verified_at IS NULL`, challengeID)
 		if err != nil || rows != 1 {
 			return goauth.EmailChallengeVerifyResult{}, errors.New("email challenge attempt guard did not update exactly one row")
 		}
-		if err := tx.Commit(); err != nil {
+		if err := finishWrite(tx, owned); err != nil {
 			return goauth.EmailChallengeVerifyResult{}, fmt.Errorf("commit email challenge attempt: %w", err)
 		}
 		return goauth.EmailChallengeVerifyResult{
@@ -220,7 +220,7 @@ WHERE subject_id = $1
 	if err != nil {
 		return goauth.EmailChallengeVerifyResult{}, err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := finishWrite(tx, owned); err != nil {
 		return goauth.EmailChallengeVerifyResult{}, fmt.Errorf("commit email challenge verification: %w", err)
 	}
 

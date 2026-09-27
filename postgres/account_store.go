@@ -46,11 +46,11 @@ func (s *Store) CreateLocalAccount(
 	if record.Account.Subject.IsZero() || record.Account.PrimaryEmail.ID == "" || record.PasswordPHC == "" {
 		return goauth.Account{}, errors.New("invalid local account record")
 	}
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
 		return goauth.Account{}, fmt.Errorf("begin local account transaction: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackWrite(tx, owned)
 
 	account := record.Account
 	if _, err := tx.ExecContext(ctx, `
@@ -106,7 +106,7 @@ VALUES ($1, $2, $3, $4)`,
 	); err != nil {
 		return goauth.Account{}, transformWriteError("insert local credential", err)
 	}
-	if err := tx.Commit(); err != nil {
+	if err := finishWrite(tx, owned); err != nil {
 		return goauth.Account{}, fmt.Errorf("commit local account transaction: %w", err)
 	}
 
@@ -222,24 +222,29 @@ func (s *Store) ChangePassword(
 		request.Now.IsZero() {
 		return goauth.PasswordChangeStoreResult{}, errors.New("invalid password change request")
 	}
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
 		return goauth.PasswordChangeStoreResult{}, fmt.Errorf("begin password change: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackWrite(tx, owned)
 
 	var currentPHC, status string
 	err = tx.QueryRowContext(ctx, `
-SELECT c.password_phc, s.status
-FROM auth_local_credentials c
-JOIN auth_subjects s ON s.id = c.subject_id
-WHERE c.subject_id = $1
-FOR UPDATE OF c, s`, request.SubjectID).Scan(&currentPHC, &status)
+	SELECT status FROM auth_subjects WHERE id = $1 FOR UPDATE`, request.SubjectID).Scan(&status)
 	if errors.Is(err, sql.ErrNoRows) {
 		return goauth.PasswordChangeStoreResult{Status: goauth.PasswordChangeStoreMissing}, nil
 	}
 	if err != nil {
-		return goauth.PasswordChangeStoreResult{}, fmt.Errorf("lock local credential: %w", err)
+		return goauth.PasswordChangeStoreResult{}, fmt.Errorf("lock password change subject: %w", err)
+	}
+	err = tx.QueryRowContext(ctx, `
+	SELECT password_phc FROM auth_local_credentials WHERE subject_id = $1 FOR UPDATE`,
+		request.SubjectID).Scan(&currentPHC)
+	if errors.Is(err, sql.ErrNoRows) {
+		return goauth.PasswordChangeStoreResult{Status: goauth.PasswordChangeStoreMissing}, nil
+	}
+	if err != nil {
+		return goauth.PasswordChangeStoreResult{}, fmt.Errorf("lock password change credential: %w", err)
 	}
 	if currentPHC != request.ExpectedPasswordPHC {
 		return goauth.PasswordChangeStoreResult{Status: goauth.PasswordChangeStoreConflict}, nil
@@ -272,11 +277,14 @@ WHERE id = $1`, request.SubjectID, request.Now); err != nil {
 	if _, err := revokeSubjectSecurityState(ctx, tx, request.SubjectID, request.Now); err != nil {
 		return goauth.PasswordChangeStoreResult{}, err
 	}
+	if err := invalidatePasswordResets(ctx, tx, request.SubjectID, request.Now); err != nil {
+		return goauth.PasswordChangeStoreResult{}, err
+	}
 	account, err := getAccount(ctx, tx, request.SubjectID)
 	if err != nil {
 		return goauth.PasswordChangeStoreResult{}, err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := finishWrite(tx, owned); err != nil {
 		return goauth.PasswordChangeStoreResult{}, fmt.Errorf("commit password change: %w", err)
 	}
 

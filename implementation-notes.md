@@ -80,3 +80,31 @@
 - Locked the enumeration-safe recovery contract: an active unverified local
   account receives a one-time reset notification, but a successful password
   reset does not verify its email or promote its confirmation-scoped session.
+
+## Standalone public candidate (2026-09-27)
+
+- The v0.2 note about retaining `internal/legacy` describes historical state.
+  The v0.4 candidate removes that tree and its private module dependencies;
+  supported public imports remain the nine-package manifest.
+- PostgreSQL managed delivery is opt-in through `NotificationSender`. The host
+  owns the actual transport and supervises `RunNotifications` and `Cleanup`.
+  The advanced encrypted-event sink remains available for custom integration.
+- Native auth writes, encrypted enqueue, and audit share one transaction.
+  Expected business outcomes commit outside the callback error path, notably
+  wrong-code attempt counters. External sends run only after commit.
+- Queue leases use token-checked completion. Sender retries are at least once
+  with a stable delivery ID. Undecryptable events become individually blocked
+  and are retried after one minute; expiry cleanup runs independently.
+- The v0.2 SQL baseline stays byte-for-byte unchanged. An additive migration
+  creates the delivery queue and checksum ledger under a PostgreSQL advisory
+  lock; Runtime construction without AutoMigrate verifies the new schema.
+- A pre-send database check suppresses codes already expired, consumed, or
+  superseded at that instant. Concurrent invalidation during an in-flight
+  external send remains possible without holding a database transaction across
+  network I/O; the sender and host UX must tolerate that race.
+- The refresh replay path now authenticates the secret before revoking a
+  family, preventing a known selector with a forged secret from logging out
+  the legitimate session.
+- Reset issuance locks and checks the current account state; security changes
+  retire existing reset records. A custom transaction alone does not select
+  managed delivery or bypass its configured renderer.

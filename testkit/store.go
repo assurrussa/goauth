@@ -270,6 +270,7 @@ func (s *Store) ChangePassword(
 	account.Subject.UpdatedAt = request.Now
 	s.accounts[key] = account
 	s.revokeSubjectSecurityLocked(request.SubjectID, request.Now)
+	s.invalidatePasswordResetsLocked(request.SubjectID, request.Now)
 
 	return goauth.PasswordChangeStoreResult{
 		Status:  goauth.PasswordChangeStoreSucceeded,
@@ -318,6 +319,10 @@ func (s *Store) RotateRefresh(
 		Session:  session,
 		FamilyID: family.ID,
 	}
+	if token.Digest.KeyID != request.CurrentDigest.KeyID || !hmac.Equal(token.Digest.Digest, request.CurrentDigest.Digest) {
+		result.Status = goauth.RefreshRotationInvalid
+		return result, nil
+	}
 	if token.ConsumedAt != nil {
 		now := request.Now
 		family.RevokedAt = &now
@@ -326,10 +331,6 @@ func (s *Store) RotateRefresh(
 		s.sessions[session.ID] = session
 		result.Session = session
 		result.Status = goauth.RefreshRotationReplayed
-		return result, nil
-	}
-	if token.Digest.KeyID != request.CurrentDigest.KeyID || !hmac.Equal(token.Digest.Digest, request.CurrentDigest.Digest) {
-		result.Status = goauth.RefreshRotationInvalid
 		return result, nil
 	}
 	if !request.Now.Before(token.ExpiresAt) || !request.Now.Before(session.ExpiresAt) {
@@ -452,6 +453,7 @@ func (s *Store) SetSubjectStatus(
 	account.Subject.UpdatedAt = now
 	s.accounts[subjectID.String()] = account
 	s.revokeSubjectSecurityLocked(subjectID, now)
+	s.invalidatePasswordResetsLocked(subjectID, now)
 
 	return account.Subject, nil
 }
@@ -459,6 +461,12 @@ func (s *Store) SetSubjectStatus(
 func (s *Store) CreatePasswordReset(_ context.Context, record goauth.PasswordResetRecord) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	account, found := s.accounts[record.SubjectID.String()]
+	if !found || account.Subject.Status != goauth.SubjectStatusActive ||
+		account.Subject.SecurityVersion != record.ExpectedSecurityVersion ||
+		account.PrimaryEmail.NormalizedValue != record.ExpectedNormalizedEmail {
+		return goauth.ErrAccountNotFound
+	}
 
 	for _, stored := range s.resets {
 		if stored.SubjectID == record.SubjectID && stored.ConsumedAt == nil {
@@ -486,13 +494,16 @@ func (s *Store) ConsumePasswordReset(
 	if !found || record.Digest.KeyID != request.Digest.KeyID || !hmac.Equal(record.Digest.Digest, request.Digest.Digest) {
 		return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetInvalid}, nil
 	}
+	account := s.accounts[record.SubjectID.String()]
+	if account.Subject.Status != goauth.SubjectStatusActive {
+		return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetInvalid}, nil
+	}
 	if record.ConsumedAt != nil {
 		return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetUsed}, nil
 	}
 	if !request.Now.Before(record.ExpiresAt) {
 		return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetExpired}, nil
 	}
-	account := s.accounts[record.SubjectID.String()]
 	s.passwords[record.SubjectID.String()] = request.PasswordPHC
 	value := request.Now
 	record.ConsumedAt = &value
@@ -500,6 +511,7 @@ func (s *Store) ConsumePasswordReset(
 	account.Subject.UpdatedAt = request.Now
 	s.accounts[record.SubjectID.String()] = account
 	s.revokeSubjectSecurityLocked(record.SubjectID, request.Now)
+	s.invalidatePasswordResetsLocked(record.SubjectID, request.Now)
 
 	return goauth.PasswordResetConsumeResult{
 		Status:  goauth.PasswordResetConsumed,
@@ -757,12 +769,22 @@ func (s *Store) VerifyEmailChange(
 	consumedAt := request.Now
 	record.ConsumedAt = &consumedAt
 	s.revokeSubjectSecurityLocked(request.SubjectID, request.Now)
+	s.invalidatePasswordResetsLocked(request.SubjectID, request.Now)
 
 	return goauth.EmailChangeVerifyResult{
 		Status:   goauth.EmailChangeVerified,
 		Account:  cloneAccount(account),
 		Attempts: record.Attempts,
 	}, nil
+}
+
+func (s *Store) invalidatePasswordResetsLocked(subjectID goauth.SubjectID, now time.Time) {
+	for _, record := range s.resets {
+		if record.SubjectID == subjectID && record.ConsumedAt == nil {
+			value := now
+			record.ConsumedAt = &value
+		}
+	}
 }
 
 func (s *Store) latestPendingEmailChangeLocked(subjectID goauth.SubjectID) *emailChange {

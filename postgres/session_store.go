@@ -163,6 +163,10 @@ FOR UPDATE OF rt, f, sess, sub`, request.CurrentSelector).Scan(
 	}
 	result := goauth.RefreshRotationResult{Account: account, Session: session, FamilyID: familyID}
 
+	if storedKeyID != request.CurrentDigest.KeyID || !hmac.Equal(storedDigest, request.CurrentDigest.Digest) {
+		result.Status = goauth.RefreshRotationInvalid
+		return result, nil
+	}
 	if tokenConsumedAt.Valid {
 		if _, err := tx.ExecContext(ctx, `
 UPDATE auth_refresh_families
@@ -181,10 +185,6 @@ UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, $2) WHERE id = $1`,
 			return goauth.RefreshRotationResult{}, fmt.Errorf("commit refresh replay revocation: %w", err)
 		}
 		result.Status = goauth.RefreshRotationReplayed
-		return result, nil
-	}
-	if storedKeyID != request.CurrentDigest.KeyID || !hmac.Equal(storedDigest, request.CurrentDigest.Digest) {
-		result.Status = goauth.RefreshRotationInvalid
 		return result, nil
 	}
 	if !request.Now.Before(tokenExpiresAt) || !request.Now.Before(session.ExpiresAt) {
@@ -437,6 +437,9 @@ RETURNING id, status, security_version, created_at, updated_at`,
 	}
 	subject.Status = goauth.SubjectStatus(storedStatus)
 	if _, err := revokeSubjectSecurityState(ctx, tx, subjectID, now); err != nil {
+		return goauth.Subject{}, err
+	}
+	if err := invalidatePasswordResets(ctx, tx, subjectID, now); err != nil {
 		return goauth.Subject{}, err
 	}
 	if err := tx.Commit(); err != nil {

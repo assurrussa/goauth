@@ -22,7 +22,7 @@ import (
 	"github.com/assurrussa/goauth/testkit"
 )
 
-func TestV02PublicSurfaceCompiles(t *testing.T) {
+func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	t.Helper()
 
 	_ = goauth.NewRuntime
@@ -32,6 +32,7 @@ func TestV02PublicSurfaceCompiles(t *testing.T) {
 	_ = goauth.ParseSubjectID
 	_ = goauth.DefaultPasswordPolicy
 	_ = goauth.Config{}
+	_ = goauth.Config{ManagedNotificationDelivery: true}
 	_ = goauth.Subject{}
 	_ = goauth.Identifier{}
 	_ = goauth.BasicProfile{}
@@ -44,8 +45,15 @@ func TestV02PublicSurfaceCompiles(t *testing.T) {
 	_ = goauth.ChangePasswordRequest{}
 	_ = goauth.PendingEmailChange{}
 	_ = goauth.EmailChangeRecord{}
+	_ = goauth.PasswordResetRecord{ExpectedNormalizedEmail: "", ExpectedSecurityVersion: 1}
 	_ = goauth.ErrPasswordChangeConflict
 	_ = goauth.ErrEmailChangeNotFound
+	_ = goauth.NotificationDelivery{}
+	_ = goauth.NotificationSenderFunc(nil)
+	var sender goauth.NotificationSender = goauth.NotificationSenderFunc(nil)
+	_ = sender
+	var notificationTransaction goauth.NotificationTransaction = (*postgres.Store)(nil)
+	_ = notificationTransaction
 	_ = (*goauth.Runtime).ProvisionTrustedLocalAccount
 	_ = (*goauth.Runtime).VerifyCredential
 	_ = (*goauth.Runtime).GetAccount
@@ -66,6 +74,13 @@ func TestV02PublicSurfaceCompiles(t *testing.T) {
 	_ = postgres.ResetConfirmation("")
 	_ = postgres.ConfirmResetAuthState
 	_ = postgres.ErrLegacySchemaRequiresReset
+	_ = postgres.Config{
+		NotificationSender: goauth.NotificationSenderFunc(nil),
+		NotificationWorker: postgres.NotificationWorkerConfig{},
+	}
+	_ = postgres.NotificationQueueStats{}
+	_ = (*postgres.Runtime).RunNotifications
+	_ = (*postgres.Runtime).NotificationStats
 	_ = (*postgres.Runtime).OIDCProvider
 	_ = (*postgres.Runtime).OIDCRefreshTokens
 	_ = (*postgres.Runtime).RBAC
@@ -177,7 +192,7 @@ func TestManifestDoesNotPublishLegacyImplementationPackages(t *testing.T) {
 	}
 }
 
-func TestLegacyImplementationPackagesAreInternal(t *testing.T) {
+func TestRetiredImplementationPackagesAreAbsent(t *testing.T) {
 	t.Helper()
 
 	for _, directory := range []string{
@@ -197,13 +212,12 @@ func TestLegacyImplementationPackagesAreInternal(t *testing.T) {
 	} {
 		_, err := os.Stat(directory)
 		if !os.IsNotExist(err) {
-			t.Fatalf("legacy implementation directory %q must stay under internal/legacy", directory)
+			t.Fatalf("retired implementation directory %q must be absent", directory)
 		}
 	}
 
-	info, err := os.Stat(filepath.Join("internal", "legacy"))
-	if err != nil || !info.IsDir() {
-		t.Fatalf("internal legacy implementation is missing: %v", err)
+	if _, err := os.Stat(filepath.Join("internal", "legacy")); !os.IsNotExist(err) {
+		t.Fatalf("internal legacy implementation must be absent: %v", err)
 	}
 }
 

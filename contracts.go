@@ -109,8 +109,11 @@ type PasswordResetRecord struct {
 	SubjectID SubjectID
 	Selector  string
 	Digest    SecretDigest
-	ExpiresAt time.Time
-	CreatedAt time.Time
+	// Expected fields reject a reset issued from a stale account lookup.
+	ExpectedNormalizedEmail string
+	ExpectedSecurityVersion int64
+	ExpiresAt               time.Time
+	CreatedAt               time.Time
 }
 
 type PasswordResetConsumeStatus string
@@ -366,10 +369,12 @@ type EncryptedEnvelope struct {
 }
 
 type EncryptedEvent struct {
-	ID        string
-	Type      string
-	SubjectID SubjectID
-	Envelope  EncryptedEnvelope
+	ID          string
+	Type        string
+	SubjectID   SubjectID
+	ReferenceID string
+	ValidUntil  time.Time
+	Envelope    EncryptedEnvelope
 }
 
 type EncryptedEventSink interface {

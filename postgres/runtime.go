@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	// Register the pgx database/sql driver used by DSN-backed Runtime construction.
@@ -15,21 +16,27 @@ import (
 )
 
 type Config struct {
-	DB                *sql.DB
-	DSN               string
-	AutoMigrate       bool
-	ConnectionTimeout time.Duration
-	Runtime           goauth.Config
+	DB                 *sql.DB
+	DSN                string
+	AutoMigrate        bool
+	ConnectionTimeout  time.Duration
+	NotificationSender goauth.NotificationSender
+	NotificationWorker NotificationWorkerConfig
+	Runtime            goauth.Config
 }
 
 // Runtime owns a fully assembled goauth Runtime and, when constructed from a
 // DSN, the database handle opened for it.
 type Runtime struct {
 	*goauth.Runtime
-	db                *sql.DB
-	store             *Store
-	oidcRefreshTokens *OIDCRefreshTokenStore
-	ownsDB            bool
+	db                  *sql.DB
+	store               *Store
+	oidcRefreshTokens   *OIDCRefreshTokenStore
+	notificationSender  goauth.NotificationSender
+	notificationWorker  NotificationWorkerConfig
+	notificationNow     func() time.Time
+	notificationRunning atomic.Bool
+	ownsDB              bool
 }
 
 func NewRuntime(config Config) (*Runtime, error) {
@@ -66,6 +73,29 @@ func NewRuntime(config Config) (*Runtime, error) {
 			closeOnError()
 			return nil, err
 		}
+	} else if err := VerifySchema(ctx, db); err != nil {
+		closeOnError()
+		return nil, fmt.Errorf("verify goauth PostgreSQL schema: %w", err)
+	}
+	if config.NotificationSender != nil && (config.Runtime.EventSink != nil ||
+		config.Runtime.NotificationRenderer != nil || config.Runtime.AuditSink != nil ||
+		config.Runtime.NotificationTransaction != nil || config.Runtime.ManagedNotificationDelivery) {
+		closeOnError()
+		return nil, errors.New("managed NotificationSender cannot be combined with custom event, renderer, audit, or transaction hooks")
+	}
+	if config.NotificationSender == nil && (config.Runtime.NotificationTransaction != nil ||
+		config.Runtime.ManagedNotificationDelivery) {
+		closeOnError()
+		return nil, errors.New("PostgreSQL notification transactions require a managed NotificationSender; " +
+			"use direct root Runtime assembly for custom transaction wiring")
+	}
+	if config.Runtime.Now == nil {
+		config.Runtime.Now = time.Now
+	}
+	worker, err := config.NotificationWorker.withDefaults()
+	if err != nil {
+		closeOnError()
+		return nil, err
 	}
 	store, err := NewStore(db)
 	if err != nil {
@@ -73,7 +103,12 @@ func NewRuntime(config Config) (*Runtime, error) {
 		return nil, err
 	}
 	config.Runtime.Store = store
-	if config.Runtime.AuditSink == nil {
+	if config.NotificationSender != nil {
+		config.Runtime.EventSink = store
+		config.Runtime.AuditSink = store
+		config.Runtime.NotificationTransaction = store
+		config.Runtime.ManagedNotificationDelivery = true
+	} else if config.Runtime.AuditSink == nil {
 		config.Runtime.AuditSink = store
 	}
 	coreRuntime, err := goauth.NewRuntime(config.Runtime)
@@ -88,11 +123,14 @@ func NewRuntime(config Config) (*Runtime, error) {
 	}
 
 	return &Runtime{
-		Runtime:           coreRuntime,
-		db:                db,
-		store:             store,
-		oidcRefreshTokens: oidcRefreshTokens,
-		ownsDB:            ownsDB,
+		Runtime:            coreRuntime,
+		db:                 db,
+		store:              store,
+		oidcRefreshTokens:  oidcRefreshTokens,
+		notificationSender: config.NotificationSender,
+		notificationWorker: worker,
+		notificationNow:    config.Runtime.Now,
+		ownsDB:             ownsDB,
 	}, nil
 }
 

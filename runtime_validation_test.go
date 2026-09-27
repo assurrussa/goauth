@@ -3,6 +3,7 @@ package goauth_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,35 @@ import (
 	"github.com/assurrussa/goauth"
 	"github.com/assurrussa/goauth/testkit"
 )
+
+type passthroughNotificationTransaction struct{}
+
+func (passthroughNotificationTransaction) InNotificationTransaction(ctx context.Context, fn func(context.Context) error) error {
+	return fn(ctx)
+}
+
+func TestCustomNotificationTransactionPreservesRendererAndAcknowledgement(t *testing.T) {
+	fixture, err := testkit.NewRuntime(func(config *goauth.Config) {
+		config.NotificationTransaction = passthroughNotificationTransaction{}
+		config.NotificationRenderer = goauth.NotificationRendererFunc(
+			func(_ context.Context, notification goauth.Notification) ([]byte, error) {
+				notification.Template = "custom_" + notification.Template
+				return json.Marshal(notification)
+			},
+		)
+	})
+	require.NoError(t, err)
+	registerAccount(t, fixture, "transaction.renderer@example.test")
+	require.NoError(t, fixture.Runtime.RequestPasswordReset(context.Background(), "transaction.renderer@example.test"))
+	events := fixture.Events.Events()
+	require.Len(t, events, 1)
+	require.True(t, events[0].ValidUntil.IsZero())
+	notification, err := testkit.DecryptNotification(fixture.EnvelopeKeys, events[0].Envelope)
+	require.NoError(t, err)
+	require.Equal(t, "custom_password_reset", notification.Template)
+	require.NoError(t, fixture.Runtime.AcknowledgeEncryptedEvent(context.Background(), events[0].ID))
+	require.Empty(t, fixture.Events.Events())
+}
 
 func TestRuntimeConfigurationValidation(t *testing.T) {
 	t.Parallel()
@@ -30,6 +60,15 @@ func TestRuntimeConfigurationValidation(t *testing.T) {
 		{"link age", func(config *goauth.Config) { config.IdentityLinkAuthMaxAge = time.Second }},
 		{"login limit", func(config *goauth.Config) { config.LoginRateLimit = goauth.RateLimitPolicy{Limit: -1} }},
 		{"realm", func(config *goauth.Config) { config.AdditionalRealms = []goauth.Realm{"Bad Realm"} }},
+		{"managed without transaction", func(config *goauth.Config) {
+			config.ManagedNotificationDelivery = true
+		}},
+		{"managed with custom renderer", func(config *goauth.Config) {
+			config.ManagedNotificationDelivery = true
+			config.NotificationRenderer = goauth.NotificationRendererFunc(
+				func(context.Context, goauth.Notification) ([]byte, error) { return nil, nil },
+			)
+		}},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {

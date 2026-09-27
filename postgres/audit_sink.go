@@ -23,7 +23,7 @@ func (s *Store) RecordSecurityEvent(ctx context.Context, event goauth.SecurityEv
 	if !event.SubjectID.IsZero() {
 		subjectID = event.SubjectID
 	}
-	if _, err := s.db.ExecContext(ctx, `
+	if _, err := s.notificationExecer(ctx).ExecContext(ctx, `
 INSERT INTO auth_security_audit_events (
     id, subject_id, event_type, realm, attributes, occurred_at
 )

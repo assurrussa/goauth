@@ -36,7 +36,7 @@ func TestMigrationFreshSchemaDownUpAndLegacyRefusal(t *testing.T) {
 
 	var version int
 	require.NoError(t, db.QueryRow(`SELECT max(version) FROM goauth_schema_version`).Scan(&version))
-	require.Equal(t, 2, version)
+	require.Equal(t, 3, version)
 	var requiredTables int
 	require.NoError(t, db.QueryRow(`
 SELECT count(*)
@@ -156,6 +156,56 @@ func TestPostgresRefreshRotationAllowsExactlyOneConcurrentIssuance(t *testing.T)
 	require.EqualValues(t, 1, successes.Load())
 	require.EqualValues(t, requests-1, replays.Load())
 	require.Zero(t, unexpected.Load())
+}
+
+func TestPostgresConsumedRefreshSelectorRequiresValidSecretForReplay(t *testing.T) {
+	db := integrationDB(t)
+	runtime, _, _ := integrationRuntime(t, db)
+	registered := register(t, runtime, "refresh.selector@example.test")
+	ctx := context.Background()
+
+	rotated, err := runtime.Refresh(ctx, registered.Tokens.RefreshToken)
+	require.NoError(t, err)
+
+	parts := strings.Split(registered.Tokens.RefreshToken, ".")
+	require.Len(t, parts, 3)
+	if parts[2][0] == 'A' {
+		parts[2] = "B" + parts[2][1:]
+	} else {
+		parts[2] = "A" + parts[2][1:]
+	}
+	_, err = runtime.Refresh(ctx, strings.Join(parts, "."))
+	require.ErrorIs(t, err, goauth.ErrInvalidToken)
+
+	var revokedAt sql.NullTime
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT revoked_at FROM auth_sessions WHERE id = $1`, rotated.Session.ID,
+	).Scan(&revokedAt))
+	require.False(t, revokedAt.Valid, "wrong secret must not revoke the active session")
+	var replayAudits int
+	require.NoError(t, db.QueryRowContext(ctx, `
+SELECT count(*) FROM auth_security_audit_events
+WHERE subject_id = $1 AND event_type = 'refresh.replay'`,
+		registered.Account.Subject.ID,
+	).Scan(&replayAudits))
+	require.Zero(t, replayAudits, "wrong secret must not report a replay")
+	continued, err := runtime.Refresh(ctx, rotated.RefreshToken)
+	require.NoError(t, err, "the active refresh family must remain usable")
+
+	_, err = runtime.Refresh(ctx, registered.Tokens.RefreshToken)
+	require.ErrorIs(t, err, goauth.ErrRefreshReplay)
+	require.NoError(t, db.QueryRowContext(ctx,
+		`SELECT revoked_at FROM auth_sessions WHERE id = $1`, rotated.Session.ID,
+	).Scan(&revokedAt))
+	require.True(t, revokedAt.Valid, "authenticated replay must revoke the session")
+	require.NoError(t, db.QueryRowContext(ctx, `
+SELECT count(*) FROM auth_security_audit_events
+WHERE subject_id = $1 AND event_type = 'refresh.replay'`,
+		registered.Account.Subject.ID,
+	).Scan(&replayAudits))
+	require.Equal(t, 1, replayAudits)
+	_, err = runtime.Refresh(ctx, continued.RefreshToken)
+	require.ErrorIs(t, err, goauth.ErrSessionRevoked)
 }
 
 func TestPostgresAccountLifecycleIsAtomicAndDigestOnly(t *testing.T) {
@@ -1299,11 +1349,13 @@ func TestPostgresTypedStoreOutcomes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, goauth.PasswordResetInvalid, missingReset.Status)
 	require.NoError(t, store.CreatePasswordReset(context.Background(), goauth.PasswordResetRecord{
-		SubjectID: registered.Account.Subject.ID,
-		Selector:  "expired-reset",
-		Digest:    digest,
-		CreatedAt: time.Now().UTC().Add(-time.Hour),
-		ExpiresAt: time.Now().UTC().Add(-time.Minute),
+		SubjectID:               registered.Account.Subject.ID,
+		Selector:                "expired-reset",
+		Digest:                  digest,
+		ExpectedNormalizedEmail: registered.Account.PrimaryEmail.NormalizedValue,
+		ExpectedSecurityVersion: registered.Account.Subject.SecurityVersion,
+		CreatedAt:               time.Now().UTC().Add(-time.Hour),
+		ExpiresAt:               time.Now().UTC().Add(-time.Minute),
 	}))
 	expiredReset, err := store.ConsumePasswordReset(context.Background(), goauth.PasswordResetConsumeRequest{
 		Selector: "expired-reset", Digest: digest, PasswordPHC: "$argon2id$test", Now: time.Now().UTC(),
@@ -1313,11 +1365,13 @@ func TestPostgresTypedStoreOutcomes(t *testing.T) {
 	resetAccount := register(t, runtime, "used.reset@example.test")
 	usedDigest := goauth.SecretDigest{KeyID: "used", Digest: bytes.Repeat([]byte{8}, 32)}
 	require.NoError(t, store.CreatePasswordReset(context.Background(), goauth.PasswordResetRecord{
-		SubjectID: resetAccount.Account.Subject.ID,
-		Selector:  "used-reset",
-		Digest:    usedDigest,
-		CreatedAt: time.Now().UTC(),
-		ExpiresAt: time.Now().UTC().Add(time.Hour),
+		SubjectID:               resetAccount.Account.Subject.ID,
+		Selector:                "used-reset",
+		Digest:                  usedDigest,
+		ExpectedNormalizedEmail: resetAccount.Account.PrimaryEmail.NormalizedValue,
+		ExpectedSecurityVersion: resetAccount.Account.Subject.SecurityVersion,
+		CreatedAt:               time.Now().UTC(),
+		ExpiresAt:               time.Now().UTC().Add(time.Hour),
 	}))
 	invalidReset, err := store.ConsumePasswordReset(context.Background(), goauth.PasswordResetConsumeRequest{
 		Selector: "used-reset",

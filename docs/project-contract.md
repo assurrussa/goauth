@@ -5,11 +5,13 @@
 `goauth` owns canonical identity state, identifiers, local credentials,
 realm-bound sessions and refresh families, recovery and email verification,
 identity links, OIDC protocol behavior, RBAC, PostgreSQL schema, Redis OIDC
-one-time state, encrypted notification events, and typed security audit events.
+one-time state, encrypted notification queueing and worker state, and typed
+security audit events.
 
 Hosts own HTTP route layout, cookies, redirects, frontend UX, membership and
 projection tables, profile extensions, permission catalogs, environment
-loading, delivery providers, and production rollout.
+loading, the notification sender and worker lifecycle, delivery providers, and
+production rollout.
 
 ## Supported package boundary
 
@@ -18,10 +20,14 @@ External consumers use the exact packages in
 transport-neutral Runtime; `postgres`, `redis`, and `fiber` are adapters;
 `oidc`, `rbac`, and `testkit` are focused capabilities.
 
-Legacy `core`, `local`, `session`, `service`, `usecases`, `domain`, `storage`,
-`infrastructure`, `integration`, `http`, and `migrations` trees are migration
-implementation details under `internal/legacy` and are not v0.2 public API.
-The compiler rejects consumer imports of them.
+The retired v0.1 implementation is absent from the current source tree. Its
+former package paths are not supported imports; immutable v0.1 tags preserve
+the old release for consumers that still need it.
+
+The native PostgreSQL notification queue is selected through a host-provided
+`goauth.NotificationSender`. The host owns final delivery, starts and stops the
+worker, and schedules cleanup. The lower-level encrypted event sink remains an
+advanced integration path.
 
 ## Schema lifecycle
 
