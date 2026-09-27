@@ -81,11 +81,13 @@
   account receives a one-time reset notification, but a successful password
   reset does not verify its email or promote its confirmation-scoped session.
 
-## Standalone public candidate (2026-09-27)
+## Standalone work toward a public candidate (2026-09-27)
 
-- The v0.2 note about retaining `internal/legacy` describes historical state.
-  The v0.4 candidate removes that tree and its private module dependencies;
-  supported public imports remain the nine-package manifest.
+- The initial v0.4 draft removed `internal/legacy` and its private module
+  dependencies. That decision was superseded after review: the entire v0.1
+  tree and its compile checks were restored. The new Runtime does not cover
+  every previous use case. The nine-package supported import manifest remains
+  unchanged; private dependencies currently block credential-free public CI.
 - PostgreSQL managed delivery is opt-in through `NotificationSender`. The host
   owns the actual transport and supervises `RunNotifications` and `Cleanup`.
   The advanced encrypted-event sink remains available for custom integration.

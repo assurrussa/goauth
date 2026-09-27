@@ -4,10 +4,11 @@
 Go hosts. PostgreSQL stores canonical auth state, Fiber is an optional HTTP
 adapter, and Redis is needed only for optional OIDC one-time state.
 
-The latest existing tag is `v0.3.0`. The standalone public-ready changes in
-this checkout target an unpublished `v0.4.0` release. The frozen v0.1 line
-ends at `v0.1.7`; consumers crossing that schema boundary must explicitly
-reset isolated development or test auth state. Existing tags remain immutable.
+The latest existing tag is `v0.3.0`. This checkout contains work toward an
+unpublished `v0.4.0` release; it is not yet ready for public distribution.
+The frozen v0.1 line ends at `v0.1.7`; consumers crossing that schema
+boundary must explicitly reset isolated development or test auth state.
+Existing tags remain immutable.
 
 ## Supported API
 
@@ -24,8 +25,11 @@ The supported imports are intentionally small:
 - `github.com/assurrussa/goauth/testkit`
 
 `reference/externalconsumer.SupportedPackages` is the machine-readable source
-of truth. The retired v0.1 implementation is absent from the current source
-tree; its published tags remain available.
+of truth. The earlier v0.1 use cases remain compile-checked in
+`internal/legacy`. That directory name records the v0.2 transition: Go's
+`internal` import rule prevents external consumers from importing those
+packages, and the supported Runtime is not feature-for-feature equivalent.
+Published v0.1 tags retain the old consumer API.
 
 ## PostgreSQL and Fiber quickstart
 
@@ -77,9 +81,32 @@ func wireAuth(
     app.Post("/auth/login", adapter.Login)
     app.Post("/auth/refresh", adapter.Refresh)
     app.Post("/auth/password-reset", adapter.RequestPasswordReset)
+    app.Post("/auth/email-challenge", adapter.RequireRealm(goauth.RealmUser,
+        goauthfiber.RealmMiddlewareOptions{Introspect: true, AllowConfirmation: true}),
+        adapter.SendEmailChallenge)
+    app.Post("/auth/email-challenge/verify", adapter.RequireRealm(goauth.RealmUser,
+        goauthfiber.RealmMiddlewareOptions{Introspect: true, AllowConfirmation: true}),
+        adapter.VerifyEmailChallenge)
+    app.Get("/me", adapter.RequireRealm(goauth.RealmUser,
+        goauthfiber.RealmMiddlewareOptions{Introspect: true}), func(c fiber.Ctx) error {
+        authContext, _ := goauthfiber.AuthContext(c)
+        return c.JSON(fiber.Map{"subjectId": authContext.SubjectID.String()})
+    })
     return app, auth, nil
 }
 ```
+
+To sign in, send `POST /auth/login` with JSON such as
+`{"scheme":"email","identifier":"user@example.com","password":"...","realm":"user"}`.
+The response contains `account` and `tokens` (`accessToken`, `refreshToken`,
+expiry, realm, and scope). Send `Authorization: Bearer <accessToken>` to `/me`;
+the middleware checks the realm and, with `Introspect: true`, the current
+server-side session and subject status. Send `POST /auth/refresh` with
+`{"refreshToken":"..."}` to rotate the refresh token. Registration returns a
+confirmation-scoped session; use that access token to request an email code,
+then verify it with `{"code":"..."}`. After verification, log in again to
+obtain a full-scope session. `Runtime.Logout` and `LogoutAll` revoke sessions;
+the host must expose its chosen logout routes and token storage policy.
 
 `NotificationSender.SendNotification(ctx, delivery)` receives the typed
 notification, a stable delivery ID, and its validity deadline. Return success
@@ -143,8 +170,8 @@ make integration-local
 make vulnerability-check
 ```
 
-For the unpublished v0.4 candidate, start the integration services and run
-the combined gate:
+For the unpublished v0.4 work, start the integration services and run the
+combined local gate:
 
 ```sh
 make integration-up
@@ -155,4 +182,6 @@ make integration-down
 After the new tag is published, run `make release-readiness VERSION=v0.4.0`.
 The published clean-consumer probe runs an executable wiring example for the
 Runtime, Fiber, OIDC/Redis, and RBAC without a local `replace`. The candidate
-gate does not establish publication.
+gate does not establish publication. The restored v0.1 source and its private
+dependencies currently prevent credential-free public CI; resolve that
+distribution boundary before calling this a public release candidate.

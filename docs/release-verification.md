@@ -58,7 +58,9 @@ The published probe creates a temporary module without a local replacement,
 builds a Runtime, mounts Fiber, initializes optional OIDC/Redis and RBAC, and
 runs the example test. A local replace proves only checkout compatibility.
 Confirm the public release resolves without private module tokens or
-`GOPRIVATE`/`GONOSUMDB` settings. `v0.4.0` is still an unpublished candidate
+`GOPRIVATE`/`GONOSUMDB` settings. The retained v0.1 source currently brings
+private modules into the repository graph, and CI requires a private token;
+the credential-free gate is therefore blocked. `v0.4.0` remains unpublished
 until its tag and published probe actually exist and pass.
 
 ## Evidence boundary

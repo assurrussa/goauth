@@ -40,6 +40,8 @@ contract change.
 - `oidc/`: OIDC protocol, provider, and verifier contracts.
 - `rbac/`: hierarchy-free role and permission service.
 - `testkit/`: supported in-memory Runtime fixture and encrypted-event helpers.
+- `internal/legacy/`: compile-checked v0.1 use cases retained through the v0.2
+  transition; external consumers cannot import them.
 - `reference/externalconsumer`: compile-checked supported package manifest.
 - `cmd/externalconsumerprobe`: release helper for clean temporary consumers.
 
@@ -56,8 +58,9 @@ When making public API changes:
 - Keep `reference/externalconsumer/imports.go` aligned with the supported list.
 - Update `public_surface_test.go` when new exported symbols are release-visible.
 - Prefer the root Runtime and the explicit `postgres`, `redis`, `fiber`,
-  `oidc`, `rbac`, and `testkit` adapters. The retired v0.1 implementation is
-  absent from this repository and is available only at its immutable tags.
+  `oidc`, `rbac`, and `testkit` adapters. Preserve the earlier v0.1 use cases
+  in `internal/legacy` until their fate is decided explicitly; they are not
+  supported imports for external consumers.
 - Keep `HostSupportPackages` empty unless there is an unavoidable, temporary
   host-wiring gap with a documented migration path.
 
@@ -119,12 +122,13 @@ Do not rewrite existing tags. If `make` changes generated code, formatting,
 `go.mod`, or `go.sum`, commit those changes and publish a new semver tag.
 
 The frozen v0.1 compatibility baseline ends at `v0.1.7`. The latest existing
-tag is `v0.3.0`; the standalone public-readiness changes target an unpublished
-`v0.4.0` release. Do not claim publication from a local candidate gate.
+tag is `v0.3.0`; work toward `v0.4.0` is unpublished and not yet public-ready.
+Do not claim publication from a local candidate gate.
 
-The public module and CI must resolve all supported-package dependencies
-without private module credentials. Do not reintroduce a `GOPRIVATE` gate or
-private dependencies into the supported import closure.
+The repository currently needs private modules to compile-check the retained
+v0.1 tree, and CI uses `PRIVATE_GO_MODULES_TOKEN`. Resolve this before public
+distribution. The intended public module and CI must resolve without private
+credentials; a local candidate gate does not prove that requirement.
 
 Before claiming candidate readiness, run `make release-candidate-readiness`.
 Before claiming published release readiness:

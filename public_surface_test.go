@@ -192,7 +192,7 @@ func TestManifestDoesNotPublishLegacyImplementationPackages(t *testing.T) {
 	}
 }
 
-func TestRetiredImplementationPackagesAreAbsent(t *testing.T) {
+func TestPreviousImplementationPackagesStayInternal(t *testing.T) {
 	t.Helper()
 
 	for _, directory := range []string{
@@ -212,12 +212,13 @@ func TestRetiredImplementationPackagesAreAbsent(t *testing.T) {
 	} {
 		_, err := os.Stat(directory)
 		if !os.IsNotExist(err) {
-			t.Fatalf("retired implementation directory %q must be absent", directory)
+			t.Fatalf("previous implementation directory %q must stay under internal/legacy", directory)
 		}
 	}
 
-	if _, err := os.Stat(filepath.Join("internal", "legacy")); !os.IsNotExist(err) {
-		t.Fatalf("internal legacy implementation must be absent: %v", err)
+	info, err := os.Stat(filepath.Join("internal", "legacy"))
+	if err != nil || !info.IsDir() {
+		t.Fatalf("previous implementation is missing from internal/legacy: %v", err)
 	}
 }
 
