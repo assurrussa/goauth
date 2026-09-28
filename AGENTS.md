@@ -94,9 +94,10 @@ Important invariants:
 - Explicit stress rerun: `make test-race`.
 - Explicit HTML coverage artifact: `make cover-html`.
 - Candidate release readiness: `make release-candidate-readiness`
-- Published release readiness after tagging: `make release-readiness VERSION=v0.4.0`
+- Published release readiness after tagging: `make release-readiness VERSION=<tag>`
+- Exact-tag public module check: `make public-module-check VERSION=<tag>`
 - Local clean-consumer probe: `make externalconsumer-local`
-- Published clean-consumer probe after tagging: `make externalconsumer-published VERSION=v0.4.0`
+- Published clean-consumer diagnostic: `make externalconsumer-published VERSION=<tag>`
 
 The Makefile exports repo-local `GOCACHE`, `GOMODCACHE`, and `GOPATH` under
 `.go-cache/`. Prefer Makefile targets for verification. If running raw `go`
@@ -118,8 +119,10 @@ once after a coherent batch; do not stack it with `make test`,
 Do not rewrite existing tags. If `make` changes generated code, formatting,
 `go.mod`, or `go.sum`, commit those changes and publish a new semver tag.
 
-The frozen v0.1 compatibility baseline ends at `v0.1.7`. The current release
-tag is `v0.4.0`.
+The frozen v0.1 compatibility baseline ends at `v0.1.7`. Select the intended
+release explicitly from repository tags; never rely on a stale default version.
+Published checks create fresh child-process caches instead of using the local
+cache layout above. Public availability is not established by a private tag.
 
 The public module and CI must resolve all supported-package dependencies
 without private module credentials. Do not reintroduce a `GOPRIVATE` gate or
@@ -132,7 +135,7 @@ Before claiming published release readiness:
 - Verify the published module resolves from a clean external consumer, not only
   from local `replace` directives.
 
-See `RELEASING.md` and `docs/release-verification.md`.
+See `RELEASING.md`, `docs/release-verification.md`, and `docs/public-release-plan.md`.
 
 ## Documentation Rules
 

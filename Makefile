@@ -1,10 +1,11 @@
 .DEFAULT_GOAL := full
 
-.PHONY: full prepare check tidy-check tidy generate fmt fmt-check lint lint-fix vet test test-full test-race bench-all cover-html coverage-unit-check coverage-integration-check coverage-aggregate integration integration-up integration-down integration-local vulnerability-check externalconsumer-local externalconsumer-postgres-local externalconsumer-published release-candidate-readiness release-readiness
+.PHONY: full prepare check tidy-check tidy generate fmt fmt-check lint lint-fix vet test test-full test-race bench-all cover-html coverage-unit-check coverage-integration-check coverage-aggregate integration integration-up integration-down integration-local vulnerability-check externalconsumer-local externalconsumer-postgres-local externalconsumer-published release-candidate-readiness release-readiness release-tooling-test release-source-check public-module-check
 
 GO_MODULE := $(shell awk '$$1 == "module" { print $$2; exit }' go.mod)
 GO_FILES := $(shell find . -type f -name '*.go' -not -path './.cache/*' -not -path './.go-cache/*' -not -path './tmp/*' -not -path './vendor/*')
-VERSION ?= v0.4.0
+# Published checks must not silently verify a stale default version.
+VERSION ?=
 GOCACHE ?= $(CURDIR)/.go-cache/gocache
 GOMODCACHE ?= $(CURDIR)/.go-cache/gomodcache
 GOPATH ?= $(CURDIR)/.go-cache/gopath
@@ -14,6 +15,7 @@ GOAUTH_TEST_REDIS_ADDRESS ?= 127.0.0.1:56379
 COVERAGE_UNIT ?= coverage.unit.out
 COVERAGE_INTEGRATION ?= coverage.integration.out
 COVERAGE_AGGREGATE ?= coverage.out
+export VERSION
 export GOCACHE
 export GOMODCACHE
 export GOPATH
@@ -25,11 +27,23 @@ full: prepare check
 
 prepare: tidy generate fmt lint-fix
 
-check: tidy-check fmt-check vet lint test-full coverage-unit-check externalconsumer-local
+check: release-tooling-test tidy-check fmt-check vet lint test-full coverage-unit-check externalconsumer-local
 
 release-candidate-readiness: check integration vulnerability-check coverage-aggregate
 
-release-readiness: release-candidate-readiness externalconsumer-published
+# Serialize the tag guard before either gate, including under make -j.
+release-readiness: release-source-check
+	$(MAKE) release-candidate-readiness
+	$(MAKE) externalconsumer-published
+
+public-module-check: release-source-check
+	$(MAKE) externalconsumer-published
+
+release-source-check:
+	sh ./scripts/check-release-source.sh "$$VERSION"
+
+release-tooling-test:
+	sh ./scripts/check-release-source-test.sh
 
 tidy-check:
 	go mod tidy -diff
@@ -112,4 +126,5 @@ externalconsumer-postgres-local:
 	go run ./cmd/externalconsumerprobe --local-path "$(CURDIR)" --go-mod-cache "$(GOMODCACHE)" --postgres-integration
 
 externalconsumer-published:
-	go run ./cmd/externalconsumerprobe --version "$(VERSION)" --go-mod-cache "$(GOMODCACHE)"
+	@test -n "$$VERSION" || { printf 'VERSION is required; select an exact published tag.\n' >&2; exit 1; }
+	go run ./cmd/externalconsumerprobe --version "$$VERSION" --timeout 10m

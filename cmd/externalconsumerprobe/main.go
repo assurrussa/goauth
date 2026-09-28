@@ -23,19 +23,25 @@ func main() {
 }
 
 func run(ctx context.Context, args []string) error {
-	fs := flag.NewFlagSet("externalconsumerp robe", flag.ContinueOnError)
+	fs := flag.NewFlagSet("externalconsumerprobe", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
 	modulePath := fs.String("module", externalconsumerprobe.DefaultModulePath, "target Go module path")
-	version := fs.String("version", "", "published target version to resolve and require")
+	version := fs.String("version", "", "exact published version to verify without credentials or existing caches")
 	localPath := fs.String("local-path", "", "local checkout path for replace-based probe")
-	goModCache := fs.String("go-mod-cache", "", "optional GOMODCACHE path for the probe commands")
+	goModCache := fs.String("go-mod-cache", "", "optional GOMODCACHE for local probes only")
 	postgresIntegration := fs.Bool("postgres-integration", false,
 		"exercise PostgreSQL Runtime, notifications, login, and RBAC using GOAUTH_TEST_POSTGRES_DSN")
 	keepWorkdir := fs.Bool("keep-workdir", false, "keep the generated temporary probe module on disk")
 	timeout := fs.Duration("timeout", 2*time.Minute, "timeout for each go command")
 
 	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return errors.New("external consumer probe does not accept positional arguments")
+	}
+	if err := validateProbeMode(*version, *localPath, *goModCache, *postgresIntegration, *timeout); err != nil {
 		return err
 	}
 
@@ -51,12 +57,6 @@ func run(ctx context.Context, args []string) error {
 		return errors.New("GOAUTH_TEST_POSTGRES_DSN is required for the PostgreSQL external consumer probe")
 	}
 
-	if cfg.Version != "" {
-		if err := goListModule(ctx, cfg.ModulePath, cfg.Version, *goModCache, *timeout); err != nil {
-			return err
-		}
-	}
-
 	workdir, err := os.MkdirTemp("", "goauth-externalconsumerprobe-*")
 	if err != nil {
 		return fmt.Errorf("create probe workdir: %w", err)
@@ -65,8 +65,42 @@ func run(ctx context.Context, args []string) error {
 		defer func() {
 			_ = os.RemoveAll(workdir)
 		}()
+	} else {
+		// Print before any network call so a failed probe remains inspectable.
+		_, _ = fmt.Fprintln(os.Stdout, workdir)
 	}
 
+	env := commandEnv(*goModCache)
+	if cfg.Version != "" {
+		env, err = publishedCommandEnv(workdir)
+		if err != nil {
+			return err
+		}
+		if err := checkModuleVersion(ctx, cfg.ModulePath, cfg.Version, workdir, env, *timeout, true); err != nil {
+			return err
+		}
+	}
+
+	if err := writeProbeFiles(cfg, workdir, *postgresIntegration); err != nil {
+		return err
+	}
+
+	if err := goTestProbe(ctx, workdir, env, *timeout); err != nil {
+		if *keepWorkdir {
+			return fmt.Errorf("%w (workdir preserved at %s)", err, workdir)
+		}
+		return fmt.Errorf("%w (rerun with --keep-workdir to inspect generated probe module)", err)
+	}
+	if cfg.Version != "" {
+		// Verify the version actually selected after test dependencies resolve.
+		// Checking only module@version before the build is insufficient.
+		return checkModuleVersion(ctx, cfg.ModulePath, cfg.Version, workdir, env, *timeout, false)
+	}
+
+	return nil
+}
+
+func writeProbeFiles(cfg externalconsumerprobe.Config, workdir string, postgresIntegration bool) error {
 	goMod, err := cfg.BuildGoMod()
 	if err != nil {
 		return err
@@ -75,14 +109,13 @@ func run(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-
 	if err := os.WriteFile(filepath.Join(workdir, "go.mod"), []byte(goMod), 0o600); err != nil {
 		return fmt.Errorf("write probe go.mod: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(workdir, "externalconsumer_probe_test.go"), []byte(testFile), 0o600); err != nil {
 		return fmt.Errorf("write probe test: %w", err)
 	}
-	if *postgresIntegration {
+	if postgresIntegration {
 		postgresTest, buildErr := cfg.BuildPostgresProbeTest()
 		if buildErr != nil {
 			return buildErr
@@ -92,48 +125,51 @@ func run(ctx context.Context, args []string) error {
 		}
 	}
 
-	if err := goTestProbe(ctx, workdir, *goModCache, *timeout); err != nil {
-		if *keepWorkdir {
-			return fmt.Errorf("%w (workdir preserved at %s)", err, workdir)
-		}
-		return fmt.Errorf("%w (rerun with --keep-workdir to inspect generated probe module)", err)
-	}
-
-	if *keepWorkdir {
-		_, _ = fmt.Fprintln(os.Stdout, workdir)
-	}
-
 	return nil
 }
 
-func goListModule(ctx context.Context, modulePath string, version string, goModCache string, timeout time.Duration) error {
+func checkModuleVersion(
+	ctx context.Context,
+	modulePath, version, workdir string,
+	env []string,
+	timeout time.Duration,
+	queryVersion bool,
+) error {
 	commandCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	query := modulePath
+	if queryVersion {
+		query += "@" + version
+	}
 
-	//nolint:gosec // this is a probe intended to run go commands
-	cmd := exec.CommandContext(commandCtx, "go", "list", "-m", "-json", modulePath+"@"+version)
-	cmd.Env = commandEnv(goModCache)
-	cmd.Stdout = os.Stdout
+	//nolint:gosec // This release probe intentionally invokes the installed Go toolchain.
+	cmd := exec.CommandContext(commandCtx, "go", "list", "-m", "-json", query)
+	cmd.Dir = workdir
+	cmd.Env = env
 	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
+	data, err := cmd.Output()
+	if err != nil {
 		if errors.Is(commandCtx.Err(), context.DeadlineExceeded) {
-			return fmt.Errorf("resolve published module %s@%s: timeout after %s", modulePath, version, timeout)
+			return fmt.Errorf("resolve published module %s: timeout after %s", query, timeout)
 		}
-		return fmt.Errorf("resolve published module %s@%s: %w", modulePath, version, err)
+		return fmt.Errorf("resolve published module %s: %w", query, err)
 	}
+	if err := verifyModuleSelection(data, modulePath, version); err != nil {
+		return err
+	}
+	_, _ = fmt.Fprintf(os.Stdout, "Verified module %s@%s (replacement: none)\n", modulePath, version)
 
 	return nil
 }
 
-func goTestProbe(ctx context.Context, workdir string, goModCache string, timeout time.Duration) error {
+func goTestProbe(ctx context.Context, workdir string, env []string, timeout time.Duration) error {
 	commandCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	//nolint:gosec // this is a probe intended to run go commands
+	//nolint:gosec // This release probe intentionally invokes the installed Go toolchain.
 	cmd := exec.CommandContext(commandCtx, "go", probeTestArgs()...)
 	cmd.Dir = workdir
-	cmd.Env = commandEnv(goModCache)
+	cmd.Env = env
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -152,10 +188,19 @@ func probeTestArgs() []string {
 }
 
 func commandEnv(goModCache string) []string {
-	env := os.Environ()
-	if goModCache == "" {
-		return env
+	parent := os.Environ()
+	env := make([]string, 0, len(parent)+2)
+	for _, entry := range parent {
+		name, _, _ := strings.Cut(entry, "=")
+		if strings.EqualFold(name, "GOWORK") || (goModCache != "" && strings.EqualFold(name, "GOMODCACHE")) {
+			continue
+		}
+		env = append(env, entry)
+	}
+	env = append(env, "GOWORK=off")
+	if goModCache != "" {
+		env = append(env, "GOMODCACHE="+goModCache)
 	}
 
-	return append(env, "GOMODCACHE="+goModCache)
+	return env
 }

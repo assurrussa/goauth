@@ -4,7 +4,10 @@
 Go hosts. PostgreSQL stores canonical auth state, Fiber is an optional HTTP
 adapter, and Redis is needed only for optional OIDC one-time state.
 
-The current release version is `v0.4.0`.
+**Pre-v1, public-release preparation.** A Git tag is not proof of public
+availability, an independent security audit, or production adoption. See
+[the release plan](docs/public-release-plan.md) for the remaining acceptance
+criteria and [RELEASING.md](RELEASING.md) for exact-tag verification.
 The frozen v0.1 line ends at `v0.1.7`; consumers crossing that schema
 boundary must explicitly reset isolated development or test auth state.
 Existing tags remain immutable.
@@ -169,6 +172,9 @@ reporting.
 
 ## Verification
 
+Use the Go version/toolchain in `go.mod` and the tool versions in
+`.github/workflows/ci.yml`; see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ```sh
 make prepare
 make check
@@ -176,8 +182,7 @@ make integration-local
 make vulnerability-check
 ```
 
-For the unpublished v0.4 work, start the integration services and run the
-combined local gate:
+For the combined candidate gate, start disposable integration services:
 
 ```sh
 make integration-up
@@ -185,7 +190,14 @@ make release-candidate-readiness
 make integration-down
 ```
 
-After the new tag is published, run `make release-readiness VERSION=v0.4.0`.
-The published clean-consumer probe runs an executable wiring example for the
-Runtime, Fiber, OIDC/Redis, and RBAC without a local `replace`. The candidate
-gate does not establish publication.
+After a new public tag exists, check out that tag and run
+`make public-module-check VERSION=<tag>`. For candidate and public gates
+together, use `make release-readiness VERSION=<tag>` with integration services
+running. An explicit version is required; there is no stale default tag.
+
+The published probe runs the Runtime/Fiber/OIDC/Redis/RBAC wiring example in a
+fresh consumer environment through the public Go proxy and checksum service,
+without credentials, reused caches, a workspace, or a local `replace`. It
+checks the exact selected version after the test as well as before it.
+Candidate checks do not establish publication; the public probe does not
+establish a security audit or production deployment.
