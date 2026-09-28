@@ -121,9 +121,8 @@ once after a coherent batch; do not stack it with `make test`,
 Do not rewrite existing tags. If `make` changes generated code, formatting,
 `go.mod`, or `go.sum`, commit those changes and publish a new semver tag.
 
-The frozen v0.1 compatibility baseline ends at `v0.1.7`. The latest existing
-tag is `v0.3.0`; work toward `v0.4.0` is unpublished and not yet public-ready.
-Do not claim publication from a local candidate gate.
+The frozen v0.1 compatibility baseline ends at `v0.1.7`. The current release
+tag is `v0.4.0`.
 
 The repository currently needs private modules to compile-check the retained
 v0.1 tree, and CI uses `PRIVATE_GO_MODULES_TOKEN`. Resolve this before public

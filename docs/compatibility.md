@@ -51,6 +51,5 @@ Publication, consumer adoption, and production deployment are separate events.
 This matrix records local and published-module verification, not a production
 rollout.
 
-The latest existing goauth tag is `v0.3.0`. Work toward `v0.4.0` is not yet
-public-ready, tagged, or published. This historical
-matrix does not establish compatibility of the new candidate with these hosts.
+The current goauth tag is `v0.4.0`. This historical matrix reflects the v0.2/v0.3
+baseline; see host project repositories for adoption of v0.4.0.

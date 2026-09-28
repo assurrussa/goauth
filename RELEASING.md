@@ -4,8 +4,7 @@ The module path is `github.com/assurrussa/goauth`.
 
 ## Version state
 
-- `v0.3.0` is the latest existing tag. Work toward `v0.4.0` is not yet
-  public-ready, tagged, or published.
+- Current release version: `v0.4.0`; previous stable release: `v0.3.0`.
 - `v0.2.0-rc.1` and `v0.2.0` resolve to the same fully verified commit. Both
   tags are immutable; future fixes require a new semver tag.
 - The frozen v0.1 compatibility line ends at `v0.1.7`.

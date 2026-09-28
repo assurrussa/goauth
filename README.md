@@ -4,8 +4,7 @@
 Go hosts. PostgreSQL stores canonical auth state, Fiber is an optional HTTP
 adapter, and Redis is needed only for optional OIDC one-time state.
 
-The latest existing tag is `v0.3.0`. This checkout contains work toward an
-unpublished `v0.4.0` release; it is not yet ready for public distribution.
+The current release version is `v0.4.0`.
 The frozen v0.1 line ends at `v0.1.7`; consumers crossing that schema
 boundary must explicitly reset isolated development or test auth state.
 Existing tags remain immutable.
