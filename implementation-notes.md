@@ -80,3 +80,45 @@
 - Locked the enumeration-safe recovery contract: an active unverified local
   account receives a one-time reset notification, but a successful password
   reset does not verify its email or promote its confirmation-scoped session.
+
+## Standalone work toward a public candidate (2026-09-27)
+
+- The initial v0.4 draft removed `internal/legacy` and its private module
+  dependencies. That decision was superseded after review: the entire v0.1
+  tree and its compile checks were restored. The new Runtime does not cover
+  every previous use case. The nine-package supported import manifest remains
+  unchanged; private dependencies currently block credential-free public CI.
+- PostgreSQL managed delivery is opt-in through `NotificationSender`. The host
+  owns the actual transport and supervises `RunNotifications` and `Cleanup`.
+  The advanced encrypted-event sink remains available for custom integration.
+- Participating native auth writes, encrypted enqueue, and audit share one
+  transaction in managed notification operations. This is not a general
+  Runtime unit of work; a transaction context is rejected by a Store bound to
+  a different `*sql.DB` handle.
+  Expected business outcomes commit outside the callback error path, notably
+  wrong-code attempt counters. External sends run only after commit.
+- Queue leases use token-checked completion. A sender call reserves one attempt
+  before the external effect; retries use a stable delivery ID but can stop
+  without acceptance at expiry or the attempt limit. Undecryptable events
+  become individually blocked, emit a payload-free observer event, and are
+  retried after one minute; expiry cleanup runs independently.
+- The v0.2 SQL baseline stays byte-for-byte unchanged. An additive migration
+  creates the delivery queue and checksum ledger in one PostgreSQL transaction
+  under a transaction-level advisory lock. Invalid Runtime configuration is
+  rejected before schema mutation; construction without AutoMigrate verifies
+  the new schema.
+- A pre-send database check suppresses codes already expired, consumed, or
+  superseded at that instant. Concurrent invalidation during an in-flight
+  external send remains possible without holding a database transaction across
+  network I/O; the sender and host UX must tolerate that race.
+- Challenge issuance carries the email and security version read by the
+  Runtime into the Store transaction. PostgreSQL locks and compares the current
+  identifier and subject before recording the code, so an email change that
+  commits between the Runtime read and issuance cannot create a code for the
+  former recipient. Confirmation invalidates earlier challenges.
+- The refresh replay path now authenticates the secret before revoking a
+  family, preventing a known selector with a forged secret from logging out
+  the legitimate session.
+- Reset issuance locks and checks the current account state; security changes
+  retire existing reset records. A custom transaction alone does not select
+  managed delivery or bypass its configured renderer.

@@ -12,14 +12,35 @@ import (
 )
 
 func (s *Store) CreatePasswordReset(ctx context.Context, record goauth.PasswordResetRecord) error {
-	if record.SubjectID.IsZero() || record.Selector == "" || len(record.Digest.Digest) != 32 {
+	if record.SubjectID.IsZero() || record.Selector == "" || len(record.Digest.Digest) != 32 ||
+		record.ExpectedNormalizedEmail == "" || record.ExpectedSecurityVersion < 1 {
 		return errors.New("invalid password reset record")
 	}
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
 		return fmt.Errorf("begin password reset issue: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackWrite(tx, owned)
+	var status, normalizedEmail string
+	var securityVersion int64
+	err = tx.QueryRowContext(ctx, `
+SELECT s.status, s.security_version, i.normalized_value
+FROM auth_subjects s
+JOIN auth_identifiers i ON i.subject_id = s.id
+  AND i.scheme = 'email' AND i.is_primary
+WHERE s.id = $1
+FOR UPDATE OF s`, record.SubjectID).Scan(&status, &securityVersion, &normalizedEmail)
+	if errors.Is(err, sql.ErrNoRows) {
+		return goauth.ErrAccountNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("guard password reset account: %w", err)
+	}
+	if status != string(goauth.SubjectStatusActive) ||
+		securityVersion != record.ExpectedSecurityVersion ||
+		normalizedEmail != record.ExpectedNormalizedEmail {
+		return goauth.ErrAccountNotFound
+	}
 	if _, err := tx.ExecContext(ctx, `
 UPDATE auth_password_reset_records
 SET consumed_at = $2
@@ -40,7 +61,7 @@ VALUES ($1, $2, $3, $4, $5, $6)`,
 	); err != nil {
 		return fmt.Errorf("insert password reset: %w", err)
 	}
-	if err := tx.Commit(); err != nil {
+	if err := finishWrite(tx, owned); err != nil {
 		return fmt.Errorf("commit password reset issue: %w", err)
 	}
 
@@ -54,19 +75,45 @@ func (s *Store) ConsumePasswordReset(
 	if request.Selector == "" || request.PasswordPHC == "" || len(request.Digest.Digest) != 32 {
 		return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetInvalid}, nil
 	}
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
 		return goauth.PasswordResetConsumeResult{}, fmt.Errorf("begin password reset consume: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackWrite(tx, owned)
 
 	var (
+		lookupID   goauth.SubjectID
+		lookupKey  string
+		lookupHash []byte
+		status     string
 		subjectID  goauth.SubjectID
 		keyID      string
 		digest     []byte
 		expiresAt  time.Time
 		consumedAt sql.NullTime
 	)
+	err = tx.QueryRowContext(ctx, `
+SELECT subject_id, key_id, secret_digest FROM auth_password_reset_records WHERE selector = $1`,
+		request.Selector).Scan(&lookupID, &lookupKey, &lookupHash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetInvalid}, nil
+	}
+	if err != nil {
+		return goauth.PasswordResetConsumeResult{}, fmt.Errorf("lookup password reset subject: %w", err)
+	}
+	if lookupKey != request.Digest.KeyID || !hmac.Equal(lookupHash, request.Digest.Digest) {
+		return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetInvalid}, nil
+	}
+	err = tx.QueryRowContext(ctx, `SELECT status FROM auth_subjects WHERE id = $1 FOR UPDATE`, lookupID).Scan(&status)
+	if errors.Is(err, sql.ErrNoRows) {
+		return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetInvalid}, nil
+	}
+	if err != nil {
+		return goauth.PasswordResetConsumeResult{}, fmt.Errorf("lock password reset subject: %w", err)
+	}
+	if status != string(goauth.SubjectStatusActive) {
+		return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetInvalid}, nil
+	}
 	err = tx.QueryRowContext(ctx, `
 SELECT subject_id, key_id, secret_digest, expires_at, consumed_at
 FROM auth_password_reset_records
@@ -119,13 +166,26 @@ WHERE selector = $1 AND consumed_at IS NULL`, request.Selector, request.Now)
 	if _, err := revokeSubjectSecurityState(ctx, tx, subjectID, request.Now); err != nil {
 		return goauth.PasswordResetConsumeResult{}, err
 	}
+	if err := invalidatePasswordResets(ctx, tx, subjectID, request.Now); err != nil {
+		return goauth.PasswordResetConsumeResult{}, err
+	}
 	account, err := getAccount(ctx, tx, subjectID)
 	if err != nil {
 		return goauth.PasswordResetConsumeResult{}, err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := finishWrite(tx, owned); err != nil {
 		return goauth.PasswordResetConsumeResult{}, fmt.Errorf("commit password reset consume: %w", err)
 	}
 
 	return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetConsumed, Account: account}, nil
+}
+
+func invalidatePasswordResets(ctx context.Context, tx *sql.Tx, subjectID goauth.SubjectID, now time.Time) error {
+	if _, err := tx.ExecContext(ctx, `
+UPDATE auth_password_reset_records
+SET consumed_at = $2
+WHERE subject_id = $1 AND consumed_at IS NULL`, subjectID, now); err != nil {
+		return fmt.Errorf("invalidate password resets: %w", err)
+	}
+	return nil
 }

@@ -86,7 +86,9 @@ func TestAuthenticateReaderError(t *testing.T) {
 	svc := passwordauth.Must(passwordauth.Options{
 		Reader:      subjectReaderStub{err: expectedErr},
 		Credentials: authcore.StaticSubjectCredentials{},
-		Hasher:      passwordhasher.NewArgon2idService(passwordhasher.WithArgon2idMemory(8*1024), passwordhasher.WithArgon2idIterations(1)),
+		Hasher: passwordhasher.NewArgon2idService(
+			passwordhasher.WithArgon2idMemory(8*1024), passwordhasher.WithArgon2idIterations(1),
+		),
 	})
 
 	_, err := svc.Authenticate(context.Background(), authcore.Credential{

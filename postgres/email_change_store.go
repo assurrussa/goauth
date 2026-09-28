@@ -24,11 +24,11 @@ func (s *Store) IssueEmailChange(
 		return goauth.EmailChangeIssueResult{}, errors.New("invalid email change record or limits")
 	}
 	const action = "email_change"
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
 		return goauth.EmailChangeIssueResult{}, fmt.Errorf("begin email change issue: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackWrite(tx, owned)
 
 	lockKey := record.RateDigest.KeyID + ":" + hex.EncodeToString(record.RateDigest.Digest) + ":" + action
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, lockKey); err != nil {
@@ -134,7 +134,7 @@ VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8, $9)`,
 	); err != nil {
 		return goauth.EmailChangeIssueResult{}, transformWriteError("insert email change", err)
 	}
-	if err := tx.Commit(); err != nil {
+	if err := finishWrite(tx, owned); err != nil {
 		return goauth.EmailChangeIssueResult{}, fmt.Errorf("commit email change issue: %w", err)
 	}
 
@@ -175,11 +175,11 @@ func (s *Store) VerifyEmailChange(
 	ctx context.Context,
 	request goauth.EmailChangeVerifyRequest,
 ) (goauth.EmailChangeVerifyResult, error) {
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
 		return goauth.EmailChangeVerifyResult{}, fmt.Errorf("begin email change verification: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackWrite(tx, owned)
 
 	var (
 		id           string
@@ -238,7 +238,7 @@ WHERE id = $1 AND consumed_at IS NULL`, id)
 		if err != nil || rows != 1 {
 			return goauth.EmailChangeVerifyResult{}, errors.New("email change attempt guard did not update exactly one row")
 		}
-		if err := tx.Commit(); err != nil {
+		if err := finishWrite(tx, owned); err != nil {
 			return goauth.EmailChangeVerifyResult{}, fmt.Errorf("commit email change attempt: %w", err)
 		}
 
@@ -286,11 +286,22 @@ WHERE id = $1 AND consumed_at IS NULL`, id, request.Now)
 	if _, err := revokeSubjectSecurityState(ctx, tx, request.SubjectID, request.Now); err != nil {
 		return goauth.EmailChangeVerifyResult{}, err
 	}
+	if err := invalidatePasswordResets(ctx, tx, request.SubjectID, request.Now); err != nil {
+		return goauth.EmailChangeVerifyResult{}, err
+	}
+	// A verification code issued for the former primary email must not remain
+	// usable, even if its notification has not left the queue yet.
+	if _, err := tx.ExecContext(ctx, `
+UPDATE auth_email_challenges
+SET attempts = max_attempts
+WHERE subject_id = $1 AND verified_at IS NULL AND attempts < max_attempts`, request.SubjectID); err != nil {
+		return goauth.EmailChangeVerifyResult{}, fmt.Errorf("invalidate previous email challenges: %w", err)
+	}
 	account, err := getAccount(ctx, tx, request.SubjectID)
 	if err != nil {
 		return goauth.EmailChangeVerifyResult{}, err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := finishWrite(tx, owned); err != nil {
 		return goauth.EmailChangeVerifyResult{}, fmt.Errorf("commit email change verification: %w", err)
 	}
 

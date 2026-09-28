@@ -46,51 +46,59 @@ func (r *Runtime) RequestEmailChange(ctx context.Context, subjectID SubjectID, n
 		return err
 	}
 	now := r.now().UTC()
-	issue, err := r.store.IssueEmailChange(ctx, EmailChangeRecord{
-		ID:                 uuid.NewString(),
-		SubjectID:          subjectID,
-		NewDisplayValue:    displayEmail,
-		NewNormalizedValue: normalized.Value,
-		Digest:             digest,
-		RateDigest:         rateDigest,
-		MaxAttempts:        5,
-		ExpiresAt:          now.Add(r.emailChangeTTL),
-		CreatedAt:          now,
-	}, EmailChallengeLimits{
-		MinResendInterval: time.Minute,
-		PerHour:           5,
-		PerDay:            10,
+	changeID := uuid.NewString()
+	var outcomeErr error
+	err = r.inNotificationTransaction(ctx, func(txCtx context.Context) error {
+		issue, err := r.store.IssueEmailChange(txCtx, EmailChangeRecord{
+			ID:                 changeID,
+			SubjectID:          subjectID,
+			NewDisplayValue:    displayEmail,
+			NewNormalizedValue: normalized.Value,
+			Digest:             digest,
+			RateDigest:         rateDigest,
+			MaxAttempts:        5,
+			ExpiresAt:          now.Add(r.emailChangeTTL),
+			CreatedAt:          now,
+		}, EmailChallengeLimits{
+			MinResendInterval: time.Minute,
+			PerHour:           5,
+			PerDay:            10,
+		})
+		if err != nil {
+			return fmt.Errorf("issue email change: %w", err)
+		}
+		switch issue.Status {
+		case EmailChangeIssued:
+		case EmailChangeSameValue:
+			outcomeErr = ErrEmailChangeSameValue
+			return nil
+		case EmailChangeWait:
+			outcomeErr = ErrConfirmationResendDelay
+			return nil
+		default:
+			outcomeErr = ErrConfirmationRateLimited
+			return nil
+		}
+		if err := r.enqueueNotification(txCtx, "email_change", account, Notification{
+			Template: "email_change",
+			To:       displayEmail,
+			Data: map[string]string{
+				"code":                 code,
+				notificationExpiresKey: r.emailChangeTTL.String(),
+			},
+		}, notificationMetadata{referenceID: changeID, validUntil: now.Add(r.emailChangeTTL)}); err != nil {
+			return err
+		}
+		return r.recordAudit(txCtx, SecurityEvent{
+			Type:      SecurityEventEmailChangeIssued,
+			SubjectID: subjectID,
+			At:        now,
+		})
 	})
 	if err != nil {
-		return fmt.Errorf("issue email change: %w", err)
-	}
-	switch issue.Status {
-	case EmailChangeIssued:
-	case EmailChangeSameValue:
-		return ErrEmailChangeSameValue
-	case EmailChangeWait:
-		return ErrConfirmationResendDelay
-	case EmailChangeHourlyLimit, EmailChangeDailyLimit:
-		return ErrConfirmationRateLimited
-	default:
-		return ErrConfirmationRateLimited
-	}
-	if err := r.enqueueNotification(ctx, "email_change", account, Notification{
-		Template: "email_change",
-		To:       displayEmail,
-		Data: map[string]string{
-			"code":                 code,
-			notificationExpiresKey: r.emailChangeTTL.String(),
-		},
-	}); err != nil {
 		return err
 	}
-
-	return r.recordAudit(ctx, SecurityEvent{
-		Type:      SecurityEventEmailChangeIssued,
-		SubjectID: subjectID,
-		At:        now,
-	})
+	return outcomeErr
 }
 
 func (r *Runtime) PendingEmailChange(ctx context.Context, subjectID SubjectID) (PendingEmailChange, error) {
@@ -123,40 +131,53 @@ func (r *Runtime) ConfirmEmailChange(ctx context.Context, subjectID SubjectID, c
 		return Account{}, err
 	}
 	now := r.now().UTC()
-	result, err := r.store.VerifyEmailChange(ctx, EmailChangeVerifyRequest{
-		SubjectID: subjectID,
-		Digests:   digests,
-		Now:       now,
+	var account Account
+	var outcomeErr error
+	err = r.inNotificationTransaction(ctx, func(txCtx context.Context) error {
+		result, err := r.store.VerifyEmailChange(txCtx, EmailChangeVerifyRequest{
+			SubjectID: subjectID,
+			Digests:   digests,
+			Now:       now,
+		})
+		if err != nil {
+			return fmt.Errorf("verify email change: %w", err)
+		}
+		switch result.Status {
+		case EmailChangeVerified:
+		case EmailChangeInvalid:
+			outcomeErr = ErrInvalidConfirmationCode
+			return nil
+		case EmailChangeExpired:
+			outcomeErr = ErrConfirmationExpired
+			return nil
+		case EmailChangeAttemptsUsed:
+			outcomeErr = ErrConfirmationAttempts
+			return nil
+		case EmailChangeNotFound:
+			outcomeErr = ErrEmailChangeNotFound
+			return nil
+		default:
+			outcomeErr = ErrInvalidConfirmationCode
+			return nil
+		}
+		if err := r.enqueueNotification(txCtx, "email_changed", result.Account, Notification{
+			Template: "email_changed",
+			To:       result.Account.PrimaryEmail.DisplayValue,
+		}); err != nil {
+			return err
+		}
+		if err := r.recordAudit(txCtx, SecurityEvent{
+			Type:      SecurityEventEmailChanged,
+			SubjectID: subjectID,
+			At:        now,
+		}); err != nil {
+			return err
+		}
+		account = result.Account
+		return nil
 	})
 	if err != nil {
-		return Account{}, fmt.Errorf("verify email change: %w", err)
-	}
-	switch result.Status {
-	case EmailChangeVerified:
-	case EmailChangeInvalid:
-		return Account{}, ErrInvalidConfirmationCode
-	case EmailChangeExpired:
-		return Account{}, ErrConfirmationExpired
-	case EmailChangeAttemptsUsed:
-		return Account{}, ErrConfirmationAttempts
-	case EmailChangeNotFound:
-		return Account{}, ErrEmailChangeNotFound
-	default:
-		return Account{}, ErrInvalidConfirmationCode
-	}
-	if err := r.enqueueNotification(ctx, "email_changed", result.Account, Notification{
-		Template: "email_changed",
-		To:       result.Account.PrimaryEmail.DisplayValue,
-	}); err != nil {
 		return Account{}, err
 	}
-	if err := r.recordAudit(ctx, SecurityEvent{
-		Type:      SecurityEventEmailChanged,
-		SubjectID: subjectID,
-		At:        now,
-	}); err != nil {
-		return Account{}, err
-	}
-
-	return result.Account, nil
+	return account, outcomeErr
 }

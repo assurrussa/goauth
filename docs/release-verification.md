@@ -11,18 +11,24 @@ make check
 `make test-race` only for deliberate stress reruns and `make cover-html` only
 when an HTML artifact is needed.
 
-The security integration suite requires PostgreSQL and Redis:
+The security integration suite requires PostgreSQL and Redis. The local target
+starts and stops those services:
 
 ```sh
-docker compose -f compose.integration.yml -p goauth-v02-integration up -d --wait
-make integration
-docker compose -f compose.integration.yml -p goauth-v02-integration down -v
+make integration-local
 ```
 
 The integration suite executes the v0.2 migration, Down/Up, v0.1 refusal,
 atomic refresh/reset/challenge behavior, case-insensitive identifier uniqueness,
-SSO policy, status revocation, secret-at-rest assertions, and Redis GETDEL
-concurrency.
+SSO policy, status revocation, secret-at-rest assertions, native notification
+queue delivery and retry, and Redis GETDEL concurrency.
+It also runs the PostgreSQL external consumer probe against
+`GOAUTH_TEST_POSTGRES_DSN`. The probe constructs `postgres.NewRuntime`, starts
+and stops `RunNotifications`, checks an email challenge was delivered and
+acknowledged, verifies the code, then exercises authenticated login, an
+introspected Fiber route, PostgreSQL RBAC, logout, password reset, and cleanup.
+It requires a reachable, disposable integration database and fails if the DSN
+is missing or the database is down.
 
 ## Coverage and vulnerabilities
 
@@ -38,14 +44,36 @@ treated as clean.
 
 ```sh
 make externalconsumer-local
-make externalconsumer-published VERSION=v0.2.1
-make release-readiness VERSION=v0.2.1
 ```
 
-The probe creates a temporary module without a committed replace for published
-versions, builds a Runtime, mounts Fiber, initializes OIDC/Redis and RBAC, and
-runs the example test. A local replace proves only sibling-development
-compatibility.
+`make check` includes only this database-free probe. To run the real PostgreSQL
+consumer path alone, set `GOAUTH_TEST_POSTGRES_DSN` and run
+`make externalconsumer-postgres-local`; the Makefile's default DSN targets the
+database in `compose.integration.yml`.
+
+For the full unpublished candidate gate, start the integration services:
+
+```sh
+make integration-up
+make release-candidate-readiness
+make integration-down
+```
+
+After a new tag is published, run:
+
+```sh
+make externalconsumer-published VERSION=v0.4.0
+make release-readiness VERSION=v0.4.0
+```
+
+The published probe creates a temporary module without a local replacement,
+builds a Runtime, mounts Fiber, initializes optional OIDC/Redis and RBAC, and
+runs the example test. A local replace proves only checkout compatibility.
+Confirm the public release resolves without private module tokens or
+`GOPRIVATE`/`GONOSUMDB` settings. The retained v0.1 source currently brings
+private modules into the repository graph, and CI requires a private token;
+the credential-free gate is therefore blocked. `v0.4.0` remains unpublished
+until its tag and published probe actually exist and pass.
 
 ## Evidence boundary
 

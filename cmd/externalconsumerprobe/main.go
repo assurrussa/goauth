@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	externalconsumerprobe "github.com/assurrussa/goauth/internal/externalconsumerprobe"
@@ -29,6 +30,8 @@ func run(ctx context.Context, args []string) error {
 	version := fs.String("version", "", "published target version to resolve and require")
 	localPath := fs.String("local-path", "", "local checkout path for replace-based probe")
 	goModCache := fs.String("go-mod-cache", "", "optional GOMODCACHE path for the probe commands")
+	postgresIntegration := fs.Bool("postgres-integration", false,
+		"exercise PostgreSQL Runtime, notifications, login, and RBAC using GOAUTH_TEST_POSTGRES_DSN")
 	keepWorkdir := fs.Bool("keep-workdir", false, "keep the generated temporary probe module on disk")
 	timeout := fs.Duration("timeout", 2*time.Minute, "timeout for each go command")
 
@@ -43,6 +46,9 @@ func run(ctx context.Context, args []string) error {
 	}
 	if err := cfg.Validate(); err != nil {
 		return err
+	}
+	if *postgresIntegration && strings.TrimSpace(os.Getenv("GOAUTH_TEST_POSTGRES_DSN")) == "" {
+		return errors.New("GOAUTH_TEST_POSTGRES_DSN is required for the PostgreSQL external consumer probe")
 	}
 
 	if cfg.Version != "" {
@@ -75,6 +81,15 @@ func run(ctx context.Context, args []string) error {
 	}
 	if err := os.WriteFile(filepath.Join(workdir, "externalconsumer_probe_test.go"), []byte(testFile), 0o600); err != nil {
 		return fmt.Errorf("write probe test: %w", err)
+	}
+	if *postgresIntegration {
+		postgresTest, buildErr := cfg.BuildPostgresProbeTest()
+		if buildErr != nil {
+			return buildErr
+		}
+		if err := os.WriteFile(filepath.Join(workdir, "externalconsumer_postgres_test.go"), []byte(postgresTest), 0o600); err != nil {
+			return fmt.Errorf("write PostgreSQL probe test: %w", err)
+		}
 	}
 
 	if err := goTestProbe(ctx, workdir, *goModCache, *timeout); err != nil {

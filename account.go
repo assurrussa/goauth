@@ -178,39 +178,47 @@ func (r *Runtime) ChangePassword(ctx context.Context, request ChangePasswordRequ
 		return Account{}, fmt.Errorf("hash replacement password: %w", err)
 	}
 	now := r.now().UTC()
-	result, err := r.store.ChangePassword(ctx, PasswordChangeStoreRequest{
-		SubjectID:           request.SubjectID,
-		ExpectedPasswordPHC: record.PasswordPHC,
-		NewPasswordPHC:      passwordPHC,
-		Now:                 now,
+	var account Account
+	var outcomeErr error
+	err = r.inNotificationTransaction(ctx, func(txCtx context.Context) error {
+		result, err := r.store.ChangePassword(txCtx, PasswordChangeStoreRequest{
+			SubjectID:           request.SubjectID,
+			ExpectedPasswordPHC: record.PasswordPHC,
+			NewPasswordPHC:      passwordPHC,
+			Now:                 now,
+		})
+		if err != nil {
+			return fmt.Errorf("change password: %w", err)
+		}
+		switch result.Status {
+		case PasswordChangeStoreSucceeded:
+		case PasswordChangeStoreMissing:
+			outcomeErr = ErrCurrentPasswordInvalid
+			return nil
+		default:
+			outcomeErr = ErrPasswordChangeConflict
+			return nil
+		}
+		if err := r.enqueueNotification(txCtx, "password_changed", result.Account, Notification{
+			Template: "password_changed",
+			To:       result.Account.PrimaryEmail.DisplayValue,
+		}); err != nil {
+			return err
+		}
+		if err := r.recordAudit(txCtx, SecurityEvent{
+			Type:      SecurityEventPasswordChanged,
+			SubjectID: request.SubjectID,
+			At:        now,
+		}); err != nil {
+			return err
+		}
+		account = result.Account
+		return nil
 	})
 	if err != nil {
-		return Account{}, fmt.Errorf("change password: %w", err)
-	}
-	switch result.Status {
-	case PasswordChangeStoreSucceeded:
-	case PasswordChangeStoreMissing:
-		return Account{}, ErrCurrentPasswordInvalid
-	case PasswordChangeStoreConflict:
-		return Account{}, ErrPasswordChangeConflict
-	default:
-		return Account{}, ErrPasswordChangeConflict
-	}
-	if err := r.enqueueNotification(ctx, "password_changed", result.Account, Notification{
-		Template: "password_changed",
-		To:       result.Account.PrimaryEmail.DisplayValue,
-	}); err != nil {
 		return Account{}, err
 	}
-	if err := r.recordAudit(ctx, SecurityEvent{
-		Type:      SecurityEventPasswordChanged,
-		SubjectID: request.SubjectID,
-		At:        now,
-	}); err != nil {
-		return Account{}, err
-	}
-
-	return result.Account, nil
+	return account, outcomeErr
 }
 
 func (r *Runtime) Logout(ctx context.Context, subjectID SubjectID, sessionID string) error {

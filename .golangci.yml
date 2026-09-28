@@ -90,6 +90,7 @@ linters:
             - go.uber.org/mock/gomock
             - go.uber.org/goleak
             - github.com/assurrussa/goauth
+            - github.com/assurrussa/gocache
             - github.com/assurrussa/outbox
             - github.com/assurrussa/goshared
             - github.com/assurrussa/gonotify
