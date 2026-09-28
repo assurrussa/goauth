@@ -41,3 +41,13 @@ Consumers resolve published semver tags without committed local replaces. A
 local sibling replace is development evidence only. Release readiness requires
 the runnable published clean-consumer probe plus each host's own schema,
 permission, and application gates.
+
+## Public-preview completion specification
+
+[The public-preview specification pack](public-preview/README.md) defines target
+profile contracts, security acceptance scenarios, local site/admin verification,
+implementation work packages, and publication/support evidence. It does not
+change the current supported imports or claim that the target checks have passed.
+Cookies and CSRF remain optional outside browser integrations; the supported
+cookie-authenticated profile must supply tested CSRF protection. Actual host
+session behavior is verified locally before a new credential model is introduced.

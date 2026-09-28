@@ -1,0 +1,111 @@
+# TEMPLATE ONLY: no runtime, host, audit or publication check has passed here.
+spec_version: 1
+prepared_on: "2026-09-28"
+status: not_run
+baseline:
+  repository: assurrussa/goauth
+  inspected_sha: 070b1f37e8139d5796cb266b57d07cdd16b659c9
+  release_tooling_pr: 6
+candidate:
+  sha: null
+  tag: null
+  toolchain: null
+  postgres_version: null
+  redis_version: null
+  browser_versions: []
+  configuration_fingerprint_without_secrets: null
+profiles:
+  P1: {status: not_run, verification_policy: null, evidence: null}
+  P2: {status: not_run, csrf_mode: null, origin_topology: null, evidence: null}
+  P3: {status: not_run, credential_model: null, evidence: null}
+  P4: {status: not_run, claimed_protocol_subset: null, evidence: null}
+# Keep real project identifiers and logs private when necessary.
+host_checks:
+  site:
+    host_sha: null
+    resolved_goauth_version: null
+    resolved_goauth_sha: null
+    replacement_present: null
+    credential_sources_by_endpoint: {}
+    middleware_order: []
+    canonical_revocation_path: null
+    command: null
+    outcome: not_run
+    redacted_evidence: null
+  admin:
+    host_sha: null
+    resolved_goauth_version: null
+    resolved_goauth_sha: null
+    replacement_present: null
+    credential_sources_by_endpoint: {}
+    middleware_order: []
+    canonical_revocation_path: null
+    command: null
+    outcome: not_run
+    redacted_evidence: null
+# All specified scenarios are listed; assess applicability without deleting entries.
+# Allowed outcomes: not_run, pass, fail, blocked, not_applicable.
+# not_applicable needs a reason and reviewer; absence is never pass.
+# Expand each scenario with these fields when actually executing it.
+case_details_template:
+  test_names: []
+  command: null
+  durable_state_assertions: []
+  redacted_evidence: null
+  reviewer: null
+  not_applicable_reason: null
+scenarios:
+  - {id: SEC-01, requirement_ids: [AUTH-01], source_sha: null, outcome: not_run}
+  - {id: SEC-02, requirement_ids: [AUTH-02], source_sha: null, outcome: not_run}
+  - {id: SEC-03, requirement_ids: [AUTH-02, AUTH-10], source_sha: null, outcome: not_run}
+  - {id: SEC-04, requirement_ids: [AUTH-09], source_sha: null, outcome: not_run}
+  - {id: SEC-05, requirement_ids: [AUTH-07], source_sha: null, outcome: not_run}
+  - {id: SEC-06, requirement_ids: [AUTH-03, AUTH-05, AUTH-06], source_sha: null, outcome: not_run}
+  - {id: SEC-07, requirement_ids: [AUTH-04], source_sha: null, outcome: not_run}
+  - {id: SEC-08, requirement_ids: [AUTH-04, AUTH-08], source_sha: null, outcome: not_run}
+  - {id: SEC-09, requirement_ids: [AUTH-04, AUTH-08], source_sha: null, outcome: not_run}
+  - {id: SEC-10, requirement_ids: [AUTH-03, AUTH-05], source_sha: null, outcome: not_run}
+  - {id: SEC-11, requirement_ids: [AUTH-03, AUTH-04], source_sha: null, outcome: not_run}
+  - {id: SEC-12, requirement_ids: [AUTH-08], source_sha: null, outcome: not_run}
+  - {id: SEC-13, requirement_ids: [AUTH-07], source_sha: null, outcome: not_run}
+  - {id: SEC-14, requirement_ids: [AUTH-05, AUTH-07], source_sha: null, outcome: not_run}
+  - {id: SEC-15, requirement_ids: [AUTH-08], source_sha: null, outcome: not_run}
+  - {id: SEC-16, requirement_ids: [AUTH-08, AUTH-09], source_sha: null, outcome: not_run}
+  - {id: SEC-17, requirement_ids: [AUTH-07, AUTH-09], source_sha: null, outcome: not_run}
+  - {id: SEC-18, requirement_ids: [AUTH-01, AUTH-10], source_sha: null, outcome: not_run}
+  - {id: SEC-19, requirement_ids: [AUTH-10], source_sha: null, outcome: not_run}
+  - {id: SEC-20, requirement_ids: [AUTH-10], source_sha: null, outcome: not_run}
+  - {id: WEB-01, requirement_ids: [AUTH-06], source_sha: null, outcome: not_run}
+  - {id: WEB-02, requirement_ids: [AUTH-03], source_sha: null, outcome: not_run}
+  - {id: WEB-03, requirement_ids: [AUTH-02, AUTH-03], source_sha: null, outcome: not_run}
+  - {id: WEB-04, requirement_ids: [AUTH-01], source_sha: null, outcome: not_run}
+  - {id: WEB-05, requirement_ids: [AUTH-04], source_sha: null, outcome: not_run}
+  - {id: WEB-06, requirement_ids: [AUTH-02], source_sha: null, outcome: not_run}
+  - {id: WEB-07, requirement_ids: [AUTH-07], source_sha: null, outcome: not_run}
+  - {id: WEB-08, requirement_ids: [AUTH-03], source_sha: null, outcome: not_run}
+  - {id: ADM-01, requirement_ids: [], source_sha: null, outcome: not_run}
+  - {id: ADM-02, requirement_ids: [AUTH-03, AUTH-09], source_sha: null, outcome: not_run}
+  - {id: ADM-03, requirement_ids: [AUTH-05, AUTH-06], source_sha: null, outcome: not_run}
+  - {id: ADM-04, requirement_ids: [AUTH-01, AUTH-03, AUTH-05, AUTH-06], source_sha: null, outcome: not_run}
+  - {id: OID-01, requirement_ids: [AUTH-02, AUTH-09], source_sha: null, outcome: not_run}
+  - {id: OID-02, requirement_ids: [AUTH-04, AUTH-10], source_sha: null, outcome: not_run}
+  - {id: OPS-01, requirement_ids: [AUTH-05, AUTH-08], source_sha: null, outcome: not_run}
+  - {id: OPS-02, requirement_ids: [AUTH-05, AUTH-09], source_sha: null, outcome: not_run}
+  - {id: OPS-03, requirement_ids: [], source_sha: null, outcome: not_run}
+  - {id: OPS-04, requirement_ids: [], source_sha: null, outcome: not_run}
+findings: [] # Empty in a template means not assessed, NOT zero vulnerabilities.
+release_gates:
+  candidate: {status: not_run, source_sha: null, command: null, evidence: null}
+  browser_and_hosts: {status: not_run, evidence: null}
+  independent_review: {status: not_run, reviewer: null, scope: null, evidence: null}
+  exposure_review: {status: not_run, refs_and_artifact_scope: null, evidence: null}
+  private_reporting: {status: not_run, evidence: null}
+  branch_and_tag_protection: {status: not_run, evidence: null}
+  anonymous_exact_tag: {status: not_run, tag: null, command: null, evidence: null}
+  operational_drills: {status: not_run, evidence: null}
+residual_risks: []
+owner_approval:
+  release_claim: null # e.g. source preview; not an implicit production claim.
+  approved_by: null
+  approved_on: null
+  support_scope: null
