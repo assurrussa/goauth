@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+const testPublishedVersion = "v0.4.2"
+
 func TestValidateProbeMode(t *testing.T) {
 	t.Parallel()
 
@@ -22,10 +24,10 @@ func TestValidateProbeMode(t *testing.T) {
 	}{
 		{name: "local", local: ".", cache: "cache", timeout: time.Minute},
 		{name: "local postgres", local: ".", postgres: true, timeout: time.Minute},
-		{name: "published", version: "v0.4.2", timeout: time.Minute},
-		{name: "mixed", version: "v0.4.2", local: ".", timeout: time.Minute, wantErr: true},
-		{name: "shared cache", version: "v0.4.2", cache: "cache", timeout: time.Minute, wantErr: true},
-		{name: "published postgres", version: "v0.4.2", postgres: true, timeout: time.Minute, wantErr: true},
+		{name: "published", version: testPublishedVersion, timeout: time.Minute},
+		{name: "mixed", version: testPublishedVersion, local: ".", timeout: time.Minute, wantErr: true},
+		{name: "shared cache", version: testPublishedVersion, cache: "cache", timeout: time.Minute, wantErr: true},
+		{name: "published postgres", version: testPublishedVersion, postgres: true, timeout: time.Minute, wantErr: true},
 		{name: "whitespace", version: " v0.4.2", timeout: time.Minute, wantErr: true},
 		{name: "zero timeout", local: ".", wantErr: true},
 		{name: "negative timeout", local: ".", timeout: -time.Second, wantErr: true},
@@ -42,6 +44,7 @@ func TestValidateProbeMode(t *testing.T) {
 }
 
 func TestPublishedCommandEnvIsolation(t *testing.T) {
+	const envOff = "off"
 	for _, name := range []string{
 		"HOME", "GOPATH", "GOMODCACHE", "GOCACHE", "GOENV", "GOWORK", "GOPROXY",
 		"GOSUMDB", "GOAUTH", "GOFLAGS", "GOTOOLCHAIN", "GOVCS", "GOPRIVATE",
@@ -71,7 +74,7 @@ func TestPublishedCommandEnvIsolation(t *testing.T) {
 		values[key] = value
 	}
 	for name, want := range map[string]string{
-		"GOENV": "off", "GOWORK": "off", "GOAUTH": "off", "GO111MODULE": "on",
+		"GOENV": envOff, "GOWORK": envOff, "GOAUTH": envOff, "GO111MODULE": "on",
 		"GOPROXY": "https://proxy.golang.org", "GOSUMDB": "sum.golang.org",
 		"GOVCS": "*:off", "GOFLAGS": "-modcacherw", "GOTOOLCHAIN": "auto",
 		"GOPRIVATE": "", "GONOPROXY": "", "GONOSUMDB": "", "GOINSECURE": "",
@@ -121,17 +124,24 @@ func TestVerifyModuleSelection(t *testing.T) {
 		version string
 		wantErr bool
 	}{
-		{name: "exact", data: `{"Path":"github.com/assurrussa/goauth","Version":"v0.4.2"}`, version: "v0.4.2"},
+		{name: "exact", data: `{"Path":"github.com/assurrussa/goauth","Version":"v0.4.2"}`, version: testPublishedVersion},
 		{name: "prerelease", data: `{"Path":"github.com/assurrussa/goauth","Version":"v0.4.2-rc.1"}`, version: "v0.4.2-rc.1"},
 		{name: "latest alias", data: `{"Path":"github.com/assurrussa/goauth","Version":"v0.4.2"}`, version: "latest", wantErr: true},
-		{name: "upgrade", data: `{"Path":"github.com/assurrussa/goauth","Version":"v0.4.3"}`, version: "v0.4.2", wantErr: true},
-		{name: "replacement",
+		{
+			name:    "upgrade",
+			data:    `{"Path":"github.com/assurrussa/goauth","Version":"v0.4.3"}`,
+			version: testPublishedVersion,
+			wantErr: true,
+		},
+		{
+			name:    "replacement",
 			data:    `{"Path":"github.com/assurrussa/goauth","Version":"v0.4.2","Replace":{}}`,
-			version: "v0.4.2",
-			wantErr: true},
-		{name: "wrong module", data: `{"Path":"example.com/other","Version":"v0.4.2"}`, version: "v0.4.2", wantErr: true},
-		{name: "missing version", data: `{"Path":"github.com/assurrussa/goauth"}`, version: "v0.4.2", wantErr: true},
-		{name: "invalid json", data: `{`, version: "v0.4.2", wantErr: true},
+			version: testPublishedVersion,
+			wantErr: true,
+		},
+		{name: "wrong module", data: `{"Path":"example.com/other","Version":"v0.4.2"}`, version: testPublishedVersion, wantErr: true},
+		{name: "missing version", data: `{"Path":"github.com/assurrussa/goauth"}`, version: testPublishedVersion, wantErr: true},
+		{name: "invalid json", data: `{`, version: testPublishedVersion, wantErr: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

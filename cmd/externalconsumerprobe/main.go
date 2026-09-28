@@ -142,7 +142,6 @@ func checkModuleVersion(
 		query += "@" + version
 	}
 
-	//nolint:gosec // This release probe intentionally invokes the installed Go toolchain.
 	cmd := exec.CommandContext(commandCtx, "go", "list", "-m", "-json", query)
 	cmd.Dir = workdir
 	cmd.Env = env
