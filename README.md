@@ -24,11 +24,8 @@ The supported imports are intentionally small:
 - `github.com/assurrussa/goauth/testkit`
 
 `reference/externalconsumer.SupportedPackages` is the machine-readable source
-of truth. The earlier v0.1 use cases remain compile-checked in
-`internal/legacy`. That directory name records the v0.2 transition: Go's
-`internal` import rule prevents external consumers from importing those
-packages, and the supported Runtime is not feature-for-feature equivalent.
-Published v0.1 tags retain the old consumer API.
+of truth. Earlier v0.1 releases remain available at their immutable tags; the
+retired implementation is absent from this repository.
 
 ## PostgreSQL and Fiber quickstart
 
@@ -191,6 +188,4 @@ make integration-down
 After the new tag is published, run `make release-readiness VERSION=v0.4.0`.
 The published clean-consumer probe runs an executable wiring example for the
 Runtime, Fiber, OIDC/Redis, and RBAC without a local `replace`. The candidate
-gate does not establish publication. The restored v0.1 source and its private
-dependencies currently prevent credential-free public CI; resolve that
-distribution boundary before calling this a public release candidate.
+gate does not establish publication.

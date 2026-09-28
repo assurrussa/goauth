@@ -81,13 +81,14 @@
   account receives a one-time reset notification, but a successful password
   reset does not verify its email or promote its confirmation-scoped session.
 
-## Standalone work toward a public candidate (2026-09-27)
+## Standalone public candidate and legacy retirement (2026-09-28)
 
-- The initial v0.4 draft removed `internal/legacy` and its private module
-  dependencies. That decision was superseded after review: the entire v0.1
-  tree and its compile checks were restored. The new Runtime does not cover
-  every previous use case. The nine-package supported import manifest remains
-  unchanged; private dependencies currently block credential-free public CI.
+- The legacy v0.1 use cases under `internal/legacy` and their private module
+  dependencies (`assurrussa/*`) have been permanently retired after confirming
+  all core auth operations are fully supported by the canonical `goauth.Runtime`
+  and its adapters.
+- The module has zero private dependencies and resolves cleanly in public CI
+  without `PRIVATE_GO_MODULES_TOKEN`.
 - PostgreSQL managed delivery is opt-in through `NotificationSender`. The host
   owns the actual transport and supervises `RunNotifications` and `Cleanup`.
   The advanced encrypted-event sink remains available for custom integration.

@@ -22,8 +22,6 @@ When adding or changing public API:
 7. Run `make release-candidate-readiness` before tagging and the published
    clean-consumer probe for the intended tag after publication.
 
-Only manifest packages are supported. Earlier v0.1 use cases remain in
-`internal/legacy`, cannot be imported by external consumers, and are not all
-replaced by the v0.2 Runtime. Their immutable tags remain available to
-consumers that have not migrated. Importability alone does not make a package
-supported.
+Only manifest packages are supported. The retired v0.1 implementation is absent
+from the current source tree; its immutable tags remain available for consumers
+that have not migrated. Importability alone does not make a package supported.

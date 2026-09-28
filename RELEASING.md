@@ -8,8 +8,8 @@ The module path is `github.com/assurrussa/goauth`.
 - `v0.2.0-rc.1` and `v0.2.0` resolve to the same fully verified commit. Both
   tags are immutable; future fixes require a new semver tag.
 - The frozen v0.1 compatibility line ends at `v0.1.7`.
-- The v0.1 use cases remain compile-checked in `internal/legacy`. External
-  consumers cannot import them; immutable v0.1 tags preserve the old API.
+- The retired v0.1 implementation has been removed from the current source
+  tree; its immutable tags remain available to earlier consumers.
 - Never move or replace an existing tag. Never publish a committed local
   `replace` directive.
 - Publication is not production deployment.
@@ -58,29 +58,21 @@ and the runnable local clean-consumer probe. `make integration-up` and
 
 ## Public dependency prerequisite
 
-The restored v0.1 tree brings private modules back into the repository's
-module graph and CI needs `PRIVATE_GO_MODULES_TOKEN`. This blocks a
-credential-free public build even though the supported v0.2 imports do not
-depend on those old packages. Resolve and verify the source/dependency
-distribution boundary before changing repository visibility or tagging v0.4.
+Enable and verify GitHub private vulnerability reporting before announcing or
+tagging the release so the channel in [SECURITY.md](SECURITY.md) is usable.
+The supported import graph and CI must resolve without `GOPRIVATE`, `GONOSUMDB`,
+or a private Go module token. Public pull requests run the same CI job without
+repository secrets. A local probe uses a temporary `replace` and proves checkout
+compatibility only; the public distribution claim requires a clean published
+consumer after repository visibility and tagging.
 
-After that blocker is resolved, enable and verify GitHub private vulnerability
-reporting before announcing or tagging the release so
-the channel in [SECURITY.md](SECURITY.md) is usable. The supported import graph
-and CI must resolve without `GOPRIVATE`, `GONOSUMDB`, or a private Go module
-token. Public pull requests run the same
-CI job without repository secrets. A local probe uses a temporary `replace`
-and proves checkout compatibility only; the public distribution claim requires
-a clean published consumer after repository visibility and tagging.
+## Public release sequence
 
-## Public v0.4 release sequence
-
-1. Resolve the private dependency blocker, verify the candidate commit, make
-   repository visibility public, then enable and verify private vulnerability
-   reporting. Check that all dependencies
-   resolve without private credentials.
-2. Create and push a new `v0.4.0` tag from that commit. Do not rewrite an
-   existing tag.
+1. Verify the candidate commit, make sure repository visibility is public, and
+   verify private vulnerability reporting. Check that all dependencies resolve
+   without private credentials.
+2. Create and push a new semver tag (e.g. `v0.4.1`) from that commit. Do not
+   rewrite an existing tag.
 3. Run the published-module gate:
 
    ```sh

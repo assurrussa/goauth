@@ -20,9 +20,9 @@ External consumers use the exact packages in
 transport-neutral Runtime; `postgres`, `redis`, and `fiber` are adapters;
 `oidc`, `rbac`, and `testkit` are focused capabilities.
 
-The v0.1 use cases remain compile-checked under `internal/legacy`, where
-external consumers cannot import them. The v0.2 Runtime does not yet replace
-every old use case. Immutable v0.1 tags preserve the old consumer API.
+The retired v0.1 implementation is absent from the current source tree. Its
+former package paths are not supported imports; immutable v0.1 tags preserve
+the old release for consumers that still need it.
 
 The native PostgreSQL notification queue is selected through a host-provided
 `goauth.NotificationSender`. The host owns final delivery, starts and stops the
