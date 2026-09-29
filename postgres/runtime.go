@@ -47,6 +47,10 @@ func NewRuntime(config Config) (*Runtime, error) {
 	if config.Runtime.AuthTransaction != nil {
 		return nil, errors.New("PostgreSQL assembles AuthTransaction; use direct root Runtime for custom transaction wiring")
 	}
+	if config.Runtime.EventSink != nil {
+		return nil, errors.New("PostgreSQL requires its local encrypted notification queue; " +
+			"use direct root Runtime for custom transactional event wiring")
+	}
 	if config.NotificationSender != nil && (config.Runtime.EventSink != nil ||
 		config.Runtime.NotificationRenderer != nil || config.Runtime.AuditSink != nil ||
 		config.Runtime.NotificationTransaction != nil || config.Runtime.ManagedNotificationDelivery) {

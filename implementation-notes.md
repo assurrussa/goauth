@@ -276,3 +276,36 @@ Review lens: Security Engineering + Go/Backend + Browser/Mobile boundaries.
 - Source fingerprint: `db4fde8f549eb9b36fcf7b91fa6c31d46c1632e2158c45c3b222211d9e65e8f7`
   over 129 non-documentation files. Full release-SHA acceptance, publication
   and deployment remain separate.
+
+## 2026-09-29: PR #8 transactional event-sink review follow-up
+
+- Goal: prevent PostgreSQL assembly from accepting an encrypted event sink
+  outside its auth/audit transaction. Base: `d6b6087`; no initial local changes.
+- Accepted boundary: reject custom `Runtime.EventSink` before DB connection or
+  migration, as with custom audit and transaction hooks. Managed PostgreSQL
+  assembly retains its native queue; custom enlisted integration belongs to
+  direct root Runtime assembly. Public signatures and schema stay unchanged.
+- Root owns constructor validation, its unit test and migration/ownership docs.
+  One worker owns PostgreSQL integration fixtures and regressions; fixtures must
+  inspect committed native queue rows rather than bypass the constructor guard.
+- Validation: reproduce the constructor acceptance before fixing, prove failure
+  causes no DB/schema changes, exercise durable auth/audit/enqueue rollback,
+  independently review a frozen diff and run the complete candidate gate.
+- Reproduced constructor acceptance on actual PostgreSQL before the fix; the
+  regression now checks rejection with and without a sender and no schema
+  creation. Unit coverage also rejects typed-nil event sinks before DB setup.
+- Integration fixtures now read full encrypted events from committed native
+  queue rows. Password-reset tests inject enqueue and mandatory audit failures,
+  verify no reset/notification/issuance audit survives, then check successful
+  issuance metadata, selector binding and Runtime decryption.
+- Focused constructor and PostgreSQL regressions PASS. Independent read-only
+  security/data review found no issues in the frozen ten-file snapshot and
+  verified the existing public signatures, DB ownership and queue contracts.
+- Final `make release-candidate-readiness` PASS: source guards, formatting,
+  tidy verification, vet/lint (0 issues), race/coverage, local consumers,
+  PostgreSQL/Redis, actual dump/restore and Chromium/HTTPS acceptance. Root
+  coverage 83.9%, PostgreSQL 80.7%; govulncheck found no reachable vulnerabilities
+  and three unreachable required-module findings.
+- Source fingerprint: `d1455f514c8b2439719580b628bd1f5aefbffcbc13d5860ea17a1e353c26c987`
+  over 130 non-documentation files. Full release-SHA acceptance, publication
+  and deployment remain separate.

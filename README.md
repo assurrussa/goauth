@@ -173,11 +173,16 @@ Runtime methods. The host supplies:
 
 - a PostgreSQL connection or DSN;
 - distinct versioned keys for JWT signing, token HMAC, and outbox AES-256-GCM;
-- a notification sender and a supervised worker lifecycle, or an advanced
-  encrypted event sink with delivery acknowledgement and retention cleanup;
+- a notification sender and a supervised worker lifecycle;
 - a password-reset URL builder;
-- optional membership, claims, and identifier hooks. Custom rendering is available with the advanced event-sink integration path.
-  Custom transactional audit wiring requires direct root Runtime assembly.
+- optional membership, claims, and identifier hooks.
+
+Custom encrypted event sinks, rendering and transactional audit wiring require
+direct root Runtime assembly. `postgres.NewRuntime` rejects custom `EventSink`,
+`AuditSink` and `AuthTransaction` overrides before database side effects. All
+participants in direct root assembly must enlist in the same auth transaction;
+receiving its context alone does not guarantee that an external sink will roll
+back with the canonical writes.
 
 The HTTP adapters own only JSON handlers, typed error mapping, and realm middleware. Hosts
 continue to own route prefixes, cookies, redirects, UI, projection tables, and

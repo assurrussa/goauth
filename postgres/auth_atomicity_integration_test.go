@@ -14,7 +14,6 @@ import (
 
 	"github.com/assurrussa/goauth"
 	"github.com/assurrussa/goauth/postgres"
-	"github.com/assurrussa/goauth/testkit"
 )
 
 const (
@@ -37,7 +36,7 @@ func TestPostgresAuthAtomicityClaimsFailurePreservesRegistrationAndRefresh(t *te
 		}
 		return nil
 	})
-	runtime, err := postgres.NewRuntime(postgres.Config{DB: db, Runtime: config})
+	runtime, err := postgres.NewRuntime(postgres.Config{DB: db, Runtime: config, NotificationSender: integrationNotificationSender()})
 	require.NoError(t, err)
 	_, err = runtime.Register(context.Background(), goauth.RegisterRequest{
 		Email: "pg.atomic.claims@example.test", Password: postgresAtomicityPassword,
@@ -66,7 +65,7 @@ func TestPostgresAuthAtomicityAuditRollback(t *testing.T) {
 	resetSchema(t, db)
 	require.NoError(t, postgres.Migrate(context.Background(), db))
 	config := runtimeConfig(t)
-	runtime, err := postgres.NewRuntime(postgres.Config{DB: db, Runtime: config})
+	runtime, err := postgres.NewRuntime(postgres.Config{DB: db, Runtime: config, NotificationSender: integrationNotificationSender()})
 	require.NoError(t, err)
 	registered := register(t, runtime, "pg.atomic.audit@example.test")
 	sso, err := runtime.ResolveExternalIdentity(context.Background(), goauth.ExternalIdentity{
@@ -173,7 +172,7 @@ func TestPostgresAuthAtomicityLogoutDuringClaimsPreparationRejectsSession(t *tes
 		return err
 	})
 	var err error
-	runtime, err = postgres.NewRuntime(postgres.Config{DB: db, Runtime: config})
+	runtime, err = postgres.NewRuntime(postgres.Config{DB: db, Runtime: config, NotificationSender: integrationNotificationSender()})
 	require.NoError(t, err)
 	registered := register(t, runtime, "pg.atomic.snapshot@example.test")
 	armed.Store(true)
@@ -228,9 +227,8 @@ func TestPostgresAuthAtomicityVerificationAuditRollback(t *testing.T) {
 	resetSchema(t, db)
 	require.NoError(t, postgres.Migrate(context.Background(), db))
 	config := runtimeConfig(t)
-	events, ok := config.EventSink.(*testkit.EventSink)
-	require.True(t, ok)
-	runtime, err := postgres.NewRuntime(postgres.Config{DB: db, Runtime: config})
+	events := &integrationEventObserver{t: t, db: db}
+	runtime, err := postgres.NewRuntime(postgres.Config{DB: db, Runtime: config, NotificationSender: integrationNotificationSender()})
 	require.NoError(t, err)
 	registered := register(t, runtime, "pg.atomic.verification@example.test")
 	require.NoError(t, runtime.SendEmailChallenge(context.Background(), registered.Account.Subject.ID,
@@ -249,6 +247,56 @@ func TestPostgresAuthAtomicityVerificationAuditRollback(t *testing.T) {
 		goauth.EmailChallengePurposeVerification, code)
 	require.NoError(t, err)
 	require.True(t, account.EmailVerified())
+}
+
+func TestPostgresAuthAtomicityNotificationAndAuditCommitTogether(t *testing.T) {
+	for _, rejectedTable := range []string{"auth_notification_deliveries", "auth_security_audit_events"} {
+		t.Run(rejectedTable, func(t *testing.T) {
+			db := integrationDB(t)
+			runtime, events, _ := integrationRuntime(t, db)
+			registered := register(t, runtime, "pg.atomic.notification@example.test")
+			ctx := context.Background()
+			_, err := db.ExecContext(ctx, `ALTER TABLE `+rejectedTable+
+				` ADD CONSTRAINT postgres_atomicity_reject_notification CHECK(false) NOT VALID`)
+			require.NoError(t, err)
+			err = runtime.RequestPasswordReset(ctx, registered.Account.PrimaryEmail.DisplayValue)
+			require.ErrorContains(t, err, "postgres_atomicity_reject_notification")
+			for _, query := range []string{
+				`SELECT count(*) FROM auth_password_reset_records WHERE subject_id=$1`,
+				`SELECT count(*) FROM auth_notification_deliveries WHERE subject_id=$1`,
+				`SELECT count(*) FROM auth_security_audit_events WHERE subject_id=$1 AND event_type='password_reset.issued'`,
+			} {
+				var count int
+				require.NoError(t, db.QueryRowContext(ctx, query, registered.Account.Subject.ID).Scan(&count))
+				require.Zero(t, count, "failed notification issuance must roll back: %s", query)
+			}
+			_, err = db.ExecContext(ctx, `ALTER TABLE `+rejectedTable+
+				` DROP CONSTRAINT postgres_atomicity_reject_notification`)
+			require.NoError(t, err)
+			require.NoError(t, runtime.RequestPasswordReset(ctx, registered.Account.PrimaryEmail.DisplayValue))
+			queued := events.Events()
+			require.Len(t, queued, 1)
+			event := queued[0]
+			require.Equal(t, registered.Account.Subject.ID, event.SubjectID)
+			require.Equal(t, "password_reset", event.Type)
+			require.NotEmpty(t, event.ID)
+			var selector string
+			require.NoError(t, db.QueryRowContext(ctx,
+				`SELECT selector FROM auth_password_reset_records WHERE subject_id=$1`, event.SubjectID).Scan(&selector))
+			require.Equal(t, selector, event.ReferenceID)
+			require.True(t, event.ValidUntil.After(event.Envelope.CreatedAt))
+			notification, err := runtime.DecryptNotificationEvent(event)
+			require.NoError(t, err)
+			require.Equal(t, "password_reset", notification.Template)
+			require.Equal(t, registered.Account.PrimaryEmail.DisplayValue, notification.To)
+			require.True(t, notification.Data["reset_url"] != "", "reset notification must contain a URL")
+			var audits int
+			require.NoError(t, db.QueryRowContext(ctx,
+				`SELECT count(*) FROM auth_security_audit_events WHERE subject_id=$1 AND event_type=$2`,
+				event.SubjectID, goauth.SecurityEventPasswordResetIssued).Scan(&audits))
+			require.Equal(t, 1, audits)
+		})
+	}
 }
 
 func rejectPostgresAtomicityAuditWrites(t *testing.T, db *sql.DB) {

@@ -27,7 +27,9 @@ the old release for consumers that still need it.
 The native PostgreSQL notification queue is selected through a host-provided
 `goauth.NotificationSender`. The host owns final delivery, starts and stops the
 worker, and schedules cleanup. The lower-level encrypted event sink remains an
-advanced integration path.
+advanced integration path through direct root Runtime assembly. The PostgreSQL
+constructor rejects custom event sinks so auth state, mandatory audit and native
+enqueue share its database transaction.
 
 ## Schema lifecycle
 

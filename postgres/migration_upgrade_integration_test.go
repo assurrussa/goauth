@@ -58,7 +58,7 @@ DROP TABLE goauth_migration_history;
 DELETE FROM goauth_schema_version WHERE version = 3;`)
 	require.NoError(t, err)
 	require.ErrorIs(t, postgres.VerifySchema(ctx, db), postgres.ErrSchemaNeedsMigration)
-	_, err = postgres.NewRuntime(postgres.Config{DB: db, Runtime: runtimeConfig(t)})
+	_, err = postgres.NewRuntime(postgres.Config{DB: db, Runtime: runtimeConfig(t), NotificationSender: integrationNotificationSender()})
 	require.ErrorIs(t, err, postgres.ErrSchemaNeedsMigration)
 	require.NoError(t, postgres.Migrate(ctx, db))
 	require.NoError(t, postgres.VerifySchema(ctx, db))

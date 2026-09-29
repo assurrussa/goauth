@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"errors"
+	"fmt"
 	"io"
 	"testing"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/assurrussa/goauth"
+	"github.com/assurrussa/goauth/testkit"
 )
 
 type (
@@ -73,4 +75,28 @@ func TestPostgresRuntimeRejectsAuditOverride(t *testing.T) {
 		AuditSink: goauth.AuditSinkFunc(func(context.Context, goauth.SecurityEvent) error { return nil }),
 	}})
 	require.ErrorContains(t, err, "requires its local audit store")
+}
+
+func TestPostgresRuntimeRejectsEventSinkOverride(t *testing.T) {
+	t.Parallel()
+	for _, withSender := range []bool{false, true} {
+		for _, typedNil := range []bool{false, true} {
+			t.Run(fmt.Sprintf("sender_%t_typed_nil_%t", withSender, typedNil), func(t *testing.T) {
+				t.Parallel()
+				var sink *testkit.EventSink
+				if !typedNil {
+					sink = &testkit.EventSink{}
+				}
+				config := Config{Runtime: goauth.Config{EventSink: sink}}
+				if withSender {
+					config.NotificationSender = goauth.NotificationSenderFunc(
+						func(context.Context, goauth.NotificationDelivery) error { return nil },
+					)
+				}
+				runtime, err := NewRuntime(config)
+				require.Nil(t, runtime)
+				require.ErrorContains(t, err, "requires its local encrypted notification queue")
+			})
+		}
+	}
 }
