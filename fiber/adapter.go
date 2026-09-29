@@ -266,6 +266,10 @@ func mapError(err error) (status int, code, message string) {
 		return gofiber.StatusServiceUnavailable, "authentication_unavailable", "authentication temporarily unavailable"
 	case errors.Is(err, goauth.ErrAuthenticationRateLimited):
 		return gofiber.StatusTooManyRequests, "authentication_rate_limited", "too many authentication attempts"
+	case errors.Is(err, goauth.ErrInvalidRealm):
+		return gofiber.StatusBadRequest, "invalid_realm", "invalid realm"
+	case errors.Is(err, goauth.ErrRealmNotRegistered):
+		return gofiber.StatusBadRequest, "realm_not_registered", "realm is not registered"
 	case errors.Is(err, goauth.ErrInvalidCredentials):
 		return gofiber.StatusUnauthorized, "invalid_credentials", "invalid credentials"
 	case errors.Is(err, goauth.ErrInvalidToken), errors.Is(err, goauth.ErrExpiredToken),

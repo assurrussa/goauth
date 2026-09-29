@@ -309,3 +309,25 @@ Review lens: Security Engineering + Go/Backend + Browser/Mobile boundaries.
 - Source fingerprint: `d1455f514c8b2439719580b628bd1f5aefbffcbc13d5860ea17a1e353c26c987`
   over 130 non-documentation files. Full release-SHA acceptance, publication
   and deployment remain separate.
+
+## 2026-09-29: PR #8 login-realm review follow-up
+
+- Goal: map malformed and unregistered client login realms to explicit 400
+  responses in both HTTP adapters. Base: `6fce6c5`; no initial local changes.
+- Accepted contract: `invalid_realm` and `realm_not_registered`, fixed redacted
+  messages and no retry guidance. Omitted/user realm login and existing 401/403
+  boundaries remain intact; Runtime validation and public signatures unchanged.
+- Reproduced 500 responses before the fix through real Runtime login handlers
+  in both adapters, plus direct and wrapped error cases. Regression coverage
+  includes invalid format/length, the default/user success path, unverified
+  admin denial and retained canonical account/session state.
+- Validation: targeted adapter tests, final `make check` and diff review.
+  PostgreSQL/Redis, backup/restore, browser and host release gates from the prior
+  fix are historical evidence and are not rerun for this classification change.
+- Both complete adapter test suites PASS. Final `make check` PASS: 14 source
+  guards, formatting/tidy verification, vet, lint (0 issues), race/coverage and
+  the local clean-consumer probe. Root coverage remains 83.9%.
+- Final diff self-review confirms fixed/redacted client responses, preserved
+  unknown-outcome precedence and unchanged public signatures. Source SHA256:
+  `f2fed1648ff2f7e4ef7ead74a58958ac9e6d8c59d81c578317a8353bbe1b6b8c`
+  over 130 non-documentation files; full candidate acceptance is not rerun.

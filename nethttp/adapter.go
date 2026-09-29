@@ -323,6 +323,10 @@ func mapError(err error) (status int, code, message string) {
 		return http.StatusServiceUnavailable, "authentication_unavailable", "authentication temporarily unavailable"
 	case errors.Is(err, goauth.ErrAuthenticationRateLimited):
 		return http.StatusTooManyRequests, "authentication_rate_limited", "too many authentication attempts"
+	case errors.Is(err, goauth.ErrInvalidRealm):
+		return http.StatusBadRequest, "invalid_realm", "invalid realm"
+	case errors.Is(err, goauth.ErrRealmNotRegistered):
+		return http.StatusBadRequest, "realm_not_registered", "realm is not registered"
 	case errors.Is(err, goauth.ErrInvalidCredentials):
 		return http.StatusUnauthorized, "invalid_credentials", "invalid credentials"
 	case errors.Is(err, goauth.ErrCurrentPasswordInvalid):
