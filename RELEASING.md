@@ -10,6 +10,7 @@ Use repository tags/release notes for existing versions and select the target
 explicitly with `VERSION=<tag>`. There is no implicit latest/default version.
 During preparation on 2026-09-28, `v0.4.1` pointed to `070b1f3`; that observation
 alone is not evidence of public resolution or completed release checks.
+The current unpublished candidate is `v0.5.0`.
 
 Never move or replace a tag, publish a committed local `replace`, or describe a
 private tag as a verified public release. The frozen v0.1 compatibility line
@@ -17,7 +18,15 @@ ends at `v0.1.7`; its implementation is absent from the current source tree.
 Publication, independent review, consumer adoption and deployment are separate
 claims. Fix a failed published candidate in a new commit and tag.
 
-## Breaking migration
+## v0.5 migration
+
+The v0.5 code changes Runtime/store contracts and HTTP authorization defaults.
+It preserves the version-3 database and existing rows; no `Down` is required.
+Read [docs/v0.5-migration.md](docs/v0.5-migration.md), including exact external
+issuer keys and custom transaction wiring. Candidate verification does not
+publish a tag, change visibility, or establish production adoption.
+
+## Breaking v0.1 to v0.2 migration
 
 v0.2 installs a clean baseline schema. `postgres.Migrate` detects a v0.1 auth
 schema and returns `postgres.ErrLegacySchemaRequiresReset` without deleting
@@ -46,6 +55,10 @@ Use the project's declared Go toolchain. Run `make prepare` once, inspect and
 commit any resulting changes, then run the non-mutating candidate gate against
 that exact SHA with disposable PostgreSQL and Redis services:
 
+Select an installed Playwright module and Chromium executable as described in
+[release verification](docs/release-verification.md); the candidate gate
+requires those tools and does not install them automatically.
+
 ```sh
 make integration-up
 make release-candidate-readiness
@@ -57,6 +70,8 @@ The candidate gate includes format/tidy/vet/lint, one race/coverage unit pass,
 public API checks, local consumer, PostgreSQL/Redis integration and real
 PostgreSQL consumer, reachable vulnerability analysis, and aggregate coverage.
 `make check` also runs the network-free source-guard regression tests.
+The candidate gate additionally exercises real PostgreSQL dump/restore and
+Chromium/HTTPS browser acceptance.
 
 The `CI` workflow supports manual dispatch for a candidate branch as well as
 pushes/PRs. Record its SHA and outcome. A job that cannot acquire a runner is
@@ -120,5 +135,5 @@ Each consumer records its resolved version and absence of local replacements,
 its own format/lint/test/migration gates, realm membership and permission
 checks, any explicit disposable-data resets, and unperformed/manual smoke
 checks separately. The historical matrix in [docs/compatibility.md](docs/compatibility.md)
-does not prove adoption of a newer release. Do not infer deployment from tags
+does not prove adoption of v0.5 or a newer release. Do not infer deployment from tags
 or local tests alone.

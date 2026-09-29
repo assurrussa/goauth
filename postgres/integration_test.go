@@ -88,18 +88,24 @@ subject_id UUID PRIMARY KEY REFERENCES auth_subjects(id)
 	_, err = db.Exec(`
 CREATE TABLE auth_confirmation_codes (id BIGSERIAL PRIMARY KEY);
 CREATE TABLE auth_external_identities (id BIGSERIAL PRIMARY KEY);
-CREATE TABLE role_hierarchy (id BIGSERIAL PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS role_hierarchy (id BIGSERIAL PRIMARY KEY);
 CREATE TABLE goauth_goose_db_version (id BIGSERIAL PRIMARY KEY);`)
 	require.NoError(t, err)
 	require.NoError(t, postgres.Down(context.Background(), db, postgres.ConfirmResetAuthState))
 	for _, table := range []string{
 		"auth_subjects", "auth_confirmation_codes", "auth_external_identities",
-		"role_hierarchy", "goauth_goose_db_version",
+		"goauth_goose_db_version",
 	} {
 		var relation sql.NullString
 		require.NoError(t, db.QueryRow(`SELECT to_regclass($1)::text`, "public."+table).Scan(&relation))
 		require.False(t, relation.Valid, table)
 	}
+	var hostTable sql.NullString
+	require.NoError(t, db.QueryRow(`SELECT to_regclass('public.role_hierarchy')::text`).Scan(&hostTable))
+	require.True(t, hostTable.Valid, "host RBAC table must survive auth reset")
+	_, err = db.Exec(`DROP TABLE role_hierarchy`)
+	require.NoError(t, err)
+
 	require.NoError(t, postgres.Migrate(context.Background(), db))
 
 	resetSchema(t, db)
@@ -1231,9 +1237,10 @@ func TestPostgresAdapterValidationAndDSNOwnership(t *testing.T) {
 
 	autoMigrateConfig := runtimeConfig(t)
 	autoMigrated, err := postgres.NewRuntime(postgres.Config{
-		DB:          db,
-		AutoMigrate: true,
-		Runtime:     autoMigrateConfig,
+		DB:                 db,
+		AutoMigrate:        true,
+		Runtime:            autoMigrateConfig,
+		NotificationSender: integrationNotificationSender(),
 	})
 	require.NoError(t, err)
 	require.NoError(t, autoMigrated.Close())
@@ -1245,14 +1252,14 @@ func TestPostgresAdapterValidationAndDSNOwnership(t *testing.T) {
 
 	dsn := os.Getenv("GOAUTH_TEST_POSTGRES_DSN")
 	config := runtimeConfig(t)
-	owned, err := postgres.NewRuntime(postgres.Config{DSN: dsn, Runtime: config})
+	owned, err := postgres.NewRuntime(postgres.Config{DSN: dsn, Runtime: config, NotificationSender: integrationNotificationSender()})
 	require.NoError(t, err)
 	require.NoError(t, owned.Close())
 
 	resetSchema(t, db)
 	_, err = db.Exec(`CREATE TABLE auth_subjects (id UUID PRIMARY KEY, email TEXT NOT NULL)`)
 	require.NoError(t, err)
-	_, err = postgres.NewRuntime(postgres.Config{DB: db, AutoMigrate: true, Runtime: runtimeConfig(t)})
+	_, err = postgres.NewRuntime(postgres.Config{DB: db, AutoMigrate: true, Runtime: runtimeConfig(t), NotificationSender: integrationNotificationSender()})
 	require.ErrorIs(t, err, postgres.ErrLegacySchemaRequiresReset)
 	resetSchema(t, db)
 	require.NoError(t, postgres.Migrate(context.Background(), db))
@@ -1555,20 +1562,57 @@ func TestPostgresLifecycleStoreFailsClosedWhenDatabaseIsUnavailable(t *testing.T
 func integrationRuntime(
 	t *testing.T,
 	db *sql.DB,
-) (*postgres.Runtime, *testkit.EventSink, goauth.KeyRing) {
+) (*postgres.Runtime, *integrationEventObserver, goauth.KeyRing) {
 	t.Helper()
 	resetSchema(t, db)
 	require.NoError(t, postgres.Migrate(context.Background(), db))
 	config := runtimeConfig(t)
-	events, ok := config.EventSink.(*testkit.EventSink)
-	require.True(t, ok)
+	events := &integrationEventObserver{t: t, db: db}
 	runtime, err := postgres.NewRuntime(postgres.Config{
-		DB:      db,
-		Runtime: config,
+		DB:                 db,
+		Runtime:            config,
+		NotificationSender: integrationNotificationSender(),
 	})
 	require.NoError(t, err)
 
 	return runtime, events, config.OutboxAEADKeys
+}
+
+// integrationEventObserver reads committed encrypted deliveries without running
+// the worker, keeping notification assertions independent of delivery timing.
+type integrationEventObserver struct {
+	t  *testing.T
+	db *sql.DB
+}
+
+func (observer *integrationEventObserver) Events() []goauth.EncryptedEvent {
+	observer.t.Helper()
+	rows, err := observer.db.QueryContext(context.Background(), `
+SELECT id, subject_id, event_type, reference_id, valid_until,
+       key_id, nonce, ciphertext, additional_data, created_at, delete_after
+FROM auth_notification_deliveries
+WHERE ciphertext IS NOT NULL
+ORDER BY created_at, id`)
+	require.NoError(observer.t, err)
+	defer func() { require.NoError(observer.t, rows.Close()) }()
+	var events []goauth.EncryptedEvent
+	for rows.Next() {
+		var event goauth.EncryptedEvent
+		require.NoError(observer.t, rows.Scan(
+			&event.ID, &event.SubjectID, &event.Type, &event.ReferenceID, &event.ValidUntil,
+			&event.Envelope.KeyID, &event.Envelope.Nonce, &event.Envelope.Ciphertext,
+			&event.Envelope.AdditionalData, &event.Envelope.CreatedAt, &event.Envelope.DeleteAfter,
+		))
+		events = append(events, event)
+	}
+	require.NoError(observer.t, rows.Err())
+	return events
+}
+
+func integrationNotificationSender() goauth.NotificationSender {
+	return goauth.NotificationSenderFunc(func(context.Context, goauth.NotificationDelivery) error {
+		return nil
+	})
 }
 
 func runtimeConfig(t *testing.T) goauth.Config {
@@ -1577,7 +1621,6 @@ func runtimeConfig(t *testing.T) goauth.Config {
 		Signing:        goauth.SigningConfig{Issuer: "https://auth.example.test", Audience: "integration", Keys: keyRing(t, "jwt", 1)},
 		TokenHMACKeys:  keyRing(t, "token", 2),
 		OutboxAEADKeys: keyRing(t, "outbox", 3),
-		EventSink:      &testkit.EventSink{},
 		URLBuilder: goauth.URLBuilderFunc(func(_ context.Context, token string) (string, error) {
 			return "https://app.example.test/reset-password?token=" + url.QueryEscape(token), nil
 		}),
@@ -1677,7 +1720,7 @@ func login(email, password string) goauth.LoginRequest {
 func integrationNotificationCode(
 	t *testing.T,
 	runtime *postgres.Runtime,
-	events *testkit.EventSink,
+	events *integrationEventObserver,
 	eventType string,
 ) string {
 	t.Helper()

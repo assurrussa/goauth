@@ -121,7 +121,7 @@ func (s *Store) FindLocalAccount(
 JOIN auth_local_credentials c ON c.subject_id = s.id
 WHERE i.scheme = $1 AND i.normalized_value = $2
 LIMIT 1`
-	row := s.db.QueryRowContext(ctx, query, identifier.Scheme, strings.TrimSpace(identifier.Value))
+	row := s.queryer(ctx).QueryRowContext(ctx, query, identifier.Scheme, strings.TrimSpace(identifier.Value))
 	account, passwordPHC, err := scanLocalAccount(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return goauth.LocalAccountRecord{}, goauth.ErrAccountNotFound
@@ -141,7 +141,7 @@ func (s *Store) GetLocalAccount(
 JOIN auth_local_credentials c ON c.subject_id = s.id
 WHERE s.id = $1
 LIMIT 1`
-	account, passwordPHC, err := scanLocalAccount(s.db.QueryRowContext(ctx, query, subjectID))
+	account, passwordPHC, err := scanLocalAccount(s.queryer(ctx).QueryRowContext(ctx, query, subjectID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return goauth.LocalAccountRecord{}, goauth.ErrAccountNotFound
 	}
@@ -159,7 +159,7 @@ func (s *Store) FindAccount(
 	query := `SELECT ` + accountColumns + ` ` + accountFrom + `
 WHERE i.scheme = $1 AND i.normalized_value = $2
 LIMIT 1`
-	account, err := scanAccount(s.db.QueryRowContext(
+	account, err := scanAccount(s.queryer(ctx).QueryRowContext(
 		ctx,
 		query,
 		identifier.Scheme,
@@ -176,7 +176,7 @@ LIMIT 1`
 }
 
 func (s *Store) GetAccount(ctx context.Context, subjectID goauth.SubjectID) (goauth.Account, error) {
-	return getAccount(ctx, s.db, subjectID)
+	return getAccount(ctx, s.queryer(ctx), subjectID)
 }
 
 func (s *Store) UpdateBasicProfile(
@@ -185,7 +185,7 @@ func (s *Store) UpdateBasicProfile(
 	profile goauth.BasicProfile,
 	now time.Time,
 ) (goauth.Account, error) {
-	updated, err := s.db.ExecContext(ctx, `
+	updated, err := s.notificationExecer(ctx).ExecContext(ctx, `
 UPDATE auth_basic_profiles
 SET username = $2,
     display_name = $3,
@@ -211,7 +211,7 @@ WHERE subject_id = $1`,
 		return goauth.Account{}, goauth.ErrAccountNotFound
 	}
 
-	return getAccount(ctx, s.db, subjectID)
+	return getAccount(ctx, s.queryer(ctx), subjectID)
 }
 
 func (s *Store) ChangePassword(
@@ -398,4 +398,18 @@ func transformWriteError(operation string, err error) error {
 	}
 
 	return fmt.Errorf("%s: %w", operation, err)
+}
+
+func (s *Store) LockAccount(ctx context.Context, id goauth.SubjectID) (goauth.Account, error) {
+	tx, err := s.notificationTx(ctx)
+	if err != nil {
+		return goauth.Account{}, err
+	}
+	if tx == nil {
+		return goauth.Account{}, errors.New("LockAccount requires AuthTransaction")
+	}
+	if err := lockSubject(ctx, tx, id); err != nil {
+		return goauth.Account{}, err
+	}
+	return getAccount(ctx, tx, id)
 }

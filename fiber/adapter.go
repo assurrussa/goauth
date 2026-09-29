@@ -200,17 +200,23 @@ func (a *Adapter) VerifyEmailChallenge(c gofiber.Ctx) error {
 }
 
 type RealmMiddlewareOptions struct {
-	Introspect        bool
+	// Deprecated: session introspection is now the default.
+	Introspect bool
+	// OfflineJWT explicitly opts out of current session checks.
+	OfflineJWT        bool
 	AllowConfirmation bool
 }
 
 func (a *Adapter) RequireRealm(realm goauth.Realm, options RealmMiddlewareOptions) gofiber.Handler {
 	return func(c gofiber.Ctx) error {
+		if len(c.Request().Header.PeekAll(gofiber.HeaderAuthorization)) != 1 {
+			return WriteError(c, goauth.ErrInvalidToken)
+		}
 		token, ok := bearerToken(c.Get(gofiber.HeaderAuthorization))
 		if !ok {
 			return WriteError(c, goauth.ErrInvalidToken)
 		}
-		auth, err := a.runtime.VerifyAccessToken(c.Context(), token, options.Introspect)
+		auth, err := a.runtime.VerifyAccessToken(c.Context(), token, !options.OfflineJWT)
 		if err != nil {
 			return WriteError(c, err)
 		}
@@ -251,8 +257,20 @@ func WriteError(c gofiber.Ctx, err error) error {
 
 func mapError(err error) (status int, code, message string) {
 	switch {
+	case errors.Is(err, goauth.ErrOperationOutcomeUnknown):
+		// A canceled commit may have persisted; its cause must not imply safe retry.
+		return gofiber.StatusServiceUnavailable, "operation_outcome_unknown", "operation outcome is unknown; authenticate again"
+	case errors.Is(err, goauth.ErrPasswordHashOverloaded):
+		return gofiber.StatusServiceUnavailable, "password_hash_overloaded", "authentication temporarily unavailable"
+	case errors.Is(err, goauth.ErrPasswordVerificationUnavailable),
+		errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+		return gofiber.StatusServiceUnavailable, "authentication_unavailable", "authentication temporarily unavailable"
 	case errors.Is(err, goauth.ErrAuthenticationRateLimited):
 		return gofiber.StatusTooManyRequests, "authentication_rate_limited", "too many authentication attempts"
+	case errors.Is(err, goauth.ErrInvalidRealm):
+		return gofiber.StatusBadRequest, "invalid_realm", "invalid realm"
+	case errors.Is(err, goauth.ErrRealmNotRegistered):
+		return gofiber.StatusBadRequest, "realm_not_registered", "realm is not registered"
 	case errors.Is(err, goauth.ErrInvalidCredentials):
 		return gofiber.StatusUnauthorized, "invalid_credentials", "invalid credentials"
 	case errors.Is(err, goauth.ErrInvalidToken), errors.Is(err, goauth.ErrExpiredToken),
@@ -285,6 +303,12 @@ func mapError(err error) (status int, code, message string) {
 }
 
 func retryAfterSeconds(err error) (int, bool) {
+	if errors.Is(err, goauth.ErrOperationOutcomeUnknown) {
+		return 0, false
+	}
+	if errors.Is(err, goauth.ErrPasswordHashOverloaded) {
+		return 1, true
+	}
 	if errors.Is(err, goauth.ErrConfirmationResendDelay) {
 		return 60, true
 	}

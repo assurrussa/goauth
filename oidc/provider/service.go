@@ -165,7 +165,7 @@ func New(opts Options) (*Service, error) {
 		refreshTokens:            opts.RefreshTokens,
 		keys:                     opts.Keys,
 		claims:                   opts.Claims,
-		issuer:                   strings.TrimRight(strings.TrimSpace(opts.Issuer), "/"),
+		issuer:                   strings.TrimSpace(opts.Issuer),
 		frontendLoginURL:         strings.TrimSpace(opts.FrontendLoginURL),
 		tokenEndpointAuthMethods: tokenEndpointAuthMethods,
 		requestTTL:               requestTTL,
@@ -182,13 +182,14 @@ func (s *Service) Enabled() bool {
 }
 
 func (s *Service) Discovery(_ context.Context) oidc.DiscoveryMetadata {
+	endpointBase := strings.TrimRight(s.issuer, "/")
 	return oidc.DiscoveryMetadata{
 		Issuer:                            s.issuer,
-		AuthorizationEndpoint:             s.issuer + "/oauth2/authorize",
-		TokenEndpoint:                     s.issuer + "/oauth2/token",
-		UserInfoEndpoint:                  s.issuer + "/oauth2/userinfo",
-		JWKSURI:                           s.issuer + "/oauth2/jwks",
-		RevocationEndpoint:                s.issuer + "/oauth2/revoke",
+		AuthorizationEndpoint:             endpointBase + "/oauth2/authorize",
+		TokenEndpoint:                     endpointBase + "/oauth2/token",
+		UserInfoEndpoint:                  endpointBase + "/oauth2/userinfo",
+		JWKSURI:                           endpointBase + "/oauth2/jwks",
+		RevocationEndpoint:                endpointBase + "/oauth2/revoke",
 		ResponseTypesSupported:            []string{responseTypeCode},
 		GrantTypesSupported:               []string{grantTypeAuthorizationCode, grantTypeRefreshToken},
 		ScopesSupported:                   oidc.SupportedScopes(),

@@ -16,6 +16,8 @@ type LocalAccountRecord struct {
 }
 
 type AccountStore interface {
+	// LockAccount requires AuthTransaction and locks the canonical subject before dependent state.
+	LockAccount(ctx context.Context, subjectID SubjectID) (Account, error)
 	CreateLocalAccount(ctx context.Context, record LocalAccountRecord) (Account, error)
 	FindAccount(ctx context.Context, identifier IdentifierInput) (Account, error)
 	FindLocalAccount(ctx context.Context, identifier IdentifierInput) (LocalAccountRecord, error)
@@ -65,12 +67,15 @@ type SessionRecord struct {
 }
 
 type RefreshRotationRequest struct {
-	CurrentSelector string
-	CurrentDigest   SecretDigest
-	NextSelector    string
-	NextDigest      SecretDigest
-	NextExpiresAt   time.Time
-	Now             time.Time
+	ExpectedSecurityVersion int64
+	ExpectedNormalizedEmail string
+	ExpectedEmailVerified   bool
+	CurrentSelector         string
+	CurrentDigest           SecretDigest
+	NextSelector            string
+	NextDigest              SecretDigest
+	NextExpiresAt           time.Time
+	Now                     time.Time
 }
 
 type RefreshRotationStatus string
@@ -97,6 +102,8 @@ type SessionSecurity struct {
 }
 
 type SessionStore interface {
+	// PeekRefresh authenticates a token without consuming it. Rotation revalidates all state.
+	PeekRefresh(ctx context.Context, request RefreshRotationRequest) (RefreshRotationResult, error)
 	CreateSession(ctx context.Context, record SessionRecord) error
 	RotateRefresh(ctx context.Context, request RefreshRotationRequest) (RefreshRotationResult, error)
 	IntrospectSession(ctx context.Context, sessionID string) (SessionSecurity, error)

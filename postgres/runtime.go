@@ -40,6 +40,17 @@ type Runtime struct {
 }
 
 func NewRuntime(config Config) (*Runtime, error) {
+	if config.Runtime.AuditSink != nil {
+		return nil, errors.New("PostgreSQL requires its local audit store; " +
+			"use direct root Runtime for custom transactional audit wiring")
+	}
+	if config.Runtime.AuthTransaction != nil {
+		return nil, errors.New("PostgreSQL assembles AuthTransaction; use direct root Runtime for custom transaction wiring")
+	}
+	if config.Runtime.EventSink != nil {
+		return nil, errors.New("PostgreSQL requires its local encrypted notification queue; " +
+			"use direct root Runtime for custom transactional event wiring")
+	}
 	if config.NotificationSender != nil && (config.Runtime.EventSink != nil ||
 		config.Runtime.NotificationRenderer != nil || config.Runtime.AuditSink != nil ||
 		config.Runtime.NotificationTransaction != nil || config.Runtime.ManagedNotificationDelivery) {
@@ -92,12 +103,12 @@ func NewRuntime(config Config) (*Runtime, error) {
 		return nil, err
 	}
 	config.Runtime.Store = store
+	config.Runtime.AuthTransaction = store
 	if config.NotificationSender != nil {
 		config.Runtime.EventSink = store
 		config.Runtime.AuditSink = store
-		config.Runtime.NotificationTransaction = store
 		config.Runtime.ManagedNotificationDelivery = true
-	} else if config.Runtime.AuditSink == nil {
+	} else {
 		config.Runtime.AuditSink = store
 	}
 	coreRuntime, err := goauth.NewRuntime(config.Runtime)

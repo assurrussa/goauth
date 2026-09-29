@@ -18,13 +18,30 @@ func (r *Runtime) ProvisionTrustedLocalAccount(ctx context.Context, request Regi
 	return r.createLocalAccount(ctx, request, true)
 }
 
-func (r *Runtime) createLocalAccount(
+func (r *Runtime) createLocalAccount(ctx context.Context, request RegisterRequest, trusted bool) (Account, error) {
+	record, err := r.prepareLocalAccount(ctx, request, trusted)
+	if err != nil {
+		return Account{}, err
+	}
+	var account Account
+	err = r.authTransaction.InAuthTransaction(ctx, func(ctx context.Context) error {
+		var writeErr error
+		account, writeErr = r.store.CreateLocalAccount(ctx, record)
+		return writeErr
+	})
+	if err != nil {
+		return Account{}, err
+	}
+	return account, nil
+}
+
+func (r *Runtime) prepareLocalAccount(
 	ctx context.Context,
 	request RegisterRequest,
 	trustedVerified bool,
-) (Account, error) {
+) (LocalAccountRecord, error) {
 	if err := r.passwordPolicy.Validate(request.Password); err != nil {
-		return Account{}, err
+		return LocalAccountRecord{}, err
 	}
 	displayEmail := strings.TrimSpace(request.Email)
 	normalized, err := r.normalizeIdentifier(ctx, IdentifierInput{
@@ -32,11 +49,11 @@ func (r *Runtime) createLocalAccount(
 		Value:  displayEmail,
 	})
 	if err != nil {
-		return Account{}, err
+		return LocalAccountRecord{}, err
 	}
 	passwordPHC, err := r.hasher.HashPassword(request.Password)
 	if err != nil {
-		return Account{}, fmt.Errorf("hash password: %w", err)
+		return LocalAccountRecord{}, fmt.Errorf("hash password: %w", err)
 	}
 	now := r.now().UTC()
 	subjectID := NewSubjectID()
@@ -68,12 +85,7 @@ func (r *Runtime) createLocalAccount(
 		},
 		PasswordPHC: passwordPHC,
 	}
-	account, err := r.store.CreateLocalAccount(ctx, record)
-	if err != nil {
-		return Account{}, fmt.Errorf("create local account: %w", err)
-	}
-
-	return account, nil
+	return record, nil
 }
 
 func (r *Runtime) GetAccount(ctx context.Context, subjectID SubjectID) (Account, error) {
@@ -121,6 +133,12 @@ func (r *Runtime) VerifyCredential(ctx context.Context, credential Credential) (
 		passwordPHC = r.dummyPasswordPHC
 	}
 	passwordErr := r.hasher.VerifyPassword(passwordPHC, credential.Password)
+	if lookupErr != nil && !errors.Is(lookupErr, ErrAccountNotFound) {
+		return Account{}, fmt.Errorf("find local credential: %w", lookupErr)
+	}
+	if isPasswordVerificationFailure(passwordErr) {
+		return Account{}, fmt.Errorf("verify password: %w", passwordErr)
+	}
 	if lookupErr != nil || passwordErr != nil || record.Account.IsZero() {
 		return Account{}, ErrInvalidCredentials
 	}
@@ -168,10 +186,17 @@ func (r *Runtime) ChangePassword(ctx context.Context, request ChangePasswordRequ
 		return Account{}, fmt.Errorf("get local credential: %w", err)
 	}
 	if err := r.hasher.VerifyPassword(record.PasswordPHC, request.CurrentPassword); err != nil {
+		if isPasswordVerificationFailure(err) {
+			return Account{}, fmt.Errorf("verify current password: %w", err)
+		}
 		return Account{}, ErrCurrentPasswordInvalid
 	}
-	if r.hasher.VerifyPassword(record.PasswordPHC, request.NewPassword) == nil {
+	passwordErr := r.hasher.VerifyPassword(record.PasswordPHC, request.NewPassword)
+	if passwordErr == nil {
 		return Account{}, ErrPasswordUnchanged
+	}
+	if isPasswordVerificationFailure(passwordErr) {
+		return Account{}, fmt.Errorf("compare replacement password: %w", passwordErr)
 	}
 	passwordPHC, err := r.hasher.HashPassword(request.NewPassword)
 	if err != nil {
@@ -225,19 +250,16 @@ func (r *Runtime) Logout(ctx context.Context, subjectID SubjectID, sessionID str
 	if subjectID.IsZero() || strings.TrimSpace(sessionID) == "" {
 		return ErrSessionRevoked
 	}
-	now := r.now().UTC()
-	revoked, err := r.store.RevokeSession(ctx, subjectID, strings.TrimSpace(sessionID), now)
-	if err != nil {
-		return fmt.Errorf("revoke session: %w", err)
-	}
-	if !revoked {
-		return ErrSessionRevoked
-	}
-
-	return r.recordAudit(ctx, SecurityEvent{
-		Type:      SecurityEventSessionRevoked,
-		SubjectID: subjectID,
-		At:        now,
+	return r.authTransaction.InAuthTransaction(ctx, func(ctx context.Context) error {
+		now := r.now().UTC()
+		revoked, err := r.store.RevokeSession(ctx, subjectID, strings.TrimSpace(sessionID), now)
+		if err != nil {
+			return fmt.Errorf("revoke session: %w", err)
+		}
+		if !revoked {
+			return ErrSessionRevoked
+		}
+		return r.recordAudit(ctx, SecurityEvent{Type: SecurityEventSessionRevoked, SubjectID: subjectID, At: now})
 	})
 }
 
@@ -245,19 +267,21 @@ func (r *Runtime) LogoutAll(ctx context.Context, subjectID SubjectID) (int64, er
 	if subjectID.IsZero() {
 		return 0, ErrAccountNotFound
 	}
-	now := r.now().UTC()
-	revoked, err := r.store.RevokeSubjectSessions(ctx, subjectID, now)
+	var revoked int64
+	err := r.authTransaction.InAuthTransaction(ctx, func(ctx context.Context) error {
+		now := r.now().UTC()
+		var err error
+		revoked, err = r.store.RevokeSubjectSessions(ctx, subjectID, now)
+		if err != nil {
+			return fmt.Errorf("revoke subject sessions: %w", err)
+		}
+		return r.recordAudit(ctx, SecurityEvent{
+			Type: SecurityEventSessionsRevoked, SubjectID: subjectID, At: now,
+			Attributes: map[string]string{"count": strconv.FormatInt(revoked, 10)},
+		})
+	})
 	if err != nil {
-		return 0, fmt.Errorf("revoke subject sessions: %w", err)
-	}
-	if err := r.recordAudit(ctx, SecurityEvent{
-		Type:       SecurityEventSessionsRevoked,
-		SubjectID:  subjectID,
-		At:         now,
-		Attributes: map[string]string{"count": strconv.FormatInt(revoked, 10)},
-	}); err != nil {
 		return 0, err
 	}
-
 	return revoked, nil
 }

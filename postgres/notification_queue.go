@@ -259,6 +259,6 @@ WHERE state IN ('pending', 'blocked', 'leased')`).Scan(&oldest); err != nil {
 }
 
 var (
-	_ goauth.EncryptedEventSink      = (*Store)(nil)
-	_ goauth.NotificationTransaction = (*Store)(nil)
+	_ goauth.EncryptedEventSink = (*Store)(nil)
+	_ goauth.AuthTransaction    = (*Store)(nil)
 )

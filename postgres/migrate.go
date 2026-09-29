@@ -210,10 +210,6 @@ DROP TABLE IF EXISTS auth_email_change_requests;
 DROP TABLE IF EXISTS auth_external_identities;
 DROP TABLE IF EXISTS auth_password_reset_tokens;
 DROP TABLE IF EXISTS auth_sso_identity_links;
-DROP TABLE IF EXISTS role_hierarchy;
-DROP TABLE IF EXISTS role_permissions;
-DROP TABLE IF EXISTS roles;
-DROP TABLE IF EXISTS permissions;
 
 DROP TABLE IF EXISTS auth_local_credentials;
 DROP TABLE IF EXISTS auth_basic_profiles;

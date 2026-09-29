@@ -301,11 +301,13 @@ func TestRuntimeRejectsCrossPurposeKeyReuse(t *testing.T) {
 	outboxKeys, err := goauth.NewKeyRing("outbox", goauth.Key{ID: "outbox", Material: bytes.Repeat([]byte{8}, 32)})
 	require.NoError(t, err)
 	_, err = goauth.NewRuntime(goauth.Config{
-		Store:          testkit.NewStore(),
-		Signing:        goauth.SigningConfig{Issuer: "https://auth.example.test", Audience: testAudience, Keys: jwtKeys},
-		TokenHMACKeys:  tokenKeys,
-		OutboxAEADKeys: outboxKeys,
-		EventSink:      &testkit.EventSink{},
+		Store:           testkit.NewStore(),
+		AuthTransaction: testkit.NewStore(),
+		AuditSink:       testkit.NewStore(),
+		Signing:         goauth.SigningConfig{Issuer: "https://auth.example.test", Audience: testAudience, Keys: jwtKeys},
+		TokenHMACKeys:   tokenKeys,
+		OutboxAEADKeys:  outboxKeys,
+		EventSink:       &testkit.EventSink{},
 		URLBuilder: goauth.URLBuilderFunc(func(context.Context, string) (string, error) {
 			return "https://app.example.test/reset", nil
 		}),

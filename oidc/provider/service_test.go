@@ -108,6 +108,7 @@ func TestProviderConstructorAndDisabledMode(t *testing.T) {
 		{"keys", func(options *Options) { options.Keys = nil }},
 		{"claims", func(options *Options) { options.Claims = nil }},
 		{"issuer", func(options *Options) { options.Issuer = "" }},
+		{"whitespace_issuer", func(options *Options) { options.Issuer = " \t\n " }},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {

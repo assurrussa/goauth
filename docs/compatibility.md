@@ -55,3 +55,4 @@ This historical matrix reflects the v0.2/v0.3 baseline, not adoption of the
 latest tag. Use release notes and exact-tag verification in
 [release-verification.md](release-verification.md) for distribution evidence;
 check host repositories separately for consumer adoption.
+The current v0.5.0 work is an unpublished candidate.

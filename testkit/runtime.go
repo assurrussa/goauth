@@ -20,7 +20,8 @@ type EventSink struct {
 	events []goauth.EncryptedEvent
 }
 
-func (s *EventSink) EnqueueEncrypted(_ context.Context, event goauth.EncryptedEvent) error {
+func (s *EventSink) EnqueueEncrypted(ctx context.Context, event goauth.EncryptedEvent) error {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.events = append(s.events, cloneEvent(event))
@@ -39,7 +40,8 @@ func (s *EventSink) Events() []goauth.EncryptedEvent {
 	return result
 }
 
-func (s *EventSink) DeleteEncrypted(_ context.Context, eventID string) error {
+func (s *EventSink) DeleteEncrypted(ctx context.Context, eventID string) error {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for index, event := range s.events {
@@ -56,7 +58,8 @@ func (s *EventSink) DeleteEncrypted(_ context.Context, eventID string) error {
 	return nil
 }
 
-func (s *EventSink) DeleteExpiredEncrypted(_ context.Context, before time.Time) (int64, error) {
+func (s *EventSink) DeleteExpiredEncrypted(ctx context.Context, before time.Time) (int64, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	kept := s.events[:0]
@@ -103,11 +106,13 @@ func NewRuntime(options ...RuntimeOption) (*Fixture, error) {
 	store := NewStore()
 	events := &EventSink{}
 	config := goauth.Config{
-		Store:          store,
-		Signing:        goauth.SigningConfig{Issuer: "https://auth.example.test", Audience: "test", Keys: signingKeys},
-		TokenHMACKeys:  tokenKeys,
-		OutboxAEADKeys: envelopeKeys,
-		EventSink:      events,
+		Store:           store,
+		AuthTransaction: &fixtureTransaction{store: store, events: events},
+		AuditSink:       store,
+		Signing:         goauth.SigningConfig{Issuer: "https://auth.example.test", Audience: "test", Keys: signingKeys},
+		TokenHMACKeys:   tokenKeys,
+		OutboxAEADKeys:  envelopeKeys,
+		EventSink:       events,
 		URLBuilder: goauth.URLBuilderFunc(func(_ context.Context, token string) (string, error) {
 			return "https://app.example.test/reset-password?token=" + url.QueryEscape(token), nil
 		}),

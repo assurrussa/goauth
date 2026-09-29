@@ -4,6 +4,13 @@ Status: implementation specification; not a security attestation or a change to
 supported Go symbols. Prepared 2026-09-28 against master
 `070b1f37e8139d5796cb266b57d07cdd16b659c9`.
 
+The current unpublished v0.5 candidate has local profile validation recorded in
+[the dated local evidence snapshot](release-evidence.local.yaml): 17 catalog
+cases are recorded as passed and 21 remain `not_run`. That pre-commit snapshot
+does not constitute release-SHA acceptance under the complete template below.
+The aggregate site platform gate also remains failed at the unrelated gouploads
+generation/formatting boundary. Public-preview readiness is not established.
+
 ## Outcome
 
 Make goauth installable and maintainable by developers outside the maintainer's
@@ -23,6 +30,8 @@ Use these documents in order:
    compatibility and incident handling.
 5. [Evidence template](release-evidence.example.yaml): fill from actual runs;
    `not_run` is never success.
+6. [Candidate assembly decisions](candidate-assembly.md): the selected v0.5
+   browser/native/admin/OIDC wiring, distinct from required acceptance evidence.
 
 The existing [project contract](../project-contract.md),
 [public surface guide](../public-surface.md), and
@@ -38,19 +47,21 @@ admin integration using sessions. Their current deployed versions and middleware
 were not inspected in this task. Treat this as host experience to preserve, not
 proof that every behavior is present in the current library tag.
 
-The inspected [Runtime](../../runtime.go) issues JWT/refresh pairs associated
-with server-side sessions. Its token verification supports optional server-side
-introspection. The current [Fiber adapter](../../fiber/adapter.go) extracts a
-Bearer token; the project contract leaves cookie policy to hosts. The existence
+The current [Runtime](../../runtime.go) issues JWT/refresh pairs associated
+with server-side sessions. HTTP realm middleware uses current-session checks
+by default; offline JWT verification is an explicit policy with a revocation
+window. The [Fiber adapter](../../fiber/adapter.go) and supported net/http adapter
+extract explicit Bearer credentials; the project contract leaves cookie policy
+to hosts and the reference composition. The existence
 of a Session record is not evidence of a separate opaque-cookie login protocol.
 Public package boundaries and security invariants already exist; the missing
 work is profile-specific acceptance evidence and integration guidance, not a
 wholesale creation of contracts from scratch.
 
-Release tooling is a separate dependency: [PR #6](https://github.com/assurrussa/goauth/pull/6),
-observed open/draft at head `d5ed6459944f27fe7ab04c9cdadf49f8d33ea2e5`.
-Do not mark its gates passed from this specification. Keep its publication
-mechanism; use this pack to define which behavior must be tested before release.
+Release tooling from [PR #6](https://github.com/assurrussa/goauth/pull/6) is included
+in the candidate merge. Do not mark its gates passed from this specification.
+Keep its anonymous exact-tag publication mechanism; use this pack to define
+which behavior must be tested before release.
 
 ## Decisions
 
@@ -65,9 +76,9 @@ mechanism; use this pack to define which behavior must be tested before release.
 - Keep existing OIDC/RBAC imports compatible. Do not claim OIDC conformance or
   unrestricted SSO interoperability. Optional code still requires security
   review and safe defaults; it is not exempt because it is optional.
-- Do not add opaque session credentials until local evidence determines whether
-  the admin actually needs them. Do not silently replace the admin's behavior
-  with JWT either.
+- Preserve the opaque admin credential identified by local ADM-01 inspection;
+  its server-side bridge must honor canonical revocation and current permission
+  checks. Local identification does not establish production deployment state.
 
 ## Completion
 

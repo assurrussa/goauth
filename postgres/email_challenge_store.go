@@ -32,6 +32,9 @@ func (s *Store) IssueEmailChallenge(
 		return goauth.EmailChallengeIssueResult{}, fmt.Errorf("begin email challenge issue: %w", err)
 	}
 	defer rollbackWrite(tx, owned)
+	if err := lockSubject(ctx, tx, record.SubjectID); err != nil {
+		return goauth.EmailChallengeIssueResult{}, err
+	}
 
 	lockKey := record.RateDigest.KeyID + ":" + hex.EncodeToString(record.RateDigest.Digest) + ":" + action
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, lockKey); err != nil {
@@ -118,8 +121,7 @@ func validateEmailChallengeSnapshot(ctx context.Context, tx *sql.Tx, record goau
 	if record.ExpectedSecurityVersion == 0 {
 		return nil
 	}
-	// Email change updates the identifier before the subject. Lock in that
-	// order, then compare the same snapshot used for the notification's To.
+	// The caller locks the canonical subject before this identifier.
 	var currentEmail string
 	err := tx.QueryRowContext(ctx, `
 SELECT normalized_value FROM auth_identifiers
@@ -160,6 +162,9 @@ func (s *Store) VerifyEmailChallenge(
 		return goauth.EmailChallengeVerifyResult{}, fmt.Errorf("begin email challenge verify: %w", err)
 	}
 	defer rollbackWrite(tx, owned)
+	if err := lockSubject(ctx, tx, request.SubjectID); err != nil {
+		return goauth.EmailChallengeVerifyResult{}, err
+	}
 
 	var (
 		challengeID  string

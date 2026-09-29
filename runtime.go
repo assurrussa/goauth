@@ -32,7 +32,10 @@ type Config struct {
 	TokenHMACKeys           KeyRing
 	OutboxAEADKeys          KeyRing
 	EventSink               EncryptedEventSink
-	NotificationTransaction NotificationTransaction
+	NotificationTransaction NotificationTransaction // Deprecated: use AuthTransaction.
+	AuthTransaction         AuthTransaction
+	// Nil allows all trusted issuers; empty disables verified-email auto-linking.
+	AutoLinkVerifiedEmailIssuers []string
 	// ManagedNotificationDelivery enables typed, lease-owned PostgreSQL delivery.
 	// A custom transaction alone keeps the configured renderer and event sink.
 	ManagedNotificationDelivery bool
@@ -43,6 +46,9 @@ type Config struct {
 	URLBuilder                  URLBuilder
 	AuditSink                   AuditSink
 	PasswordHasher              PasswordHasher
+	// Zero defaults to four concurrent hashes/verifications per shared Runtime.
+	// Excess work fails immediately with ErrPasswordHashOverloaded.
+	MaxConcurrentPasswordHashes int
 	PasswordPolicy              PasswordPolicy
 	AdditionalRealms            []Realm
 	AccessTTL                   time.Duration
@@ -68,7 +74,8 @@ type Runtime struct {
 	renderer                    NotificationRenderer
 	urlBuilder                  URLBuilder
 	eventSink                   EncryptedEventSink
-	notificationTransaction     NotificationTransaction
+	authTransaction             AuthTransaction
+	autoLinkIssuers             []string
 	managedNotificationDelivery bool
 	audit                       AuditSink
 	hasher                      PasswordHasher
@@ -114,8 +121,12 @@ func NewRuntime(config Config) (*Runtime, error) {
 	}
 	if config.PasswordPolicy.MinLength == 0 &&
 		config.PasswordPolicy.MaxLength == 0 &&
-		config.PasswordPolicy.Blocklist == nil {
+		config.PasswordPolicy.Blocklist == nil && !config.PasswordPolicy.DisableBlocklist {
 		config.PasswordPolicy = DefaultPasswordPolicy()
+	}
+	config.PasswordHasher = &boundedPasswordHasher{
+		delegate: config.PasswordHasher,
+		active:   make(chan struct{}, config.MaxConcurrentPasswordHashes),
 	}
 	dummyPHC, err := config.PasswordHasher.HashPassword("goauth-enumeration-dummy-password")
 	if err != nil {
@@ -138,7 +149,8 @@ func NewRuntime(config Config) (*Runtime, error) {
 		renderer:                    config.NotificationRenderer,
 		urlBuilder:                  config.URLBuilder,
 		eventSink:                   config.EventSink,
-		notificationTransaction:     config.NotificationTransaction,
+		authTransaction:             config.AuthTransaction,
+		autoLinkIssuers:             append([]string(nil), config.AutoLinkVerifiedEmailIssuers...),
 		managedNotificationDelivery: config.ManagedNotificationDelivery,
 		audit:                       config.AuditSink,
 		hasher:                      config.PasswordHasher,
@@ -165,6 +177,12 @@ func NewRuntime(config Config) (*Runtime, error) {
 }
 
 func applyRuntimeDefaults(config Config) Config {
+	if config.MaxConcurrentPasswordHashes == 0 {
+		config.MaxConcurrentPasswordHashes = DefaultMaxConcurrentPasswordHashes
+	}
+	if config.AutoLinkVerifiedEmailIssuers == nil {
+		config.AutoLinkVerifiedEmailIssuers = []string{"*"}
+	}
 	if config.Now == nil {
 		config.Now = time.Now
 	}
@@ -207,16 +225,27 @@ func applyRuntimeDefaults(config Config) Config {
 	if config.NotificationRenderer == nil {
 		config.NotificationRenderer = jsonNotificationRenderer{}
 	}
-	if config.AuditSink == nil {
-		config.AuditSink = AuditSinkFunc(func(context.Context, SecurityEvent) error { return nil })
-	}
 
 	return config
 }
 
 func validateRuntimeConfig(config Config) error {
-	if config.ManagedNotificationDelivery && config.NotificationTransaction == nil {
-		return errors.New("managed notification delivery requires a notification transaction")
+	if config.MaxConcurrentPasswordHashes < 1 || config.MaxConcurrentPasswordHashes > 64 {
+		return errors.New("password hash concurrency must be between one and 64")
+	}
+	if config.AuthTransaction == nil {
+		return errors.New("auth transaction is required")
+	}
+	for _, issuer := range config.AutoLinkVerifiedEmailIssuers {
+		if issuer == "" || (issuer == "*" && len(config.AutoLinkVerifiedEmailIssuers) != 1) {
+			return errors.New("invalid auto-link issuer policy")
+		}
+	}
+	if config.AuditSink == nil {
+		return errors.New("transactional audit sink is required")
+	}
+	if config.NotificationTransaction != nil {
+		return errors.New("NotificationTransaction is retired; configure AuthTransaction")
 	}
 	if config.Store == nil {
 		return errors.New("runtime store is required")
@@ -291,16 +320,24 @@ type RegisterResult struct {
 }
 
 func (r *Runtime) Register(ctx context.Context, request RegisterRequest) (RegisterResult, error) {
-	account, err := r.createLocalAccount(ctx, request, false)
+	record, err := r.prepareLocalAccount(ctx, request, false)
 	if err != nil {
 		return RegisterResult{}, err
 	}
-	tokens, err := r.issueSession(ctx, account, RealmUser, SessionScopeConfirmation)
+	prepared, err := r.prepareSession(ctx, record.Account, RealmUser, SessionScopeConfirmation)
 	if err != nil {
 		return RegisterResult{}, err
 	}
-
-	return RegisterResult{Account: account, Tokens: tokens}, nil
+	err = r.authTransaction.InAuthTransaction(ctx, func(ctx context.Context) error {
+		if _, err := r.store.CreateLocalAccount(ctx, record); err != nil {
+			return err
+		}
+		return r.createPreparedSession(ctx, prepared)
+	})
+	if err != nil {
+		return RegisterResult{}, err
+	}
+	return RegisterResult{Account: record.Account, Tokens: prepared.tokens}, nil
 }
 
 type LoginRequest struct {
@@ -338,6 +375,12 @@ func (r *Runtime) Login(ctx context.Context, request LoginRequest) (LoginResult,
 		passwordPHC = r.dummyPasswordPHC
 	}
 	passwordErr := r.hasher.VerifyPassword(passwordPHC, request.Credential.Password)
+	if lookupErr != nil && !errors.Is(lookupErr, ErrAccountNotFound) {
+		return LoginResult{}, fmt.Errorf("find local credential: %w", lookupErr)
+	}
+	if isPasswordVerificationFailure(passwordErr) {
+		return LoginResult{}, fmt.Errorf("verify password: %w", passwordErr)
+	}
 	if lookupErr != nil || passwordErr != nil || record.Account.IsZero() {
 		_ = r.recordAudit(ctx, SecurityEvent{Type: SecurityEventLoginFailed, Realm: realm, At: r.now().UTC()})
 		return LoginResult{}, ErrInvalidCredentials
@@ -358,67 +401,113 @@ func (r *Runtime) Login(ctx context.Context, request LoginRequest) (LoginResult,
 }
 
 func (r *Runtime) Refresh(ctx context.Context, rawRefreshToken string) (TokenPair, error) {
-	current, currentDigest, err := r.secretCodec.Parse(strings.TrimSpace(rawRefreshToken), "refresh")
+	current, digest, err := r.secretCodec.Parse(strings.TrimSpace(rawRefreshToken), "refresh")
 	if err != nil {
 		return TokenPair{}, ErrInvalidToken
 	}
-	next, nextDigest, err := r.secretCodec.Generate("refresh")
+	request := RefreshRotationRequest{CurrentSelector: current.selector, CurrentDigest: digest, Now: r.now().UTC()}
+	snapshot, err := r.store.PeekRefresh(ctx, request)
 	if err != nil {
-		return TokenPair{}, err
+		return TokenPair{}, fmt.Errorf("inspect refresh token: %w", err)
 	}
-	now := r.now().UTC()
-	result, err := r.store.RotateRefresh(ctx, RefreshRotationRequest{
-		CurrentSelector: current.selector,
-		CurrentDigest:   currentDigest,
-		NextSelector:    next.selector,
-		NextDigest:      nextDigest,
-		NextExpiresAt:   now.Add(r.refreshTTL),
-		Now:             now,
+	var tokens TokenPair
+	if snapshot.Status == RefreshRotationSucceeded {
+		if _, err := r.authorizeRealm(ctx, snapshot.Session.Realm, snapshot.Account); err != nil {
+			return TokenPair{}, err
+		}
+		next, nextDigest, err := r.secretCodec.Generate("refresh")
+		if err != nil {
+			return TokenPair{}, err
+		}
+		request.NextSelector = next.selector
+		request.NextDigest = nextDigest
+		request.ExpectedSecurityVersion = snapshot.Account.Subject.SecurityVersion
+		request.ExpectedNormalizedEmail = snapshot.Account.PrimaryEmail.NormalizedValue
+		request.ExpectedEmailVerified = snapshot.Account.EmailVerified()
+		expiry := capExpiry(request.Now.Add(r.accessTTL), snapshot.Session.ExpiresAt)
+		access, err := r.jwt.Sign(ctx, snapshot.Account, snapshot.Session, expiry, r.claims)
+		if err != nil {
+			return TokenPair{}, err
+		}
+		tokens = TokenPair{
+			AccessToken: access, RefreshToken: next.raw, AccessExpiresAt: expiry,
+			Session: snapshot.Session,
+		}
+	} else if snapshot.Status != RefreshRotationReplayed {
+		return TokenPair{}, refreshOutcome(snapshot.Status)
+	}
+	var result RefreshRotationResult
+	err = r.authTransaction.InAuthTransaction(ctx, func(ctx context.Context) error {
+		var err error
+		request.Now = r.now().UTC()
+		if snapshot.Status == RefreshRotationSucceeded {
+			request.NextExpiresAt = capExpiry(request.Now.Add(r.refreshTTL), snapshot.Session.ExpiresAt)
+		}
+		result, err = r.store.RotateRefresh(ctx, request)
+		if err != nil {
+			return err
+		}
+		if result.Status == RefreshRotationReplayed {
+			return r.recordAudit(ctx, SecurityEvent{
+				Type: SecurityEventRefreshReplay, SubjectID: result.Account.Subject.ID,
+				Realm: result.Session.Realm, At: request.Now,
+			})
+		}
+		if result.Status == RefreshRotationSucceeded {
+			// Detect replay before rejecting stale preparation. Returning an
+			// error here rolls back consumption and the replacement together.
+			// JWT exp has second precision.
+			now := r.now().UTC()
+			if now.Unix() >= tokens.AccessExpiresAt.Unix() || !now.Before(request.NextExpiresAt) {
+				return ErrExpiredToken
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return TokenPair{}, fmt.Errorf("rotate refresh token: %w", err)
 	}
-	switch result.Status {
-	case RefreshRotationReplayed:
-		_ = r.recordAudit(ctx, SecurityEvent{
-			Type:      SecurityEventRefreshReplay,
-			SubjectID: result.Account.Subject.ID,
-			Realm:     result.Session.Realm,
-			At:        now,
-		})
-		return TokenPair{}, ErrRefreshReplay
-	case RefreshRotationExpired:
-		return TokenPair{}, ErrExpiredToken
-	case RefreshRotationRevoked:
-		return TokenPair{}, ErrSessionRevoked
-	case RefreshRotationInvalid:
-		return TokenPair{}, ErrInvalidToken
-	case RefreshRotationSucceeded:
-	default:
-		return TokenPair{}, ErrInvalidToken
-	}
-	if result.Account.Subject.Status != SubjectStatusActive {
-		return TokenPair{}, ErrAccountUnavailable
-	}
-	if _, err := r.authorizeRealm(ctx, result.Session.Realm, result.Account); err != nil {
+	if err := refreshOutcome(result.Status); err != nil {
 		return TokenPair{}, err
 	}
-	accessExpiresAt := now.Add(r.accessTTL)
-	accessToken, err := r.jwt.Sign(ctx, result.Account, result.Session, accessExpiresAt, r.claims)
-	if err != nil {
-		return TokenPair{}, err
-	}
-
-	return TokenPair{
-		AccessToken:      accessToken,
-		RefreshToken:     next.raw,
-		AccessExpiresAt:  accessExpiresAt,
-		RefreshExpiresAt: now.Add(r.refreshTTL),
-		Session:          result.Session,
-	}, nil
+	tokens.RefreshExpiresAt = request.NextExpiresAt
+	return tokens, nil
 }
 
-func (r *Runtime) VerifyAccessToken(ctx context.Context, rawAccessToken string, introspect bool) (AuthContext, error) {
+func refreshOutcome(status RefreshRotationStatus) error {
+	switch status {
+	case RefreshRotationSucceeded:
+		return nil
+	case RefreshRotationReplayed:
+		return ErrRefreshReplay
+	case RefreshRotationExpired:
+		return ErrExpiredToken
+	case RefreshRotationRevoked:
+		return ErrSessionRevoked
+	default:
+		return ErrInvalidToken
+	}
+}
+
+// VerifyJWT validates an access JWT offline. Revocation takes effect only when
+// it expires; use AuthenticateSession for current authorization.
+func (r *Runtime) VerifyJWT(ctx context.Context, token string) (AuthContext, error) {
+	return r.verifyAccessToken(ctx, token, false)
+}
+
+// AuthenticateSession validates current session/security state and realm membership.
+func (r *Runtime) AuthenticateSession(ctx context.Context, token string) (AuthContext, error) {
+	return r.verifyAccessToken(ctx, token, true)
+}
+
+// VerifyAccessToken is retained for source compatibility.
+//
+// Deprecated: use VerifyJWT or AuthenticateSession explicitly.
+func (r *Runtime) VerifyAccessToken(ctx context.Context, token string, introspect bool) (AuthContext, error) {
+	return r.verifyAccessToken(ctx, token, introspect)
+}
+
+func (r *Runtime) verifyAccessToken(ctx context.Context, rawAccessToken string, introspect bool) (AuthContext, error) {
 	auth, err := r.jwt.Verify(strings.TrimSpace(rawAccessToken))
 	if err != nil {
 		return AuthContext{}, err
@@ -431,7 +520,10 @@ func (r *Runtime) VerifyAccessToken(ctx context.Context, rawAccessToken string, 
 	}
 	security, err := r.store.IntrospectSession(ctx, auth.SessionID)
 	if err != nil {
-		return AuthContext{}, ErrInvalidToken
+		if errors.Is(err, ErrInvalidToken) || errors.Is(err, ErrAccountNotFound) {
+			return AuthContext{}, ErrInvalidToken
+		}
+		return AuthContext{}, fmt.Errorf("introspect session: %w", err)
 	}
 	now := r.now().UTC()
 	if !security.Session.Active(now) {
@@ -447,6 +539,15 @@ func (r *Runtime) VerifyAccessToken(ctx context.Context, rawAccessToken string, 
 		return AuthContext{}, ErrInvalidToken
 	}
 
+	if auth.Realm != RealmUser {
+		account, err := r.store.GetAccount(ctx, auth.SubjectID)
+		if err != nil {
+			return AuthContext{}, err
+		}
+		if _, err := r.authorizeRealm(ctx, auth.Realm, account); err != nil {
+			return AuthContext{}, err
+		}
+	}
 	return auth, nil
 }
 
@@ -457,33 +558,72 @@ func (r *Runtime) SetSubjectStatus(ctx context.Context, subjectID SubjectID, sta
 	if err := status.Validate(); err != nil {
 		return Subject{}, err
 	}
-	subject, err := r.store.SetSubjectStatus(ctx, subjectID, status, r.now().UTC())
+	var subject Subject
+	err := r.authTransaction.InAuthTransaction(ctx, func(ctx context.Context) error {
+		var err error
+		subject, err = r.store.SetSubjectStatus(ctx, subjectID, status, r.now().UTC())
+		if err != nil {
+			return fmt.Errorf("set subject status: %w", err)
+		}
+		return r.recordAudit(ctx, SecurityEvent{
+			Type:       SecurityEventSubjectStatusChanged,
+			SubjectID:  subjectID,
+			At:         r.now().UTC(),
+			Attributes: map[string]string{"status": string(status)},
+		})
+	})
 	if err != nil {
-		return Subject{}, fmt.Errorf("set subject status: %w", err)
-	}
-	if err := r.recordAudit(ctx, SecurityEvent{
-		Type:       SecurityEventSubjectStatusChanged,
-		SubjectID:  subjectID,
-		At:         r.now().UTC(),
-		Attributes: map[string]string{"status": string(status)},
-	}); err != nil {
 		return Subject{}, err
 	}
 
 	return subject, nil
 }
 
+type preparedSession struct {
+	record SessionRecord
+	tokens TokenPair
+}
+
 func (r *Runtime) issueSession(ctx context.Context, account Account, realm Realm, scope SessionScope) (TokenPair, error) {
+	prepared, err := r.prepareSession(ctx, account, realm, scope)
+	if err != nil {
+		return TokenPair{}, err
+	}
+	err = r.authTransaction.InAuthTransaction(ctx, func(ctx context.Context) error {
+		return r.createPreparedSession(ctx, prepared)
+	})
+	if err != nil {
+		return TokenPair{}, err
+	}
+	return prepared.tokens, nil
+}
+
+// createPreparedSession must run inside an auth transaction, so an expired pair
+// rolls back the session and any account or identity created in the same scope.
+func (r *Runtime) createPreparedSession(ctx context.Context, prepared preparedSession) error {
+	if err := r.store.CreateSession(ctx, prepared.record); err != nil {
+		return err
+	}
+	now := r.now().UTC()
+	if now.Unix() >= prepared.tokens.AccessExpiresAt.Unix() ||
+		!now.Before(prepared.record.RefreshExpiresAt) || !prepared.record.Session.Active(now) {
+		return ErrExpiredToken
+	}
+	return nil
+}
+
+func (r *Runtime) prepareSession(ctx context.Context, account Account, realm Realm, scope SessionScope) (preparedSession, error) {
 	now := r.now().UTC()
 	refresh, digest, err := r.secretCodec.Generate("refresh")
 	if err != nil {
-		return TokenPair{}, err
+		return preparedSession{}, err
 	}
 	refreshExpiresAt := now.Add(r.refreshTTL)
 	sessionExpiresAt := now.Add(r.sessionTTL)
 	if refreshExpiresAt.Before(sessionExpiresAt) {
 		sessionExpiresAt = refreshExpiresAt
 	}
+	refreshExpiresAt = sessionExpiresAt
 	session := Session{
 		ID:              uuid.NewString(),
 		SubjectID:       account.Subject.ID,
@@ -493,28 +633,33 @@ func (r *Runtime) issueSession(ctx context.Context, account Account, realm Realm
 		CreatedAt:       now,
 		ExpiresAt:       sessionExpiresAt,
 	}
-	if err := r.store.CreateSession(ctx, SessionRecord{
+	record := SessionRecord{
 		Session:          session,
 		FamilyID:         uuid.NewString(),
 		RefreshSelector:  refresh.selector,
 		RefreshDigest:    digest,
 		RefreshExpiresAt: refreshExpiresAt,
-	}); err != nil {
-		return TokenPair{}, fmt.Errorf("create auth session: %w", err)
 	}
-	accessExpiresAt := now.Add(r.accessTTL)
+	accessExpiresAt := capExpiry(now.Add(r.accessTTL), sessionExpiresAt)
 	accessToken, err := r.jwt.Sign(ctx, account, session, accessExpiresAt, r.claims)
 	if err != nil {
-		return TokenPair{}, err
+		return preparedSession{}, err
 	}
 
-	return TokenPair{
+	return preparedSession{record: record, tokens: TokenPair{
 		AccessToken:      accessToken,
 		RefreshToken:     refresh.raw,
 		AccessExpiresAt:  accessExpiresAt,
 		RefreshExpiresAt: refreshExpiresAt,
 		Session:          session,
-	}, nil
+	}}, nil
+}
+
+func capExpiry(expiry, absolute time.Time) time.Time {
+	if absolute.Before(expiry) {
+		return absolute
+	}
+	return expiry
 }
 
 func (r *Runtime) authorizeRealm(ctx context.Context, realm Realm, account Account) (SessionScope, error) {

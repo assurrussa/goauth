@@ -19,7 +19,8 @@
 - Admin and custom realms require a verified email and a successful host
   `MembershipGate`; RBAC remains the permission boundary.
 - Realm and scope are persisted in the session and included in access claims.
-  Sensitive routes introspect server-side session state.
+  HTTP middleware authenticates server-side session state by default. Admin and
+  custom realms recheck the host membership gate. Offline JWT verification is explicit.
 - Suspending, disabling, resetting or changing a password, or confirming an
   email change increments security version and revokes sessions and refresh
   families in one PostgreSQL transaction.
@@ -30,7 +31,15 @@
 - Refresh, password-reset, OIDC code, and OIDC challenge paths are atomic
   consume or rotate operations. A public `Get` followed by `Delete` is not an
   acceptable single-use contract.
+- Hooks, hashing and JWT preparation precede session writes and refresh rotation.
+  A refresh snapshot authenticates without consumption; the final transaction
+  locks the canonical subject and revalidates state before consuming the token.
+- Auth writes, mandatory audit and encrypted enqueue commit together. Callback
+  errors roll back; business denials that update attempt/replay protection commit.
 - Refresh replay revokes its family and session and emits a security event.
+  Replay processing bypasses token preparation. There is no grace interval.
+- Security writes lock the canonical subject before dependent state. Logout-all
+  increments its security version so an already prepared login cannot escape it.
 - OIDC refresh tokens also persist only selector plus HMAC digest; replay of a
   rotated token revokes the complete OIDC family and emits an audit event.
 - Password reset is selector-based, contains no email in the URL, and updates
@@ -67,8 +76,11 @@
 ## SSO and OIDC
 
 - Email-based auto-linking requires the same normalized email to be verified by
-  both the IdP and the local identifier. Otherwise linking requires a recent,
+  both the IdP and the local identifier, plus the configured issuer policy.
+  Nil policy defaults to `["*"]`; an explicitly empty list disables new auto-links. Otherwise linking requires a recent,
   introspected authenticated session.
+- External identity keys are exact issuer/sub strings, without trimming. Existing
+  links do not require an email claim. Only validated provider output is trusted.
 - An SSO-only account has no local credential row.
 - OIDC authorization code and challenge stores consume state atomically.
 - OIDC `email_verified` comes only from identifier verification state.

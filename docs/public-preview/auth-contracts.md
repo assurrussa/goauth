@@ -4,6 +4,10 @@ Status: target behavior for public-preview acceptance; read the
 [baseline and scope](README.md) first. Requirement IDs below are local to goauth,
 not OWASP certification identifiers.
 
+[Candidate assembly decisions](candidate-assembly.md) describe the selected v0.5
+composition. The AUTH requirement IDs below retain their original meanings;
+implementation details and local observations do not replace their acceptance.
+
 ## Ownership and trust boundaries
 
 ### Core and canonical storage
@@ -53,7 +57,7 @@ Custom host code and forks must re-run the applicable contract suite.
 
 ### P1: explicitly presented JWT / Bearer API
 
-Current building blocks: root Runtime, PostgreSQL and Fiber Bearer middleware.
+Current building blocks: root Runtime, PostgreSQL and Fiber/nethttp Bearer middleware.
 This profile uses access JWT plus refresh token and a canonical server-side
 session. It does not require a browser or cookies.
 
@@ -112,8 +116,9 @@ credentials. Host XSS prevention and incident response remain necessary.
 ### P3: admin session integration
 
 Required business outcome: preserve the maintainer's working admin login and
-session controls. Exact credential mechanism is pending local inspection, not
-assumed missing and not assumed preserved.
+session controls. Local inspection identified an opaque browser credential and
+a canonical session bridge; see the candidate assembly and local evidence.
+The deployed production version and full ADM acceptance remain unverified.
 
 If the admin uses JWT cookies plus online state, apply P2 with admin membership,
 current permission checks and its session policy. Do not build a redundant model.

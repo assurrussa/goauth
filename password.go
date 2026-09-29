@@ -1,6 +1,7 @@
 package goauth
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
@@ -15,16 +16,26 @@ import (
 )
 
 const (
-	DefaultPasswordMinLength = 8
-	DefaultPasswordMaxLength = 128
-	DefaultArgon2MemoryKiB   = 19 * 1024
-	DefaultArgon2Iterations  = 2
-	DefaultArgon2Parallelism = 1
+	DefaultPasswordMinLength           = 8
+	DefaultPasswordMaxLength           = 128
+	DefaultArgon2MemoryKiB             = 19 * 1024
+	DefaultArgon2Iterations            = 2
+	DefaultArgon2Parallelism           = 1
+	DefaultMaxConcurrentPasswordHashes = 4
 )
 
 type PasswordHasher interface {
 	HashPassword(password string) (string, error)
+	// VerifyPassword returns nil on a match and an error on a mismatch. Runtime
+	// preserves native mismatch errors as invalid credentials. Operational errors
+	// must wrap ErrPasswordVerificationUnavailable, ErrPasswordHashOverloaded,
+	// context.Canceled or context.DeadlineExceeded instead.
 	VerifyPassword(phc, password string) error
+}
+
+func isPasswordVerificationFailure(err error) bool {
+	return errors.Is(err, ErrPasswordVerificationUnavailable) || errors.Is(err, ErrPasswordHashOverloaded) ||
+		errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 type Argon2idConfig struct {
@@ -76,6 +87,9 @@ func (h *Argon2idHasher) HashPassword(password string) (string, error) {
 	if h == nil {
 		return "", errors.New("argon2id hasher is nil")
 	}
+	if !validPasswordInput(password) {
+		return "", ErrInvalidPassword
+	}
 	salt := make([]byte, h.config.SaltLength)
 	if _, err := io.ReadFull(h.config.Random, salt); err != nil {
 		return "", fmt.Errorf("generate argon2id salt: %w", err)
@@ -101,6 +115,9 @@ func (h *Argon2idHasher) HashPassword(password string) (string, error) {
 }
 
 func (h *Argon2idHasher) VerifyPassword(phc, password string) error {
+	if !validPasswordInput(password) {
+		return ErrInvalidCredentials
+	}
 	params, salt, expected, err := parseArgon2idPHC(phc)
 	if err != nil {
 		return ErrInvalidCredentials
@@ -121,6 +138,9 @@ func (h *Argon2idHasher) VerifyPassword(phc, password string) error {
 }
 
 func parseArgon2idPHC(phc string) (config Argon2idConfig, salt, hash []byte, err error) {
+	if len(phc) > 512 {
+		return Argon2idConfig{}, nil, nil, errors.New("invalid argon2id PHC length")
+	}
 	parts := strings.Split(phc, "$")
 	if len(parts) != 6 || parts[0] != "" || parts[1] != "argon2id" || parts[2] != "v=19" {
 		return Argon2idConfig{}, nil, nil, errors.New("invalid argon2id PHC")
@@ -135,21 +155,24 @@ func parseArgon2idPHC(phc string) (config Argon2idConfig, salt, hash []byte, err
 		if !ok {
 			return Argon2idConfig{}, nil, nil, errors.New("invalid argon2id parameter")
 		}
+		if _, duplicate := values[key]; duplicate || (key != "m" && key != "t" && key != "p") {
+			return Argon2idConfig{}, nil, nil, errors.New("invalid argon2id parameter key")
+		}
 		parsed, err := strconv.ParseUint(value, 10, 32)
 		if err != nil {
 			return Argon2idConfig{}, nil, nil, errors.New("invalid argon2id parameter")
 		}
 		values[key] = parsed
 	}
-	config = Argon2idConfig{
-		MemoryKiB:   uint32(values["m"]),
-		Iterations:  uint32(values["t"]),
-		Parallelism: uint8(values["p"]),
-	}
-	if config.MemoryKiB < DefaultArgon2MemoryKiB || config.MemoryKiB > 1024*1024 ||
-		config.Iterations < DefaultArgon2Iterations || config.Iterations > 10 ||
-		config.Parallelism < 1 || config.Parallelism > 16 {
+	// Check before narrowing: e.g. p=257 must not wrap to one lane.
+	if values["m"] < DefaultArgon2MemoryKiB || values["m"] > 1024*1024 ||
+		values["t"] < DefaultArgon2Iterations || values["t"] > 10 ||
+		values["p"] < 1 || values["p"] > 16 {
 		return Argon2idConfig{}, nil, nil, errors.New("unsafe argon2id parameters")
+	}
+	config = Argon2idConfig{MemoryKiB: uint32(values["m"]), Iterations: uint32(values["t"]), Parallelism: uint8(values["p"])}
+	if len(parts[4]) > base64.RawStdEncoding.EncodedLen(64) || len(parts[5]) > base64.RawStdEncoding.EncodedLen(64) {
+		return Argon2idConfig{}, nil, nil, errors.New("invalid argon2id encoded length")
 	}
 	salt, err = base64.RawStdEncoding.Strict().DecodeString(parts[4])
 	if err != nil || len(salt) < 16 || len(salt) > 64 {
@@ -174,9 +197,10 @@ func (f CommonPasswordCheckerFunc) IsCommonPassword(password string) bool {
 }
 
 type PasswordPolicy struct {
-	MinLength int
-	MaxLength int
-	Blocklist CommonPasswordChecker
+	MinLength        int
+	MaxLength        int
+	Blocklist        CommonPasswordChecker
+	DisableBlocklist bool
 }
 
 func DefaultPasswordPolicy() PasswordPolicy {
@@ -191,6 +215,12 @@ func DefaultPasswordPolicy() PasswordPolicy {
 }
 
 func (p PasswordPolicy) Validate(password string) error {
+	if !validPasswordInput(password) {
+		return ErrInvalidPassword
+	}
+	if p.Blocklist == nil && !p.DisableBlocklist {
+		p.Blocklist = DefaultPasswordPolicy().Blocklist
+	}
 	if p.MinLength == 0 {
 		p.MinLength = DefaultPasswordMinLength
 	}
@@ -207,11 +237,51 @@ func (p PasswordPolicy) Validate(password string) error {
 	if length < p.MinLength || length > p.MaxLength {
 		return ErrInvalidPassword
 	}
-	if p.Blocklist != nil && p.Blocklist.IsCommonPassword(password) {
+	if !p.DisableBlocklist && p.Blocklist != nil && p.Blocklist.IsCommonPassword(password) {
 		return ErrCommonPassword
 	}
 
 	return nil
+}
+
+// Input bounds apply to existing passwords as well as new ones. Minimum length
+// and the blocklist are issuance policy and are deliberately absent here.
+func validPasswordInput(password string) bool {
+	return len(password) <= DefaultPasswordMaxLength*utf8.UTFMax && utf8.ValidString(password) &&
+		utf8.RuneCountInString(password) <= DefaultPasswordMaxLength
+}
+
+// Each Runtime shares one budget across every hash and verification. Admission
+// is immediate, so distinct identifiers cannot create an unbounded work queue.
+type boundedPasswordHasher struct {
+	delegate PasswordHasher
+	active   chan struct{}
+}
+
+func (h *boundedPasswordHasher) HashPassword(password string) (string, error) {
+	if !validPasswordInput(password) {
+		return "", ErrInvalidPassword
+	}
+	select {
+	case h.active <- struct{}{}:
+		defer func() { <-h.active }()
+		return h.delegate.HashPassword(password)
+	default:
+		return "", ErrPasswordHashOverloaded
+	}
+}
+
+func (h *boundedPasswordHasher) VerifyPassword(phc, password string) error {
+	if !validPasswordInput(password) {
+		return ErrInvalidCredentials
+	}
+	select {
+	case h.active <- struct{}{}:
+		defer func() { <-h.active }()
+		return h.delegate.VerifyPassword(phc, password)
+	default:
+		return ErrPasswordHashOverloaded
+	}
 }
 
 var builtInCommonPasswords = map[string]struct{}{

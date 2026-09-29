@@ -24,7 +24,7 @@ reset and challenge behavior, identifier uniqueness, SSO policy, revocation,
 secret-at-rest assertions, notification delivery/retry and Redis concurrency.
 It also executes the PostgreSQL consumer: Runtime assembly, notification
 worker startup/shutdown, delivery/acknowledgement, email verification, login,
-an introspected Fiber route, RBAC, logout, reset and cleanup. That path must
+current-session Fiber and net/http routes, RBAC, logout, reset and cleanup. That path must
 fail when `GOAUTH_TEST_POSTGRES_DSN` is absent or its database is unreachable.
 Never run it against production data.
 
@@ -49,6 +49,25 @@ force `GOWORK=off`; the PostgreSQL path deliberately receives the configured
 disposable database. They prove checkout integration, not public availability.
 For the combined candidate gate, start integration services, run
 `make release-candidate-readiness`, then stop the services even on failure.
+
+```sh
+# Select an installed Playwright module and Chromium executable; no auto-install.
+export GOAUTH_BROWSER_PLAYWRIGHT_MODULE="$PLAYWRIGHT_MODULE"
+export GOAUTH_BROWSER_CHROMIUM_EXECUTABLE="$CHROMIUM_EXECUTABLE"
+make integration-up
+make release-candidate-readiness
+make integration-down
+```
+
+The candidate gate also runs `make backup-restore-check` with real pg_dump/
+pg_restore in the disposable Compose project, and `make browser-acceptance`
+with a real HTTPS browser, canonical PostgreSQL Runtime, managed encrypted queue,
+full account lifecycle and exactly one refresh across two tabs after access expiry.
+Node, the selected installed Playwright module and Chromium must be available.
+An invoked gate fails when the engine is missing; it does not silently skip or
+install dependencies. These profiles use their own temporary databases. The
+browser proof is the public same-origin example; separate host suites cover the
+site's split API, opaque admin and live ZITADEL composition.
 
 ## Public, exact-version consumer
 
@@ -79,7 +98,8 @@ The initial `go list -m -json module@version` and the selected-module check afte
 `go test` must both report the exact requested path/version and no replacement.
 Aliases such as `latest` and branches cannot stand in for an exact version.
 Published mode rejects local-path, shared-cache and PostgreSQL-integration
-flags. Use local mode for the database probe.
+flags. It runs the Runtime/nethttp/Fiber/OIDC/Redis/RBAC wiring example without
+database credentials. Use local mode for the separate database lifecycle probe.
 
 A cold download gets a 10-minute per-command timeout through the Makefile;
 `--timeout` controls each subprocess, not total runtime. On failure,
@@ -94,3 +114,11 @@ independent security review, consumer adoption and production deployment as
 separate facts. Record the exact SHA/version and commands for every gate.
 File-scoped tests on another Go version, static review, an unavailable runner
 or a failed network lookup must not be reported as a full passing gate.
+
+## Browser evidence
+
+Use the runnable [net/http example](../examples/nethttp/README.md) for browser
+signup, email verification, login/protected access, refresh and logout. The
+browser host also exposes password reset/change and email change. Verify CSRF
+rejection and that `/api` never accepts cookies as bearer credentials. Keep
+actual browser checks distinct from httptest and published-consumer evidence.

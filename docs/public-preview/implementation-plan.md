@@ -5,6 +5,11 @@ Status: ordered specification, not claims of completed runtime work. Read
 The docs-only change introducing this pack must not modify cryptography,
 migrations, dependencies, supported imports, tags or visibility.
 
+The v0.5 implementation decisions are recorded in
+[candidate assembly](candidate-assembly.md). The dated
+[local evidence](release-evidence.local.yaml) records completed narrow checks
+and open catalog acceptance; W0-W5 criteria below remain the required work.
+
 ## W0: establish a reproducible baseline and local host handoff
 
 Owner: library maintainer; host maintainer runs the private site/admin checks.
@@ -34,9 +39,10 @@ Use the pinned code and existing tests; do not reimplement already correct paths
 
 Reproduce each earlier review concern before closing it. Cover SEC-01 through
 SEC-20, beginning with verification, refresh-after-hook-failure, issuance versus
-revocation, identity trust and mutation outcomes. The current ordering in
-Runtime.Refresh rotates before post-rotation authorization/signing; targeted
-failure injection is required, not an assumption that previous merges fixed it.
+revocation, identity trust and mutation outcomes. The inspected baseline ordering
+in Runtime.Refresh rotated before post-rotation authorization/signing. The v0.5
+candidate prepares fallible work first and revalidates canonical state at commit;
+targeted failure injection is still required for the full SEC-08/09 catalog.
 
 For refresh, prepare fallible work before irreversible consumption where safe,
 then revalidate expected security state atomically at the commit boundary.
@@ -62,10 +68,11 @@ thin wrapper around a maintained framework CSRF/session component that passes
 this contract over another custom security subsystem. Review that component's
 actual version/API before selecting it.
 
-Place HTTP policy in an adapter/example, not root Runtime. Start with existing
-Fiber support and one same-origin HTTPS example, rather than implementing Fiber,
-net/http, Gin and every origin topology simultaneously. Build a complete runnable
-flow with a fake mail receiver, supervised notification worker and orderly shutdown.
+Place HTTP policy in an adapter/example, not root Runtime. The v0.5 reference
+promotes the supported net/http adapter alongside existing Fiber support and
+uses one same-origin HTTPS example. Other origin topologies require separate
+host acceptance. Build a complete runnable flow with a fake mail receiver,
+supervised notification worker and orderly shutdown.
 
 Implement explicit Bearer versus cookie credential selection, cookie flags and
 clearing, bounded bodies, no-store responses, safe errors and full route coverage.
@@ -132,6 +139,9 @@ only to component PRs or an older tag.
 Use the declared Go toolchain and pinned formatting/lint tooling. During work run
 scoped tests; run one coherent candidate gate with disposable services:
 
+Select installed Playwright/Chromium tools using the environment variables in
+[release verification](../release-verification.md) before running this gate.
+
 ```sh
 (
     set -eu
@@ -148,9 +158,9 @@ when their engine is unavailable. Record toolchain, services and all failures.
 Do not downgrade go.mod to fit an editing sandbox.
 
 Then follow [publication and support](release-and-support.md). Candidate checks
-alone do not establish anonymous installability. Commands introduced by PR #6,
-including `make public-module-check VERSION=<tag>`, require that tooling to be
-merged and included in the chosen new tag; they are not present in the baseline.
+alone do not establish anonymous installability. PR #6 tooling, including
+`make public-module-check VERSION=<tag>`, is included in the candidate merge and
+must be present in the chosen new tag; it was absent from the inspected baseline.
 
 ## Work intentionally excluded
 

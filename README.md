@@ -1,8 +1,11 @@
 # goauth
 
 `goauth` is a reusable authentication, identity, session, and RBAC Runtime for
-Go hosts. PostgreSQL stores canonical auth state, Fiber is an optional HTTP
-adapter, and Redis is needed only for optional OIDC one-time state.
+Go hosts. PostgreSQL stores canonical auth state; net/http and Fiber are optional HTTP
+adapters, and Redis is needed only for optional OIDC one-time state.
+
+This checkout prepares unpublished `v0.5.0` from the `v0.4.1` tagged baseline.
+See [the v0.5 migration](docs/v0.5-migration.md) for changed contracts.
 
 **Pre-v1, public-release preparation.** A Git tag is not proof of public
 availability, an independent security audit, or production adoption. See
@@ -20,6 +23,7 @@ The supported imports are intentionally small:
 - `github.com/assurrussa/goauth/postgres`
 - `github.com/assurrussa/goauth/redis`
 - `github.com/assurrussa/goauth/fiber`
+- `github.com/assurrussa/goauth/nethttp`
 - `github.com/assurrussa/goauth/oidc`
 - `github.com/assurrussa/goauth/oidc/provider`
 - `github.com/assurrussa/goauth/oidc/verifier`
@@ -29,6 +33,25 @@ The supported imports are intentionally small:
 `reference/externalconsumer.SupportedPackages` is the machine-readable source
 of truth. Earlier v0.1 releases remain available at their immutable tags; the
 retired implementation is absent from this repository.
+
+## Runnable browser and JSON API example
+
+[examples/nethttp](examples/nethttp/README.md) runs one PostgreSQL-backed Runtime
+with standard net/http, browser cookies, coordinated refresh, a bearer-only JSON
+API, and a local SMTP catcher. Its host owns CSRF, cookies, UI and worker lifetime.
+The `nethttp` middleware checks current sessions by default; `OfflineJWT` is an
+explicit opt-out. `AuthContext(request.Context())` retrieves the checked identity.
+The accepted [profile contracts and evidence](docs/public-preview/README.md)
+separate browser cookies from explicit native/API credentials. The candidate gate
+includes a real HTTPS browser and backup/restore; see release verification for
+the required installed browser selection.
+
+Passwords are bounded before hashing/verification, and each Runtime admits four
+concurrent hash operations by default (`MaxConcurrentPasswordHashes` is configurable).
+Saturation returns `ErrPasswordHashOverloaded` with 503/Retry-After in HTTP adapters.
+Returned token lifetimes never exceed their canonical absolute session expiry.
+OIDC verifier defaults to the embedded access profile; selecting `zitadel-jwt`
+is explicit and does not enable acceptance of ID tokens.
 
 ## PostgreSQL and Fiber quickstart
 
@@ -81,13 +104,13 @@ func wireAuth(
     app.Post("/auth/refresh", adapter.Refresh)
     app.Post("/auth/password-reset", adapter.RequestPasswordReset)
     app.Post("/auth/email-challenge", adapter.RequireRealm(goauth.RealmUser,
-        goauthfiber.RealmMiddlewareOptions{Introspect: true, AllowConfirmation: true}),
+        goauthfiber.RealmMiddlewareOptions{AllowConfirmation: true}),
         adapter.SendEmailChallenge)
     app.Post("/auth/email-challenge/verify", adapter.RequireRealm(goauth.RealmUser,
-        goauthfiber.RealmMiddlewareOptions{Introspect: true, AllowConfirmation: true}),
+        goauthfiber.RealmMiddlewareOptions{AllowConfirmation: true}),
         adapter.VerifyEmailChallenge)
     app.Get("/me", adapter.RequireRealm(goauth.RealmUser,
-        goauthfiber.RealmMiddlewareOptions{Introspect: true}), func(c fiber.Ctx) error {
+        goauthfiber.RealmMiddlewareOptions{}), func(c fiber.Ctx) error {
         authContext, _ := goauthfiber.AuthContext(c)
         return c.JSON(fiber.Map{"subjectId": authContext.SubjectID.String()})
     })
@@ -99,7 +122,7 @@ To sign in, send `POST /auth/login` with JSON such as
 `{"scheme":"email","identifier":"user@example.com","password":"...","realm":"user"}`.
 The response contains `account` and `tokens` (`accessToken`, `refreshToken`,
 expiry, realm, and scope). Send `Authorization: Bearer <accessToken>` to `/me`;
-the middleware checks the realm and, with `Introspect: true`, the current
+the middleware checks the realm and, by default, the current
 server-side session and subject status. Send `POST /auth/refresh` with
 `{"refreshToken":"..."}` to rotate the refresh token. Registration returns a
 confirmation-scoped session; use that access token to request an email code,
@@ -123,14 +146,14 @@ in-flight external send can still reach the provider. Token validity is always
 enforced by the Runtime when the recipient acts on the message.
 Use `goauth.NewKeyRing` with separate random material for signing, token HMAC,
 and notification encryption; retain prior key versions through rotation.
-Managed delivery cannot be combined with a custom `EventSink`,
-`NotificationRenderer`, `AuditSink`, or `NotificationTransaction` hook. The
-PostgreSQL adapter can use a custom event sink without managed delivery; custom
-transaction wiring belongs to direct root Runtime assembly. A custom
-`NotificationTransaction` keeps its configured `NotificationRenderer` and
-event sink. The managed PostgreSQL transaction covers participating writes in
-notification operations; it is not a general unit of work for arbitrary
-Runtime calls. Direct `RuntimeStore` implementations must guard reset issuance
+Managed delivery cannot be combined with custom event, renderer, audit or
+transaction hooks. PostgreSQL assembles `AuthTransaction` for all participating
+auth writes, audit records and native encrypted events. Advanced direct root
+assembly requires an `AuthTransaction` and transactional `AuditSink`; custom
+stores and event sinks must join the supplied context, including reads. The old
+`NotificationTransaction` configuration is rejected instead of silently running
+without the full transaction contract. See [migration details](docs/v0.5-migration.md).
+Direct `RuntimeStore` implementations must guard reset issuance
 against the expected primary email, security version, and active status and
 invalidate outstanding reset records on password, email, or status changes.
 They must also reject email-challenge issuance when the expected primary email
@@ -150,13 +173,18 @@ Runtime methods. The host supplies:
 
 - a PostgreSQL connection or DSN;
 - distinct versioned keys for JWT signing, token HMAC, and outbox AES-256-GCM;
-- a notification sender and a supervised worker lifecycle, or an advanced
-  encrypted event sink with delivery acknowledgement and retention cleanup;
+- a notification sender and a supervised worker lifecycle;
 - a password-reset URL builder;
-- optional membership, claims, and identifier hooks. Custom rendering and audit
-  sinks are available with the advanced event-sink integration path.
+- optional membership, claims, and identifier hooks.
 
-Fiber owns only JSON handlers, typed error mapping, and realm middleware. Hosts
+Custom encrypted event sinks, rendering and transactional audit wiring require
+direct root Runtime assembly. `postgres.NewRuntime` rejects custom `EventSink`,
+`AuditSink` and `AuthTransaction` overrides before database side effects. All
+participants in direct root assembly must enlist in the same auth transaction;
+receiving its context alone does not guarantee that an external sink will roll
+back with the canonical writes.
+
+The HTTP adapters own only JSON handlers, typed error mapping, and realm middleware. Hosts
 continue to own route prefixes, cookies, redirects, UI, projection tables, and
 application permission catalogs. `auth_subjects` is the canonical principal;
 host users and admin rows are projections or memberships keyed by its
@@ -182,7 +210,9 @@ make integration-local
 make vulnerability-check
 ```
 
-For the combined candidate gate, start disposable integration services:
+For the unpublished v0.5 candidate, select the installed browser tools as
+described in [release verification](docs/release-verification.md), then start
+disposable integration services:
 
 ```sh
 make integration-up
@@ -195,9 +225,10 @@ After a new public tag exists, check out that tag and run
 together, use `make release-readiness VERSION=<tag>` with integration services
 running. An explicit version is required; there is no stale default tag.
 
-The published probe runs the Runtime/Fiber/OIDC/Redis/RBAC wiring example in a
+The published probe runs the Runtime/nethttp/Fiber/OIDC/Redis/RBAC wiring example in a
 fresh consumer environment through the public Go proxy and checksum service,
 without credentials, reused caches, a workspace, or a local `replace`. It
 checks the exact selected version after the test as well as before it.
+Database-backed acceptance runs through the separate local PostgreSQL consumer.
 Candidate checks do not establish publication; the public probe does not
 establish a security audit or production deployment.

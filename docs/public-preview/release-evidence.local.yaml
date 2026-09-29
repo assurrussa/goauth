@@ -1,0 +1,536 @@
+schema_version: 1
+status: local_profile_validation_complete_with_open_release_acceptance
+date: '2026-09-29'
+candidate:
+  version: v0.5.0
+  base_sha: 070b1f37e8139d5796cb266b57d07cdd16b659c9
+  working_tree_fingerprint: 739d0e30546f0a96cd38f716974c3c5175adfc5c54dcddeb14b54360bfd237b4
+  committed: false
+  published: false
+  deployed: false
+profiles:
+- P1
+- P2
+- P3
+- P4
+environment:
+  go: go1.27.1 darwin/arm64
+  node: 24.5.0
+  golangci_lint: 2.13.1
+  postgres: 17.9 (disposable local instance)
+  redis: 7.4.11 (disposable local instance)
+  browser: installed Chromium headless shell, Playwright
+  identity_provider: digest-pinned ZITADEL v4.13.1, isolated local stack
+dependency_selection:
+  goauth: uncommitted local v0.5 candidate
+  goadmin: local tasks/auth-session-hardening at base 4152e0a490e786bd25e1623477b6ab41f05c79f0
+  site: local tasks/http-only-auth at base 4614ee60e0839c4fb25f5a020301721844ba5a36
+  published_host_pins_changed: false
+  temporary_overrides: modfiles and disposable Compose/tool wrappers only; clean consumer commands clear
+    parent GOFLAGS; exported module peer replacement remains inside its temporary export root
+checks:
+- id: CORE-GATE
+  status: pass
+  command: make release-candidate-readiness
+  observations:
+  - Formatting, vet, lint (0 issues), race/coverage, local clean consumer and PostgreSQL/Redis integration
+    passed.
+  - Root coverage 83.9%, PostgreSQL 80.7%; required package coverage gates passed.
+  - 'govulncheck: no reachable vulnerabilities; three findings in required modules were not reachable
+    from imported packages/calls.'
+  - Actual disposable pg_dump/pg_restore and Chromium/HTTPS gates passed on the final source.
+  limitations:
+  - This is an unpublished local candidate, not anonymous installation of a published tag.
+- id: PASSWORD-FUZZ
+  status: pass
+  command: go test -run '^$' -fuzz '^FuzzArgon2PHCBounds$' -fuzztime=10s -parallel=2 .
+  observations:
+  - 467499 executions; malformed PHC bounds did not panic or accept invalid narrowed parameters.
+  limitations:
+  - A bounded fuzz run is not an exhaustive proof.
+- id: ADMIN-GATE
+  status: pass
+  command: make check GOAUTH_LOCAL_PATH=<GOAUTH_CHECKOUT> PROJECT_GOMODCACHE=<LOCAL_CACHE>
+  inputs:
+  - GOFLAGS selects a temporary candidate modfile; no persistent local replacement was committed.
+  observations:
+  - Formatting, vet, lint, whole-module race/coverage, clean temporary consumer, resource manifest/unit
+    tests, ESLint/Prettier, typecheck and production resource build passed.
+- id: ADMIN-REAL-STATE
+  status: pass
+  command: go test -race -tags=integration -modfile=<ADMIN_CANDIDATE_MODFILE> -run 'Test(PostgresAdminOpaqueRefreshAndRevocation|Redis|Postgres|ConcurrentAdminRefreshAcrossInstancesAndStaleSessionSave|AdminCSRFOriginAndOpaqueBinding|CSRFToken)'
+    -count=1 ./services/adminservice ./bootstrap ./internal/auth/browserstate
+  inputs:
+  - Explicit disposable local PostgreSQL/Redis variables; no production service.
+  observations:
+  - Independent connections/instances produce one refresh consumer. Wrong owner/stale version cannot complete.
+    Redis TTL is retained and stored credentials are encrypted.
+  - Stale Fiber snapshot cannot restore credentials; opaque rotation fences old credential. Actual permission/membership
+    removal and logout-all deny the next host request.
+- id: SITE-SCOPED
+  status: pass
+  command: go test -race -modfile=<SITE_CANDIDATE_MODFILE> -count=1 ./internal/auth ./internal/app ./internal/interfaces/outbox
+  observations:
+  - Explicit online/offline verification, notification individual receipt checks, legacy expiry rejection
+    and DI assembly compiled/passed.
+- id: SITE-HTTPS-PG
+  status: pass
+  command: BROWSER_AUTH_POSTGRES_HTTPS=1 go test -race -tags=integration -modfile=<SITE_CANDIDATE_MODFILE>
+    -run TestPostgresHTTPSFullAuthLifecycle -count=1 -v ./internal/interfaces/http/fiber/handlers/v1/auth
+  inputs:
+  - Explicit disposable BROWSER_AUTH_PG_DSN, installed Chromium and Playwright.
+  observations:
+  - Same-origin and split API/browser full account lifecycles passed with real host adapter, canonical
+    PostgreSQL Runtime and native encrypted notification worker.
+  - Signup, delivered confirmation, login/me, two tabs with one submitted refresh, logout/all, delivered
+    password reset, password change and delivered email change/confirmation passed.
+  - Native endpoint lifecycle uses explicit JSON/Bearer, rejects Cookie and emits no Set-Cookie. Hostile
+    sibling/Origin, duplicate/conflicting credentials and cookie flags checked.
+  - Fresh uniquely named database removed; existing integration database retained.
+- id: EXAMPLE-HTTPS-PG
+  status: pass
+  command: make browser-acceptance
+  observations:
+  - Actual public nethttp example/app.js with canonical PostgreSQL/native worker passed HTTPS account
+    lifecycle, genuine access expiry and exactly one refresh across two tabs.
+  - HttpOnly host cookies, hostile Origin/CSRF, duplicate/conflicting credentials and bearer API isolation
+    passed.
+  - Explicit invocation without a browser engine failed instead of passing/skipping.
+- id: BACKUP-RESTORE
+  status: pass
+  command: make backup-restore-check
+  observations:
+  - Actual dump/restore of a new disposable database preserved schema, canonical session and encrypted
+    pending notification. Retained key versions decrypted delivery, then controlled logout-all revoked
+    restored session.
+  limitations:
+  - No production database grants, WAL erasure or deployment recovery were certified.
+- id: FRONTEND
+  status: pass
+  command: npm run lint && npm run typecheck && node --test scripts/browser-session.test.mjs; NUXT_DISABLE_PRERENDER=1
+    NUXT_ENABLE_DYNAMIC_PRERENDER=0 npm run build
+  observations:
+  - '14 regressions passed: guest zero startup requests, shared restoration, no refresh on 403/5xx, one
+    rotation and uncertain-submit retry blocking.'
+  - Nuxt production build passed with CMS prerender deliberately disabled.
+  limitations:
+  - This proves compilation of the frontend, not real CMS route prerender or a production frontend deployment.
+- id: ZITADEL-LIVE
+  status: pass
+  command: go test -race -tags=integration -modfile=<SITE_CANDIDATE_MODFILE> -run TestOIDCLivePostgresHostAcceptance
+    -count=1 -v ./internal/interfaces/http/fiber/handlers/oidcdemo
+  inputs:
+  - Prepared temporary fixture binary and explicit isolated ZITADEL bootstrap/project/client inputs.
+  observations:
+  - Real canonical PostgreSQL registration and worker-delivered confirmation; two genuine PKCE logins
+    with real IdP userinfo linked the existing verified-email account.
+  - Access returned 200, same-login ID token 401, code replay denied; relogin retained one canonical subject,
+    credential and identity link.
+  - Shared-audience ID-token negatives and default/explicit access-token profile tests passed.
+  limitations:
+  - Resource-server/identity subset pilot, not OIDC browser cookie callback acceptance or generic provider
+    conformance.
+- id: SITE-GATE
+  status: pass
+  command: task validate
+  limitations:
+  - Candidate module/Compose wrappers select unpublished sources. This is not a check against newly published
+    dependency tags or a production deployment.
+  observations:
+  - 'Final task validate passed on the local candidate composition: inventory/links/strict specs, backend
+    tests/static checks, Docker lint 0 and frontend SSG contract tests.'
+- id: SITE-PLATFORM
+  status: fail
+  command: task platform:repo-check
+  limitations:
+  - The whole platform gate is not green. Remaining auth/export/import/second-host and gowebhooks checks
+    were executed separately; see PLATFORM-AUTH-BOUNDARIES.
+  observations:
+  - The aggregate command passed goauth/goadmin checks and consumers, then failed unrelated gouploads
+    publish-readiness because generation/formatting produced a dirty tracked tree.
+  - Generated options-gen headers changed v0.55.3 to v0.55.6; its exact side effects were reversed from
+    the saved patch. No gouploads implementation change is retained.
+- id: PLATFORM-AUTH-BOUNDARIES
+  status: pass
+  command: task second-host:check; task platform:module-export-check; task platform-libs:check; sh scripts/gofiber-check.sh
+    self-test; published/switch guard self-test scripts
+  observations:
+  - Second host compiles/tests against the candidate. Independent exported goauth/goadmin module roots
+    pass tidy/test; unpublished peer replacement stays inside the temporary export root.
+  - Exact CSRF host exception passes positive and negative imports, including adjacent imports/comments
+    and full +/~ suffixes. The initial two reviewer findings were fixed and independently re-reviewed.
+  - Runtime import baseline passes after recording the exact CSRF service and four imports verified in
+    the original site HEAD. Existing consumers/versions were not changed by that reconciliation.
+  - Published-consumer/switch guard self-tests and unaffected gowebhooks make check/clean consumer passed.
+  limitations:
+  - Guard self-tests and local exported peers do not prove public anonymous resolution of unpublished
+    tags.
+- id: FINAL-SPECS
+  status: pass
+  command: task specs:check
+  observations:
+  - After semantic sync and archive, 20 spec/change items passed strict validation; inventory, evidence
+    and local links passed. Both delta requirement sets exactly matched main specs; unrelated requirements/scenarios
+    were preserved.
+  limitations:
+  - Structural validation complements the runtime/host evidence; it does not establish production behavior.
+- id: SHARED-WIKI
+  status: pass
+  command: bash scripts/lint-streams.sh
+  observations:
+  - 'Three affected existing platform hubs updated locally, with new sanitized immutable snapshots. Budget,
+    graph and health lint: 0 errors; 25 existing warnings remain.'
+  limitations:
+  - Local reviewable wiki diff only; no commit, push or external publication.
+review:
+  status: pass
+  scope: independent source security/concurrency review of frozen core, transports, site and opaque admin
+    journals; subsequent exact admin/frontend/reset-parser deltas; exact CSRF import guard with both reproduced
+    bypasses fixed and re-reviewed
+  limitations:
+  - Focused source review and targeted race checks, not an external audit or ASVS conformance.
+  - No full production fault-injection, live deployment or published-tag consumer evidence.
+  source_fingerprint: frozen core/site/admin source plus individually hashed admin, frontend, CSRF and
+    reset URL deltas
+  delta_sha256:
+    admin: 799003f17bd09e623a14d47bdbdab44ce3845924324fafb8530a39f93cae6f69
+    frontend: b4e69e991f0e5d8ba699afb784a0b0b515034ba205984ffebb7489898c8df431
+    site_csrf: 353e7f9262995c2f4356ed7fb4763d55885c09b8039c219ad37946ef46f79ebc
+    site_root: 0541b81eb8ded9f54e433a404f461a9454d44d60c7bf2f57cfbf1f6373290ec8
+    import_guard: ee01235a3fd4e08cd9b621c9be74f7992e20e8053f3e82739a8058ff06269375
+scenarios:
+  SEC-01:
+    status: not_run
+    evidence:
+    - CORE-GATE
+    - SITE-HTTPS-PG
+    limitations:
+    - Credential/suspension/scope negatives passed; repeated statistical enumeration analysis was not
+      performed.
+  SEC-02:
+    status: not_run
+    evidence:
+    - CORE-GATE
+    limitations:
+    - Existing JWT negative/claim tests passed; this run did not exhaustively enumerate every malformed
+      temporal/claim variant in the broad catalog.
+  SEC-03:
+    status: pass
+    evidence:
+    - CORE-GATE
+    - ADMIN-REAL-STATE
+    - ZITADEL-LIVE
+    limitations:
+    - Pass covers the advertised explicit local/browser/admin and ZITADEL access-token profiles.
+  SEC-04:
+    status: not_run
+    evidence:
+    - CORE-GATE
+    - BACKUP-RESTORE
+    limitations:
+    - Key overlap and retained restore keys have narrower evidence; two-process routine/emergency rotation
+      matrix was not executed.
+  SEC-05:
+    status: pass
+    evidence:
+    - CORE-GATE
+    - PASSWORD-FUZZ
+    limitations:
+    - Input/PHC/concurrency/policy checks passed for the selected Argon2 implementation and Runtime admission
+      settings.
+  SEC-06:
+    status: pass
+    evidence:
+    - CORE-GATE
+    - SITE-HTTPS-PG
+    limitations:
+    - Online revocation and bounded offline JWT semantics are tested; offline tokens do not promise instant
+      revocation.
+  SEC-07:
+    status: pass
+    evidence:
+    - CORE-GATE
+    - ADMIN-REAL-STATE
+    limitations:
+    - Memory and PostgreSQL independent-connection concurrency/replay tests passed; the admin journal
+      additionally prevents submitting the secret twice.
+  SEC-08:
+    status: not_run
+    evidence:
+    - CORE-GATE
+    limitations:
+    - Claims hook failure and commit revalidation/rollback passed; a complete membership/signing fault
+      matrix was not executed.
+  SEC-09:
+    status: not_run
+    evidence:
+    - CORE-GATE
+    - FRONTEND
+    - SITE-HTTPS-PG
+    - ADMIN-REAL-STATE
+    limitations:
+    - Strict replay, frontend uncertain-submit blocking and two-tab orchestration passed; actual TCP response
+      loss after database commit was not injected.
+  SEC-10:
+    status: not_run
+    evidence:
+    - CORE-GATE
+    - ADMIN-REAL-STATE
+    limitations:
+    - Logout during prepared claims, password CAS and status revocation passed; every issuance/status/password/logout
+      serialization was not exhaustively run.
+  SEC-11:
+    status: pass
+    evidence:
+    - CORE-GATE
+    - EXAMPLE-HTTPS-PG
+    limitations:
+    - Returned expiry caps and actual expired-access refresh tested; canonical absolute lifetime remains
+      authoritative.
+  SEC-12:
+    status: not_run
+    evidence:
+    - CORE-GATE
+    - SITE-SCOPED
+    limitations:
+    - Infrastructure/cancellation/overload causes, rollback and typed unknown-commit outcomes tested;
+      live lost SQL commit acknowledgement was not injected.
+  SEC-13:
+    status: pass
+    evidence:
+    - CORE-GATE
+    - SITE-HTTPS-PG
+    limitations:
+    - Concurrent one-time reset and confirmation attempt/replay outcomes passed in memory/PostgreSQL.
+  SEC-14:
+    status: pass
+    evidence:
+    - CORE-GATE
+    - SITE-HTTPS-PG
+    limitations:
+    - Stale email/password/status snapshots and invalidated notification records passed real PostgreSQL
+      tests.
+  SEC-15:
+    status: pass
+    evidence:
+    - CORE-GATE
+    limitations:
+    - Managed participating auth writes/audit/encrypted queue rollback boundaries passed. Custom host
+      transactions retain their documented participation obligations.
+  SEC-16:
+    status: not_run
+    evidence:
+    - CORE-GATE
+    - SITE-SCOPED
+    limitations:
+    - Timeout/retry/lease/key recovery and stable receipt/ID tests passed; process kill at every provider-acceptance
+      boundary was not injected.
+  SEC-17:
+    status: not_run
+    evidence:
+    - CORE-GATE
+    - ADMIN-REAL-STATE
+    - SITE-HTTPS-PG
+    limitations:
+    - Canonical secret digests, encrypted queue/journal storage and safe sender errors checked; full captured-log/artifact/WAL/backup
+      secrecy review not performed.
+  SEC-18:
+    status: not_run
+    evidence:
+    - CORE-GATE
+    - ADMIN-GATE
+    - ADMIN-REAL-STATE
+    limitations:
+    - Realm, membership, supported host RBAC and source checks passed; a complete forged-target/provisioning
+      route penetration matrix was not executed.
+  SEC-19:
+    status: pass
+    evidence:
+    - ADMIN-REAL-STATE
+    limitations:
+    - Actual host protected request observes permission/membership removal on its next request.
+  SEC-20:
+    status: pass
+    evidence:
+    - CORE-GATE
+    - ZITADEL-LIVE
+    limitations:
+    - Exact issuer/subject binding, verified-email policy, existing-link missing/changing email and real
+      verified-email host linking tested.
+  WEB-01:
+    status: pass
+    evidence:
+    - SITE-HTTPS-PG
+    - EXAMPLE-HTTPS-PG
+    limitations:
+    - Pass covers selected same-origin/split-API host topologies and current cookie policies.
+  WEB-02:
+    status: not_run
+    evidence:
+    - SITE-HTTPS-PG
+    - SITE-SCOPED
+    limitations:
+    - Host CSRF proof lifecycle/absent-invalid-binding paths tested; the full wrong/expired proof cross-product
+      on every mutation was not enumerated.
+  WEB-03:
+    status: not_run
+    evidence:
+    - SITE-HTTPS-PG
+    - EXAMPLE-HTTPS-PG
+    limitations:
+    - Real hostile sibling/CORS and strict Origin precedence tested; all forwarding-header/content-type/preflight
+      adversarial combinations not enumerated.
+  WEB-04:
+    status: pass
+    evidence:
+    - SITE-HTTPS-PG
+    - EXAMPLE-HTTPS-PG
+    - FRONTEND
+    limitations:
+    - Guest bootstrap is lazy and explicit account forms work; dedicated proof remains independent of
+      access token expiry.
+  WEB-05:
+    status: pass
+    evidence:
+    - SITE-HTTPS-PG
+    - EXAMPLE-HTTPS-PG
+    - FRONTEND
+    limitations:
+    - Actual expired access and two-tab single rotation passed.
+  WEB-06:
+    status: pass
+    evidence:
+    - SITE-HTTPS-PG
+    - ADMIN-REAL-STATE
+    - CORE-GATE
+    limitations:
+    - Credential source/duplicate/conflict rejection and opaque rotation/fencing tested.
+  WEB-07:
+    status: not_run
+    evidence:
+    - SITE-HTTPS-PG
+    - EXAMPLE-HTTPS-PG
+    limitations:
+    - Page loading and browser CORS paths passed; every safe-method/preflight/reset navigation mutation
+      combination not enumerated.
+  WEB-08:
+    status: not_run
+    evidence:
+    - CORE-GATE
+    - SITE-SCOPED
+    limitations:
+    - Explicit host-validator/example and config checks passed; every wildcard/HTTP/missing-config production
+      assembly permutation not enumerated.
+  ADM-01:
+    status: pass
+    evidence:
+    - ADMIN-GATE
+    - ADMIN-REAL-STATE
+    limitations:
+    - Local chain and opaque credential identified. Production deployed version was not inspected; baseline/pins
+      and candidate source are recorded separately.
+  ADM-02:
+    status: not_run
+    evidence:
+    - ADMIN-GATE
+    - ADMIN-REAL-STATE
+    limitations:
+    - Opaque renewal, flags, canonical session checking and stale-save fencing passed; full idle/absolute/elevation
+      browser matrix not executed.
+  ADM-03:
+    status: not_run
+    evidence:
+    - ADMIN-REAL-STATE
+    - CORE-GATE
+    limitations:
+    - Real host logout-all/membership/permission denial passed; every disable/reset path against the existing
+      opaque cookie not separately exercised.
+  ADM-04:
+    status: not_run
+    evidence:
+    - SITE-HTTPS-PG
+    - ADMIN-REAL-STATE
+    limitations:
+    - Both real candidate lifecycle fixtures passed; old-binary rollback acceptance on a production-like
+      data copy not performed.
+  OID-01:
+    status: pass
+    evidence:
+    - CORE-GATE
+    - ZITADEL-LIVE
+    limitations:
+    - Advertised token profiles, exact issuer/audience/type/time and bounded/coalesced fetch negatives
+      tested.
+  OID-02:
+    status: not_run
+    evidence:
+    - CORE-GATE
+    - ZITADEL-LIVE
+    limitations:
+    - Embedded code/PKCE/client/nonce/refresh tests and real ZITADEL subset passed; independent embedded-provider/browser
+      callback conformance not claimed.
+  OPS-01:
+    status: pass
+    evidence:
+    - CORE-GATE
+    limitations:
+    - Real fresh/upgrade/concurrent/failure/cancellation/refusal migrations and preservation of host tables
+      tested.
+  OPS-02:
+    status: not_run
+    evidence:
+    - BACKUP-RESTORE
+    limitations:
+    - Actual restore/session/delivery/revocation passed; production least-privilege grants and separate
+      migration authority not verified.
+  OPS-03:
+    status: not_run
+    evidence:
+    - CORE-GATE
+    limitations:
+    - Local replacement-based consumer passed. Exact unpublished v0.5 tag cannot prove anonymous public
+      resolution.
+  OPS-04:
+    status: not_run
+    evidence: []
+    limitations:
+    - Complete history/refs/release-asset secret/redistribution/permission review belongs to the separate
+      publication stage.
+limitations:
+- 38 scenario IDs are preserved. A complete broad catalog case remains not_run when only a narrower observation
+  passed; do not interpret this file as full security acceptance.
+- No publication, tag creation, host dependency upgrade, production deployment or physical mobile application
+  was performed.
+- Host acceptance used disposable synthetic accounts and retained legacy drain handlers; production backlog
+  drain was not inspected.
+release_acceptance_complete: false
+source_fingerprints:
+  goauth:
+    sha256: 739d0e30546f0a96cd38f716974c3c5175adfc5c54dcddeb14b54360bfd237b4
+    files: 122
+    base_sha: 070b1f37e8139d5796cb266b57d07cdd16b659c9
+  goadmin:
+    sha256: b14f0d372d7ea1c2c30e41702235aaa7a9e0e078f4a949df94c79d4517ed431f
+    files: 567
+    base_sha: 4152e0a490e786bd25e1623477b6ab41f05c79f0
+  site:
+    sha256: cea045f9263503ae5f77d41ceb43499a77bde102162ad01f80f0310fed6b7fae
+    files: 890
+    base_sha: 4614ee60e0839c4fb25f5a020301721844ba5a36
+fingerprint_method: SHA256 over sorted repo-relative path + NUL + content SHA256 + newline; tracked and
+  nonignored untracked regular files; Markdown, docs, OpenSpec, agent configuration and caches excluded.
+  Full manifests retained in local verification artifacts.
+candidate_modfile_fingerprints:
+  goadmin: 4255188379fe73839dc2b23cfea5c7040b82a928d2846b6214022dba54831fcb
+  site: e583b5e060eb831a106fa51818ffaf8e3c7081a8cfccae8b9c77cd804083943a
+  second-host: 54690ad98dc0ec8299b1b704674ff0e35c57528ed6a4946f66dee8f09a3fa2a9
+scenario_totals:
+  pass: 17
+  not_run: 21
+openspec:
+  change: harden-browser-native-auth
+  status: archived
+  archive: openspec/changes/archive/2026-09-29-harden-browser-native-auth
+  specs_synced: true
+  post_archive_gate: pass
+  production_acceptance_change: verify-production-adoption (remains open)

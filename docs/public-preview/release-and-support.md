@@ -5,6 +5,10 @@ publish a tag, promise an SLA or certify security. Existing
 [RELEASING.md](../../RELEASING.md) and [SECURITY.md](../../SECURITY.md) remain the
 current instructions until implementation PRs align them with this specification.
 
+The current v0.5 candidate has a dated [local evidence snapshot](release-evidence.local.yaml),
+not completed release acceptance. Preserve all passing-gate and per-case evidence
+requirements from the specification when combining implementation and release tooling.
+
 ## R1: security and compatibility evidence before exposure
 
 Freeze one source SHA after W0-W4, record the toolchain and run the candidate

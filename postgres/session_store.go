@@ -16,11 +16,25 @@ func (s *Store) CreateSession(ctx context.Context, record goauth.SessionRecord) 
 		record.RefreshSelector == "" || len(record.RefreshDigest.Digest) != 32 {
 		return errors.New("invalid session record")
 	}
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
 		return fmt.Errorf("begin session transaction: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackWrite(tx, owned)
+
+	if err := lockSubject(ctx, tx, record.Session.SubjectID); err != nil {
+		return err
+	}
+	account, err := getAccount(ctx, tx, record.Session.SubjectID)
+	if err != nil {
+		return err
+	}
+	if account.Subject.Status != goauth.SubjectStatusActive {
+		return goauth.ErrAccountUnavailable
+	}
+	if account.Subject.SecurityVersion != record.Session.SecurityVersion {
+		return goauth.ErrSecurityVersionMismatch
+	}
 
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO auth_sessions (
@@ -66,26 +80,42 @@ VALUES ($1, $2, $3, $4, $5, $6)`,
 	); err != nil {
 		return fmt.Errorf("insert refresh token: %w", err)
 	}
-	if err := tx.Commit(); err != nil {
+	if err := finishWrite(tx, owned); err != nil {
 		return fmt.Errorf("commit session transaction: %w", err)
 	}
 
 	return nil
 }
 
-func (s *Store) RotateRefresh(
+func (s *Store) PeekRefresh(ctx context.Context, request goauth.RefreshRotationRequest) (goauth.RefreshRotationResult, error) {
+	return s.rotateRefresh(ctx, request, true)
+}
+
+func (s *Store) RotateRefresh(ctx context.Context, request goauth.RefreshRotationRequest) (goauth.RefreshRotationResult, error) {
+	return s.rotateRefresh(ctx, request, false)
+}
+
+func (s *Store) rotateRefresh(
 	ctx context.Context,
 	request goauth.RefreshRotationRequest,
+	peek bool,
 ) (goauth.RefreshRotationResult, error) {
-	if request.CurrentSelector == "" || request.NextSelector == "" ||
-		len(request.CurrentDigest.Digest) != 32 || len(request.NextDigest.Digest) != 32 {
+	if request.CurrentSelector == "" || len(request.CurrentDigest.Digest) != 32 {
 		return goauth.RefreshRotationResult{Status: goauth.RefreshRotationInvalid}, nil
 	}
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
 		return goauth.RefreshRotationResult{}, fmt.Errorf("begin refresh rotation: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackWrite(tx, owned)
+
+	// Serialize every security mutation on the canonical subject before children.
+	if err := lockRefreshSubject(ctx, tx, request.CurrentSelector); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return goauth.RefreshRotationResult{Status: goauth.RefreshRotationInvalid}, nil
+		}
+		return goauth.RefreshRotationResult{}, err
+	}
 
 	var (
 		storedKeyID      string
@@ -168,24 +198,11 @@ FOR UPDATE OF rt, f, sess, sub`, request.CurrentSelector).Scan(
 		return result, nil
 	}
 	if tokenConsumedAt.Valid {
-		if _, err := tx.ExecContext(ctx, `
-UPDATE auth_refresh_families
-SET revoked_at = COALESCE(revoked_at, $2), replayed_at = COALESCE(replayed_at, $2)
-WHERE id = $1`, familyID, request.Now); err != nil {
-			return goauth.RefreshRotationResult{}, fmt.Errorf("revoke replayed refresh family: %w", err)
+		if peek {
+			result.Status = goauth.RefreshRotationReplayed
+			return result, nil
 		}
-		if _, err := tx.ExecContext(ctx, `
-UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, $2) WHERE id = $1`,
-			session.ID,
-			request.Now,
-		); err != nil {
-			return goauth.RefreshRotationResult{}, fmt.Errorf("revoke replayed session: %w", err)
-		}
-		if err := tx.Commit(); err != nil {
-			return goauth.RefreshRotationResult{}, fmt.Errorf("commit refresh replay revocation: %w", err)
-		}
-		result.Status = goauth.RefreshRotationReplayed
-		return result, nil
+		return revokeRefreshReplay(ctx, tx, owned, result, request.Now)
 	}
 	if !request.Now.Before(tokenExpiresAt) || !request.Now.Before(session.ExpiresAt) {
 		result.Status = goauth.RefreshRotationExpired
@@ -198,6 +215,18 @@ UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, $2) WHERE id = $1`,
 		return result, nil
 	}
 
+	if !refreshSnapshotMatches(request, account) {
+		result.Status = goauth.RefreshRotationRevoked
+		return result, nil
+	}
+	if peek {
+		result.Status = goauth.RefreshRotationSucceeded
+		return result, nil
+	}
+	if request.NextSelector == "" || len(request.NextDigest.Digest) != 32 {
+		result.Status = goauth.RefreshRotationInvalid
+		return result, nil
+	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO auth_refresh_tokens (
     selector, family_id, key_id, secret_digest, created_at, expires_at
@@ -230,7 +259,7 @@ WHERE selector = $1 AND consumed_at IS NULL`,
 	if rows != 1 {
 		return goauth.RefreshRotationResult{}, errors.New("refresh consume guard did not update exactly one row")
 	}
-	if err := tx.Commit(); err != nil {
+	if err := finishWrite(tx, owned); err != nil {
 		return goauth.RefreshRotationResult{}, fmt.Errorf("commit refresh rotation: %w", err)
 	}
 	result.Status = goauth.RefreshRotationSucceeded
@@ -245,7 +274,7 @@ func (s *Store) IntrospectSession(ctx context.Context, sessionID string) (goauth
 		status    string
 		revokedAt sql.NullTime
 	)
-	err := s.db.QueryRowContext(ctx, `
+	err := s.queryer(ctx).QueryRowContext(ctx, `
 SELECT
     sess.id,
     sess.subject_id,
@@ -294,11 +323,15 @@ func (s *Store) RevokeSession(
 	sessionID string,
 	now time.Time,
 ) (bool, error) {
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
 		return false, fmt.Errorf("begin session revocation: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackWrite(tx, owned)
+	if err := lockSubject(ctx, tx, subjectID); err != nil {
+		return false, err
+	}
+
 	result, err := tx.ExecContext(ctx, `
 UPDATE auth_sessions
 SET revoked_at = $3
@@ -319,7 +352,7 @@ SET revoked_at = COALESCE(revoked_at, $2)
 WHERE session_id = $1`, sessionID, now); err != nil {
 		return false, fmt.Errorf("revoke session refresh families: %w", err)
 	}
-	if err := tx.Commit(); err != nil {
+	if err := finishWrite(tx, owned); err != nil {
 		return false, fmt.Errorf("commit session revocation: %w", err)
 	}
 
@@ -331,16 +364,28 @@ func (s *Store) RevokeSubjectSessions(
 	subjectID goauth.SubjectID,
 	now time.Time,
 ) (int64, error) {
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("begin subject session revocation: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackWrite(tx, owned)
+	if err := lockSubject(ctx, tx, subjectID); err != nil {
+		if errors.Is(err, goauth.ErrAccountNotFound) {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	if _, err := tx.ExecContext(ctx, `UPDATE auth_subjects
+SET security_version=security_version+1,updated_at=$2 WHERE id=$1`, subjectID, now); err != nil {
+		return 0, err
+	}
+
 	revoked, err := revokeSubjectSecurityState(ctx, tx, subjectID, now)
 	if err != nil {
 		return 0, err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := finishWrite(tx, owned); err != nil {
 		return 0, fmt.Errorf("commit subject session revocation: %w", err)
 	}
 
@@ -386,11 +431,11 @@ func (s *Store) SetSubjectStatus(
 	status goauth.SubjectStatus,
 	now time.Time,
 ) (goauth.Subject, error) {
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
 		return goauth.Subject{}, fmt.Errorf("begin subject status transaction: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackWrite(tx, owned)
 
 	var subject goauth.Subject
 	var storedStatus string
@@ -413,7 +458,7 @@ FOR UPDATE`, subjectID).Scan(
 	}
 	subject.Status = goauth.SubjectStatus(storedStatus)
 	if subject.Status == status {
-		if err := tx.Commit(); err != nil {
+		if err := finishWrite(tx, owned); err != nil {
 			return goauth.Subject{}, fmt.Errorf("commit unchanged subject status: %w", err)
 		}
 		return subject, nil
@@ -442,9 +487,58 @@ RETURNING id, status, security_version, created_at, updated_at`,
 	if err := invalidatePasswordResets(ctx, tx, subjectID, now); err != nil {
 		return goauth.Subject{}, err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := finishWrite(tx, owned); err != nil {
 		return goauth.Subject{}, fmt.Errorf("commit subject status transaction: %w", err)
 	}
 
 	return subject, nil
+}
+
+func lockSubject(ctx context.Context, tx *sql.Tx, id goauth.SubjectID) error {
+	var found goauth.SubjectID
+	err := tx.QueryRowContext(ctx, `SELECT id FROM auth_subjects WHERE id=$1 FOR UPDATE`, id).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return goauth.ErrAccountNotFound
+	}
+	return err
+}
+
+func lockRefreshSubject(ctx context.Context, tx *sql.Tx, selector string) error {
+	var id goauth.SubjectID
+	err := tx.QueryRowContext(ctx, `SELECT f.subject_id FROM auth_refresh_tokens t
+ JOIN auth_refresh_families f ON f.id=t.family_id WHERE t.selector=$1`, selector).Scan(&id)
+	if err != nil {
+		return err
+	}
+	return lockSubject(ctx, tx, id)
+}
+
+func revokeRefreshReplay(
+	ctx context.Context, tx *sql.Tx, owned bool, result goauth.RefreshRotationResult, now time.Time,
+) (goauth.RefreshRotationResult, error) {
+	if _, err := tx.ExecContext(ctx, `
+UPDATE auth_refresh_families
+SET revoked_at = COALESCE(revoked_at, $2), replayed_at = COALESCE(replayed_at, $2)
+WHERE id = $1`, result.FamilyID, now); err != nil {
+		return goauth.RefreshRotationResult{}, fmt.Errorf("revoke replayed refresh family: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+UPDATE auth_sessions SET revoked_at = COALESCE(revoked_at, $2) WHERE id = $1`,
+		result.Session.ID,
+		now,
+	); err != nil {
+		return goauth.RefreshRotationResult{}, fmt.Errorf("revoke replayed session: %w", err)
+	}
+	if err := finishWrite(tx, owned); err != nil {
+		return goauth.RefreshRotationResult{}, fmt.Errorf("commit refresh replay revocation: %w", err)
+	}
+	result.Status = goauth.RefreshRotationReplayed
+	return result, nil
+}
+
+func refreshSnapshotMatches(request goauth.RefreshRotationRequest, account goauth.Account) bool {
+	return request.ExpectedSecurityVersion == 0 ||
+		(account.Subject.SecurityVersion == request.ExpectedSecurityVersion &&
+			account.PrimaryEmail.NormalizedValue == request.ExpectedNormalizedEmail &&
+			account.EmailVerified() == request.ExpectedEmailVerified)
 }

@@ -5,6 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/assurrussa/goauth"
 )
 
 type (
@@ -20,6 +24,11 @@ var errForeignNotificationTransaction = errors.New("notification transaction bel
 // InNotificationTransaction joins the participating managed auth writes,
 // notification enqueue, and security audit on this database handle.
 func (s *Store) InNotificationTransaction(ctx context.Context, fn func(context.Context) error) error {
+	return s.InAuthTransaction(ctx, fn)
+}
+
+// InAuthTransaction atomically commits participating auth, audit and event writes.
+func (s *Store) InAuthTransaction(ctx context.Context, fn func(context.Context) error) error {
 	existing, err := s.notificationTx(ctx)
 	if err != nil {
 		return err
@@ -35,8 +44,8 @@ func (s *Store) InNotificationTransaction(ctx context.Context, fn func(context.C
 	if err := fn(context.WithValue(ctx, notificationTxContextKey{}, notificationTxScope{db: s.db, tx: tx})); err != nil {
 		return err
 	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit notification transaction: %w", err)
+	if err := commitAuthTransaction(tx); err != nil {
+		return fmt.Errorf("commit auth transaction: %w", err)
 	}
 	return nil
 }
@@ -69,7 +78,7 @@ func finishWrite(tx *sql.Tx, owned bool) error {
 	if !owned {
 		return nil
 	}
-	return tx.Commit()
+	return commitAuthTransaction(tx)
 }
 
 func rollbackWrite(tx *sql.Tx, owned bool) {
@@ -97,4 +106,38 @@ func (s *Store) notificationExecer(ctx context.Context) notificationExec {
 		return tx
 	}
 	return s.db
+}
+
+// queryer routes reads through the same transaction as writes.
+func (s *Store) queryer(ctx context.Context) queryRower {
+	tx, err := s.notificationTx(ctx)
+	if err != nil {
+		return rejectedQuerier{db: s.db}
+	}
+	if tx != nil {
+		return tx
+	}
+	return s.db
+}
+
+type rejectedQuerier struct{ db *sql.DB }
+
+func (r rejectedQuerier) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	// database/sql has no public error-row constructor. A cancelled query creates
+	// an error row without reaching the server; writes reject the foreign scope.
+	ctx, cancel := context.WithCancel(ctx)
+	cancel()
+	return r.db.QueryRowContext(ctx, query, args...)
+}
+
+func commitAuthTransaction(tx *sql.Tx) error {
+	err := tx.Commit()
+	if err == nil {
+		return nil
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) || errors.Is(err, sql.ErrTxDone) {
+		return err
+	}
+	return errors.Join(goauth.ErrOperationOutcomeUnknown, err)
 }

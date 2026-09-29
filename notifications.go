@@ -26,9 +26,17 @@ func (f NotificationSenderFunc) SendNotification(ctx context.Context, delivery N
 	return f(ctx, delivery)
 }
 
-// NotificationTransaction joins participating auth writes, encrypted enqueue,
-// and audit writes in one transaction. PostgreSQL provides this for managed
-// notification operations; it is not a general Runtime unit of work.
+// AuthTransaction atomically commits all participating auth, audit and encrypted
+// event writes. Callback errors roll back. A failed commit with uncertain server
+// outcome must wrap ErrOperationOutcomeUnknown. Nested calls join the same scope.
+// Hooks must not perform irreversible external actions inside this callback.
+type AuthTransaction interface {
+	InAuthTransaction(ctx context.Context, fn func(context.Context) error) error
+}
+
+// NotificationTransaction is the previous notification-only contract.
+//
+// Deprecated: implement AuthTransaction for every Runtime operation.
 type NotificationTransaction interface {
 	InNotificationTransaction(ctx context.Context, fn func(context.Context) error) error
 }
@@ -39,8 +47,5 @@ type notificationMetadata struct {
 }
 
 func (r *Runtime) inNotificationTransaction(ctx context.Context, fn func(context.Context) error) error {
-	if r.notificationTransaction == nil {
-		return fn(ctx)
-	}
-	return r.notificationTransaction.InNotificationTransaction(ctx, fn)
+	return r.authTransaction.InAuthTransaction(ctx, fn)
 }

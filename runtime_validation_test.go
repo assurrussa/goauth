@@ -15,15 +15,8 @@ import (
 	"github.com/assurrussa/goauth/testkit"
 )
 
-type passthroughNotificationTransaction struct{}
-
-func (passthroughNotificationTransaction) InNotificationTransaction(ctx context.Context, fn func(context.Context) error) error {
-	return fn(ctx)
-}
-
-func TestCustomNotificationTransactionPreservesRendererAndAcknowledgement(t *testing.T) {
+func TestCustomAuthTransactionPreservesRendererAndAcknowledgement(t *testing.T) {
 	fixture, err := testkit.NewRuntime(func(config *goauth.Config) {
-		config.NotificationTransaction = passthroughNotificationTransaction{}
 		config.NotificationRenderer = goauth.NotificationRendererFunc(
 			func(_ context.Context, notification goauth.Notification) ([]byte, error) {
 				notification.Template = "custom_" + notification.Template
@@ -61,6 +54,7 @@ func TestRuntimeConfigurationValidation(t *testing.T) {
 		{"login limit", func(config *goauth.Config) { config.LoginRateLimit = goauth.RateLimitPolicy{Limit: -1} }},
 		{"realm", func(config *goauth.Config) { config.AdditionalRealms = []goauth.Realm{"Bad Realm"} }},
 		{"managed without transaction", func(config *goauth.Config) {
+			config.AuthTransaction = nil
 			config.ManagedNotificationDelivery = true
 		}},
 		{"managed with custom renderer", func(config *goauth.Config) {
@@ -254,11 +248,13 @@ func validRuntimeConfig(t *testing.T) goauth.Config {
 		return ring
 	}
 	return goauth.Config{
-		Store:          testkit.NewStore(),
-		Signing:        goauth.SigningConfig{Issuer: "https://auth.example.test", Audience: testAudience, Keys: keyRing("jwt", 1)},
-		TokenHMACKeys:  keyRing("token", 2),
-		OutboxAEADKeys: keyRing("outbox", 3),
-		EventSink:      &testkit.EventSink{},
+		Store:           testkit.NewStore(),
+		AuthTransaction: testkit.NewStore(),
+		AuditSink:       testkit.NewStore(),
+		Signing:         goauth.SigningConfig{Issuer: "https://auth.example.test", Audience: testAudience, Keys: keyRing("jwt", 1)},
+		TokenHMACKeys:   keyRing("token", 2),
+		OutboxAEADKeys:  keyRing("outbox", 3),
+		EventSink:       &testkit.EventSink{},
 		URLBuilder: goauth.URLBuilderFunc(func(context.Context, string) (string, error) {
 			return "https://app.example.test/reset", nil
 		}),

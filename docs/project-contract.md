@@ -17,7 +17,7 @@ production rollout.
 
 External consumers use the exact packages in
 `reference/externalconsumer.SupportedPackages`. The root package is the
-transport-neutral Runtime; `postgres`, `redis`, and `fiber` are adapters;
+transport-neutral Runtime; `postgres`, `redis`, `nethttp`, and `fiber` are adapters;
 `oidc`, `rbac`, and `testkit` are focused capabilities.
 
 The retired v0.1 implementation is absent from the current source tree. Its
@@ -27,7 +27,9 @@ the old release for consumers that still need it.
 The native PostgreSQL notification queue is selected through a host-provided
 `goauth.NotificationSender`. The host owns final delivery, starts and stops the
 worker, and schedules cleanup. The lower-level encrypted event sink remains an
-advanced integration path.
+advanced integration path through direct root Runtime assembly. The PostgreSQL
+constructor rejects custom event sinks so auth state, mandatory audit and native
+enqueue share its database transaction.
 
 ## Schema lifecycle
 
@@ -46,8 +48,12 @@ permission, and application gates.
 
 [The public-preview specification pack](public-preview/README.md) defines target
 profile contracts, security acceptance scenarios, local site/admin verification,
-implementation work packages, and publication/support evidence. It does not
-change the current supported imports or claim that the target checks have passed.
+implementation work packages, and publication/support evidence. The pack itself
+does not promote supported imports or claim that the target checks have passed.
 Cookies and CSRF remain optional outside browser integrations; the supported
 cookie-authenticated profile must supply tested CSRF protection. Actual host
 session behavior is verified locally before a new credential model is introduced.
+
+[Candidate assembly decisions](public-preview/candidate-assembly.md) record the
+v0.5 browser/native/admin/OIDC composition. Local verification is recorded
+separately from the complete release acceptance criteria.

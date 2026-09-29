@@ -36,6 +36,7 @@ contract change.
   native encrypted notification queue and worker, audit persistence, cleanup,
   rate limiting, and RBAC storage.
 - `redis/`: atomic Redis-backed OIDC one-time state.
+- `nethttp/`: standard-library JSON handlers and secure realm middleware.
 - `fiber/`: JSON handlers, typed error mapping, and realm middleware.
 - `oidc/`: OIDC protocol, provider, and verifier contracts.
 - `rbac/`: hierarchy-free role and permission service.
@@ -119,7 +120,8 @@ once after a coherent batch; do not stack it with `make test`,
 Do not rewrite existing tags. If `make` changes generated code, formatting,
 `go.mod`, or `go.sum`, commit those changes and publish a new semver tag.
 
-The frozen v0.1 compatibility baseline ends at `v0.1.7`. Select the intended
+The frozen v0.1 compatibility baseline ends at `v0.1.7`. The tagged baseline is
+`v0.4.1`; the current unpublished candidate is `v0.5.0`. Select the intended
 release explicitly from repository tags; never rely on a stale default version.
 Published checks create fresh child-process caches instead of using the local
 cache layout above. Public availability is not established by a private tag.

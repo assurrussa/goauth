@@ -1,4 +1,4 @@
-//nolint:testpackage // Tests verify internal error behavior and JWT validation paths.
+//nolint:testpackage,goconst // Tests verify internal error behavior and repeat JWT protocol claim values.
 package verifier
 
 import (
@@ -160,7 +160,8 @@ func TestVerifyAccessTokenRejectsInvalidTokens(t *testing.T) {
 			wantErr: "token_use must be access",
 		},
 		{
-			name: "missing token use is accepted",
+			name:    "missing token use is rejected",
+			wantErr: "token_use must be access",
 			token: signToken(t, key, "kid-1", jwt.MapClaims{
 				"iss":       issuer,
 				"sub":       "subject-1",
