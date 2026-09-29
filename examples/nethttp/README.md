@@ -34,7 +34,9 @@ refresh, logout, logout all sessions, requesting/resetting passwords, changing
 a password, and requesting/confirming an email change. A reset link puts its
 token in the URL fragment; the page moves it into the form and removes the
 fragment. Password reset/change and email confirmation changes revoke sessions.
-New email confirmation codes arrive at the new address. Re-login after those
+Email change requires the current local password and a full user session.
+Confirmation codes arrive at the new address; the completed-change notification
+goes to the previous address without any credential. Re-login after those
 changes. All browser mutations use POST and the host's CSRF policy.
 
 Browser tokens live in `__Host-SSID` and `__Host-UUIDR`, `HttpOnly`, `SameSite=Lax` cookies scoped to
@@ -50,9 +52,15 @@ The browser bridge rejects incoming Authorization headers and duplicate credenti
 cookies, and hides tokens from JSON responses. It requires a non-simple
 `X-Goauth-CSRF: 1` header on every mutation and uses standard
 `http.CrossOriginProtection`; no cross-origin CORS permission is granted. The
-browser code uses Web Locks and rechecks shared expiry after acquiring the lock
-to coordinate refresh rotation across tabs. Browsers without Web Locks disable
-refresh. Request bodies, headers, server operations and SMTP sends are bounded.
+browser code serializes all POSTs with one Web Lock, including login, registration,
+refresh, logout and local cookie removal. A delayed login response completes
+before a queued logout. Browsers without Web Locks cannot use these mutations;
+there is no unsynchronized fallback. Use a supported browser, or its own site-data
+controls for local cleanup. Fetch (including response body reads) has a 10-second
+AbortController deadline; queued lock acquisition has a separate 15-second
+cancellation deadline. A queued timeout sends no request and does not steal an
+active lock. Browser suspension may delay timers: these are not server deadlines.
+Request bodies, headers, server operations and SMTP sends are bounded.
 Worker failure stops the server; SIGINT/SIGTERM drains HTTP, cancels and joins
 workers, then closes the owned database connection.
 
@@ -87,7 +95,7 @@ Other API paths and JSON bodies:
 - `/api/reset-request`: `{"email":"api@example.test"}`.
 - `/api/reset`: `{"token":"<resetToken>","newPassword":"<newPassword>"}`.
 - `/api/password`: `{"currentPassword":"<current>","newPassword":"<new>"}` with bearer token.
-- `/api/email-change`: `{"email":"new@example.test"}` with bearer token.
+- `/api/email-change`: `{"email":"new@example.test","currentPassword":"<current>"}` with a full user bearer token.
 - `/api/email-confirm`: `{"code":"<code>"}` with bearer token.
 
 Realm middleware checks persisted session state by default, so revoked sessions
@@ -97,6 +105,23 @@ it. Auth context is read with `nethttp.AuthContext(request.Context())`.
 `operation_outcome_unknown` returns 503. Refresh is single-use: do not retry the
 same refresh token after an uncertain network/commit result; require login to
 recover. The UI performs no automatic retries.
+
+Logout uses a still-valid access cookie immediately, even in the last 30 seconds
+or after a previous refresh/logout failure. A refresh-only block does not suppress
+an explicit logout retry. If access has expired, logout may rotate once under the
+same lock, but never reuses a refresh whose outcome is uncertain. Local expiry
+metadata is only a scheduling hint, never authorization.
+
+**Forget this browser** calls the browser-only `POST /browser/forget-session`
+with `{}` and the same CSRF/origin protection. It clears the host's cookies even
+when they are expired/malformed or the auth backend is unavailable. It does not
+read or mutate canonical sessions and deliberately reports
+`{"browserCredentialsCleared":true,"serverSessionsRevoked":false}`. It is not
+logout-all, and other devices or copied credentials remain valid. There is no
+`/api/forget-session`. A network failure cannot confirm that the browser received
+the cookie deletion; use browser site-data controls when the host is unreachable.
+
+Recovery and regression details: [PR #10 review fixes](../../docs/pr10-review-fixes.md).
 
 ```sh
 go test -race ./nethttp ./examples/nethttp

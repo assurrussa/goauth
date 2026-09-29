@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import https from 'node:https';
+import {reviewBrowserRecovery} from './browser-review-acceptance.mjs';
 const {chromium}=await import(process.env.GOAUTH_BROWSER_PLAYWRIGHT_MODULE || 'playwright');
 const origin=process.argv[2],port=new URL(origin).port,hostile=`https://127.0.0.1:${port}`;
 const raw=(path,method='GET',body,headers={})=>new Promise((resolve,reject)=>{
@@ -49,6 +50,7 @@ try {
   assert.equal((await call('login',{scheme:'email',identifier:newEmail,password,realm:'user'})).status,200);assert.equal((await call('me',{},'GET')).status,200);
   const api=await raw('/api/login','POST',{scheme:'email',identifier:newEmail,password,realm:'user'});assert.equal(api.status,200);assert(api.data.tokens.accessToken&&api.data.tokens.refreshToken&&!api.headers['set-cookie']);
   assert.equal((await raw('/api/me','GET',undefined,{Cookie:cookieHeader})).status,401);assert.equal((await raw('/api/me','GET',undefined,{Authorization:'Bearer '+api.data.tokens.accessToken})).status,200);
+  await reviewBrowserRecovery({context, page, second, origin, raw, call, email: newEmail, password});
   const stats=(await raw('/fixture/stats')).data;assert(stats.encrypted>=3);
   console.log('public nethttp PostgreSQL/HTTPS browser PASS: signup/delivered confirmation/login/me/expired access/two-tabs exactly1 rotation/logout/all/delivered reset/password/email; HttpOnly/CSRF/hostile/duplicates; bearer API no Set-Cookie');
  } finally {await context.close();}

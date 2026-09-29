@@ -201,10 +201,16 @@ func TestAccountEndpointDenialsPreserveCanonicalState(t *testing.T) {
 	fixture, err := testkit.NewRuntime()
 	require.NoError(t, err)
 	password := strings.Join([]string{"Unique", "HTTP", "Account", "Passphrase", "1"}, "-")
-	registered, err := fixture.Runtime.Register(t.Context(), goauth.RegisterRequest{
+	_, err = fixture.Runtime.ProvisionTrustedLocalAccount(t.Context(), goauth.RegisterRequest{
 		Email: email, Password: password,
 	})
 	require.NoError(t, err)
+	registered, err := fixture.Runtime.Login(t.Context(), goauth.LoginRequest{
+		Credential: goauth.Credential{Identifier: goauth.IdentifierInput{Value: email}, Password: password},
+		Realm:      goauth.RealmUser,
+	})
+	require.NoError(t, err)
+	require.Equal(t, goauth.SessionScopeAuthenticated, registered.Tokens.Session.Scope)
 	adapter, err := authhttp.New(fixture.Runtime)
 	require.NoError(t, err)
 	before, err := fixture.Store.GetAccount(t.Context(), registered.Account.Subject.ID)
@@ -229,7 +235,7 @@ func TestAccountEndpointDenialsPreserveCanonicalState(t *testing.T) {
 		},
 		{
 			"unchanged_email", adapter.RequestEmailChange,
-			map[string]string{"email": email},
+			map[string]string{"email": email, "currentPassword": password},
 			422, "email_change_same_value",
 		},
 		{
@@ -245,7 +251,7 @@ func TestAccountEndpointDenialsPreserveCanonicalState(t *testing.T) {
 			request.Header.Set("Content-Type", "application/json")
 			request.Header.Set("Authorization", "Bearer "+registered.Tokens.AccessToken)
 			response := httptest.NewRecorder()
-			handler := adapter.RequireRealm(goauth.RealmUser, authhttp.RealmMiddlewareOptions{AllowConfirmation: true})(test.handler)
+			handler := adapter.RequireRealm(goauth.RealmUser, authhttp.RealmMiddlewareOptions{})(test.handler)
 			handler.ServeHTTP(response, request)
 			var payload authhttp.ErrorResponse
 			require.NoError(t, json.Unmarshal(response.Body.Bytes(), &payload))
