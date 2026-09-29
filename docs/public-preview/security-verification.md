@@ -195,10 +195,21 @@ consumer tests. This is a routing list, not confirmation that cases pass.
 
 ## Acceptance and triage
 
-All applicable cases start `not_run`. Record `pass`, `fail`, `blocked` or
-`not_applicable` only with evidence. Not-applicable requires a scope reason and
-reviewer approval; it cannot hide an untested advertised profile. Map every
-AUTH requirement to at least one case and include all relevant cases for P1/P2/P3.
+All 38 cases in the catalog are release-blocking when applicable; each scenario
+in the evidence template declares `release_blocking: true`. All cases start
+`not_run`. A blocking case closes only with release-SHA evidence and `pass`, or
+`not_applicable` with a scope reason and reviewer approval. `fail`, `blocked` and
+`not_run` prevent public-preview readiness even when evidence is attached.
+Not-applicable cannot hide an untested advertised profile. Retain every catalog
+entry, including optional-profile cases; assess applicability rather than
+deleting entries or downgrading their blocking status. Map every AUTH requirement
+to at least one case and include all relevant cases for P1/P2/P3.
+
+Before claiming candidate or public-preview readiness, run
+`make release-candidate-readiness` at the release SHA and record a successful
+result in `release_gates.candidate`, including the command, source SHA and
+redacted evidence. Scenario results do not replace that gate; a missing, failed,
+blocked or unrun gate prevents the readiness claim.
 
 Release blockers include bypass/takeover, privilege escalation, exposed secrets,
 reusable one-time credentials, broken canonical revocation, unsafe default

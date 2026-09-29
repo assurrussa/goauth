@@ -71,10 +71,24 @@ mechanism; use this pack to define which behavior must be tested before release.
 
 ## Completion
 
-The implementation is ready for a public preview when every applicable blocking
-scenario has release-SHA evidence, both reported host flows have local acceptance
-records, no unresolved exploitable release blocker remains, the exposure review
-is complete, and an anonymous consumer resolves the exact new tag.
+The implementation is ready for a public preview only when all of the following
+conditions hold at the release SHA:
+
+- Every release-blocking scenario in the
+  [catalog](security-verification.md#required-scenario-catalog) has recorded
+  evidence and an outcome of `pass`, or `not_applicable` with a scope reason and
+  reviewer approval. All 38 catalog cases are release-blocking when applicable;
+  the template marks each with `release_blocking: true`. `fail`, `blocked` and
+  `not_run` prevent readiness; the presence of evidence alone is insufficient.
+- `make release-candidate-readiness` passes at that same SHA, with its command,
+  source SHA, successful status and evidence recorded in
+  `release_gates.candidate`. A missing or unsuccessful gate prevents readiness.
+- Both reported host flows pass local acceptance at the candidate version, with
+  their host and resolved goauth versions recorded.
+- No unresolved exploitable release blocker remains and the exposure review is
+  complete.
+- An anonymous consumer successfully resolves the exact new tag at the tested
+  SHA, with the result recorded in `release_gates.anonymous_exact_tag`.
 
 A reviewer records residual limitations and support scope. Neither successful
 production use, coverage, scanners nor an independent review proves absence of

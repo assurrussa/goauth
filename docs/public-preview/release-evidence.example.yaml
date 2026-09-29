@@ -43,59 +43,69 @@ host_checks:
     command: null
     outcome: not_run
     redacted_evidence: null
-# All specified scenarios are listed; assess applicability without deleting entries.
+# All 38 scenarios are release-blocking when applicable; retain every entry.
 # Allowed outcomes: not_run, pass, fail, blocked, not_applicable.
-# not_applicable needs a reason and reviewer; absence is never pass.
-# Expand each scenario with these fields when actually executing it.
+# Public-preview readiness requires release-SHA evidence and pass, or approved
+# not_applicable with a scope reason and reviewer; other outcomes block preview.
+# Copy every field below into each executed scenario and record the observations.
+# For cases without HTTP/core or security events, record why none apply instead
+# of omitting the fields. Negative cases must include forbidden-side-effect checks.
 case_details_template:
+  preconditions: []
+  action: null
   test_names: []
   command: null
+  http_core_outcome:
+    expected: null
+    observed: null
   durable_state_assertions: []
+  security_event_observations: []
   redacted_evidence: null
   reviewer: null
   not_applicable_reason: null
 scenarios:
-  - {id: SEC-01, requirement_ids: [AUTH-01], source_sha: null, outcome: not_run}
-  - {id: SEC-02, requirement_ids: [AUTH-02], source_sha: null, outcome: not_run}
-  - {id: SEC-03, requirement_ids: [AUTH-02, AUTH-10], source_sha: null, outcome: not_run}
-  - {id: SEC-04, requirement_ids: [AUTH-09], source_sha: null, outcome: not_run}
-  - {id: SEC-05, requirement_ids: [AUTH-07], source_sha: null, outcome: not_run}
-  - {id: SEC-06, requirement_ids: [AUTH-03, AUTH-05, AUTH-06], source_sha: null, outcome: not_run}
-  - {id: SEC-07, requirement_ids: [AUTH-04], source_sha: null, outcome: not_run}
-  - {id: SEC-08, requirement_ids: [AUTH-04, AUTH-08], source_sha: null, outcome: not_run}
-  - {id: SEC-09, requirement_ids: [AUTH-04, AUTH-08], source_sha: null, outcome: not_run}
-  - {id: SEC-10, requirement_ids: [AUTH-03, AUTH-05], source_sha: null, outcome: not_run}
-  - {id: SEC-11, requirement_ids: [AUTH-03, AUTH-04], source_sha: null, outcome: not_run}
-  - {id: SEC-12, requirement_ids: [AUTH-08], source_sha: null, outcome: not_run}
-  - {id: SEC-13, requirement_ids: [AUTH-07], source_sha: null, outcome: not_run}
-  - {id: SEC-14, requirement_ids: [AUTH-05, AUTH-07], source_sha: null, outcome: not_run}
-  - {id: SEC-15, requirement_ids: [AUTH-08], source_sha: null, outcome: not_run}
-  - {id: SEC-16, requirement_ids: [AUTH-08, AUTH-09], source_sha: null, outcome: not_run}
-  - {id: SEC-17, requirement_ids: [AUTH-07, AUTH-09], source_sha: null, outcome: not_run}
-  - {id: SEC-18, requirement_ids: [AUTH-01, AUTH-10], source_sha: null, outcome: not_run}
-  - {id: SEC-19, requirement_ids: [AUTH-10], source_sha: null, outcome: not_run}
-  - {id: SEC-20, requirement_ids: [AUTH-10], source_sha: null, outcome: not_run}
-  - {id: WEB-01, requirement_ids: [AUTH-06], source_sha: null, outcome: not_run}
-  - {id: WEB-02, requirement_ids: [AUTH-03], source_sha: null, outcome: not_run}
-  - {id: WEB-03, requirement_ids: [AUTH-02, AUTH-03], source_sha: null, outcome: not_run}
-  - {id: WEB-04, requirement_ids: [AUTH-01], source_sha: null, outcome: not_run}
-  - {id: WEB-05, requirement_ids: [AUTH-04], source_sha: null, outcome: not_run}
-  - {id: WEB-06, requirement_ids: [AUTH-02], source_sha: null, outcome: not_run}
-  - {id: WEB-07, requirement_ids: [AUTH-07], source_sha: null, outcome: not_run}
-  - {id: WEB-08, requirement_ids: [AUTH-03], source_sha: null, outcome: not_run}
-  - {id: ADM-01, requirement_ids: [], source_sha: null, outcome: not_run}
-  - {id: ADM-02, requirement_ids: [AUTH-03, AUTH-09], source_sha: null, outcome: not_run}
-  - {id: ADM-03, requirement_ids: [AUTH-05, AUTH-06], source_sha: null, outcome: not_run}
-  - {id: ADM-04, requirement_ids: [AUTH-01, AUTH-03, AUTH-05, AUTH-06], source_sha: null, outcome: not_run}
-  - {id: OID-01, requirement_ids: [AUTH-02, AUTH-09], source_sha: null, outcome: not_run}
-  - {id: OID-02, requirement_ids: [AUTH-04, AUTH-10], source_sha: null, outcome: not_run}
-  - {id: OPS-01, requirement_ids: [AUTH-05, AUTH-08], source_sha: null, outcome: not_run}
-  - {id: OPS-02, requirement_ids: [AUTH-05, AUTH-09], source_sha: null, outcome: not_run}
-  - {id: OPS-03, requirement_ids: [], source_sha: null, outcome: not_run}
-  - {id: OPS-04, requirement_ids: [], source_sha: null, outcome: not_run}
+  - {id: SEC-01, requirement_ids: [AUTH-01], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: SEC-02, requirement_ids: [AUTH-02], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: SEC-03, requirement_ids: [AUTH-02, AUTH-10], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: SEC-04, requirement_ids: [AUTH-09], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: SEC-05, requirement_ids: [AUTH-07], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: SEC-06, requirement_ids: [AUTH-03, AUTH-05, AUTH-06], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: SEC-07, requirement_ids: [AUTH-04], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: SEC-08, requirement_ids: [AUTH-04, AUTH-08], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: SEC-09, requirement_ids: [AUTH-04, AUTH-08], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: SEC-10, requirement_ids: [AUTH-03, AUTH-05], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: SEC-11, requirement_ids: [AUTH-03, AUTH-04], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: SEC-12, requirement_ids: [AUTH-08], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: SEC-13, requirement_ids: [AUTH-07], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: SEC-14, requirement_ids: [AUTH-05, AUTH-07], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: SEC-15, requirement_ids: [AUTH-08], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: SEC-16, requirement_ids: [AUTH-08, AUTH-09], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: SEC-17, requirement_ids: [AUTH-07, AUTH-09], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: SEC-18, requirement_ids: [AUTH-01, AUTH-10], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: SEC-19, requirement_ids: [AUTH-10], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: SEC-20, requirement_ids: [AUTH-10], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: WEB-01, requirement_ids: [AUTH-06], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: WEB-02, requirement_ids: [AUTH-03], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: WEB-03, requirement_ids: [AUTH-02, AUTH-03], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: WEB-04, requirement_ids: [AUTH-01], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: WEB-05, requirement_ids: [AUTH-04], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: WEB-06, requirement_ids: [AUTH-02], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: WEB-07, requirement_ids: [AUTH-07], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: WEB-08, requirement_ids: [AUTH-03], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: ADM-01, requirement_ids: [], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: ADM-02, requirement_ids: [AUTH-03, AUTH-09], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: ADM-03, requirement_ids: [AUTH-05, AUTH-06], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: ADM-04, requirement_ids: [AUTH-01, AUTH-03, AUTH-05, AUTH-06], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: OID-01, requirement_ids: [AUTH-02, AUTH-09], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: OID-02, requirement_ids: [AUTH-04, AUTH-10], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: OPS-01, requirement_ids: [AUTH-05, AUTH-08], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: OPS-02, requirement_ids: [AUTH-05, AUTH-09], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: OPS-03, requirement_ids: [], release_blocking: true, source_sha: null, outcome: not_run}
+  - {id: OPS-04, requirement_ids: [], release_blocking: true, source_sha: null, outcome: not_run}
 findings: [] # Empty in a template means not assessed, NOT zero vulnerabilities.
 release_gates:
-  candidate: {status: not_run, source_sha: null, command: null, evidence: null}
+  # Must pass at candidate.sha before any candidate/public-preview readiness claim.
+  candidate: {status: not_run, source_sha: null, command: make release-candidate-readiness, evidence: null}
   browser_and_hosts: {status: not_run, evidence: null}
   independent_review: {status: not_run, reviewer: null, scope: null, evidence: null}
   exposure_review: {status: not_run, refs_and_artifact_scope: null, evidence: null}
