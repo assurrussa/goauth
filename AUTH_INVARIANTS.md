@@ -57,6 +57,14 @@
 - Email-change records are separate from account verification, digest-only,
   attempt-limited, and consumed in the same transaction as identifier update
   and security-state revocation.
+- Email changes and verification reject inactive subjects under the subject
+  lock. Security-version changes invalidate outstanding email changes and
+  unverified challenges; reactivation does not revive them.
+- Password-reset and email-code consumption checks current expiry after the
+  subject and one-time-record locks are acquired, before the protected mutation.
+  This does not promise that commit or response delivery finishes before expiry.
+- Logout-all counts newly revoked sessions, not previously revoked rows, while
+  retaining version advancement and family revocation on repeated calls.
 
 ## Secret material
 
@@ -72,6 +80,8 @@
   ciphertext; retention cleanup removes undelivered expired envelopes.
 - Security audit attributes must never contain credentials, raw tokens, codes,
   connection strings, or cryptographic key material.
+- Password-change attempts use a subject-keyed rate bucket independently of the
+  bounded concurrent hash budget. Auth responses must not be cached.
 
 ## SSO and OIDC
 
@@ -83,4 +93,11 @@
   links do not require an email claim. Only validated provider output is trusted.
 - An SSO-only account has no local credential row.
 - OIDC authorization code and challenge stores consume state atomically.
+- OIDC authorization codes persist the subject security version from issuance.
+  The provider rejects stale authentication before issuance and changed, missing
+  or wrong-subject version bindings on exchange. Versionless old codes require
+  new authorization and are never upgraded implicitly.
+- The verifier selects compatible RS256 signing keys, rejects ambiguous signing
+  key IDs and reports the audience actually validated. Discovery failures are
+  bounded and backed off without enabling stale-cache acceptance.
 - OIDC `email_verified` comes only from identifier verification state.

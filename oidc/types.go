@@ -74,6 +74,7 @@ type AuthorizationRequest struct {
 type AuthorizationCode struct {
 	Code                string
 	SubjectID           string
+	SecurityVersion     int64 // Required issuance snapshot; stores must round-trip it unchanged.
 	ClientID            string
 	RedirectURI         string
 	Scopes              []string

@@ -46,7 +46,7 @@ admission, and plain third-party sentinel errors retain the documented fallback
 hints. An uncertain operation outcome always suppresses an automatic retry hint.
 Password-reset request denials retain their enumeration-safe accepted response.
 
-## OIDC corrections and remaining scope
+## OIDC corrections
 
 The verifier selects only compatible RSA signing keys for RS256, ignores
 incompatible entries in mixed JWKS documents, and rejects different compatible
@@ -65,13 +65,19 @@ canonical Runtime. Callers must not automatically resubmit a potentially consume
 refresh token after `ErrOperationOutcomeUnknown`; start authentication again.
 Strict replay revocation is retained.
 
-The earlier review also raised a separate contract question: binding an already
-issued OIDC authorization code to the subject security version. This branch does
-**not** add that binding or claim it is present. The existing provider checks the
-current active account at exchange, but logout-all/password reset do not explicitly
-invalidate an outstanding code. The provider grant model needs a focused follow-up
-with a persisted version, code-store round-trip tests and exchange regressions.
-Do not describe this item as fixed or claim global pending-grant revocation.
+Authorization codes now persist the subject `SecurityVersion` from issuance.
+The provider first rejects a stale authentication snapshot, then binds the code
+to its exact subject and version. Exchange requires the same active subject and
+version and rechecks code expiry after subject resolution. Thus a password reset,
+logout-all or other version change completed between issuance and exchange makes
+the outstanding code invalid. This is a version-bound grant check, not a distributed
+transaction spanning the IdP, Redis, PostgreSQL, signing and response delivery.
+
+Code stores must round-trip the new field unchanged. The built-in Redis JSON
+store already serializes the complete record. Old records without a version are
+rejected, not silently upgraded to the current version; restart authorization.
+This affects only in-flight authorization attempts and needs no PostgreSQL schema
+reset or migration. See [v0.5 migration](v0.5-migration.md).
 
 ## Regression coverage added
 
@@ -84,6 +90,9 @@ Do not describe this item as fixed or claim global pending-grant revocation.
   deadlines and uncertain-outcome precedence.
 - OIDC verifier: mixed and ambiguous JWKS, sequential fetch-failure backoff,
   and multiple audiences.
+- OIDC provider: stale issuance, version changes, inactive/wrong subjects,
+  versionless codes, expiry during resolution and the unchanged positive flow.
+  A real Redis integration test verifies version round-trip and one-time consume.
 - Release evidence: stale/missing/duplicate scenarios, weakened blocking flags,
   missing observations, unapproved exclusions and blocked gates are rejected.
 

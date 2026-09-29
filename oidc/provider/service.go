@@ -390,6 +390,9 @@ func (s *Service) issueAuthorizationCode(
 	input authorizationCodeInput,
 	current oidc.AuthenticatedSubject,
 ) (*oidc.AuthorizeResult, error) {
+	if err := s.checkAuthorizationSubject(ctx, current.Account); err != nil {
+		return nil, err
+	}
 	code, err := s.generateToken()
 	if err != nil {
 		return nil, fmt.Errorf("generate authorization code: %w", err)
@@ -399,6 +402,7 @@ func (s *Service) issueAuthorizationCode(
 	if err := s.codes.Save(ctx, oidc.AuthorizationCode{
 		Code:                code,
 		SubjectID:           current.Account.Subject.ID.String(),
+		SecurityVersion:     current.Account.Subject.SecurityVersion,
 		ClientID:            input.ClientID,
 		RedirectURI:         input.RedirectURI,
 		Scopes:              oidc.NormalizeScopes(input.Scopes),
@@ -443,7 +447,7 @@ func (s *Service) exchangeAuthorizationCode(ctx context.Context, req oidc.TokenR
 
 		return nil, fmt.Errorf("consume authorization code: %w", err)
 	}
-	if s.now().After(code.ExpiresAt) {
+	if !s.now().Before(code.ExpiresAt) {
 		return nil, s.oauthError("invalid_grant", "authorization code expired", http.StatusBadRequest)
 	}
 	if code.ClientID != client.ID || code.RedirectURI != strings.TrimSpace(req.RedirectURI) {
@@ -457,8 +461,8 @@ func (s *Service) exchangeAuthorizationCode(ctx context.Context, req oidc.TokenR
 	if err != nil {
 		return nil, fmt.Errorf("resolve subject: %w", err)
 	}
-	if subject.IsZero() || subject.Subject.Status != goauth.SubjectStatusActive {
-		return nil, s.oauthError("invalid_grant", "subject not found", http.StatusBadRequest)
+	if !authorizationCodeMatches(code, subject) || !s.now().Before(code.ExpiresAt) {
+		return nil, s.oauthError("invalid_grant", "authorization code is no longer valid", http.StatusBadRequest)
 	}
 
 	response, err := s.issueTokens(ctx, subject, client, code.Scopes, code.AuthenticatedAt, code.Nonce, "")
