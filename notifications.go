@@ -28,7 +28,10 @@ func (f NotificationSenderFunc) SendNotification(ctx context.Context, delivery N
 
 // AuthTransaction atomically commits all participating auth, audit and encrypted
 // event writes. Callback errors roll back. A failed commit with uncertain server
-// outcome must wrap ErrOperationOutcomeUnknown. Nested calls join the same scope.
+// outcome must wrap ErrOperationOutcomeUnknown. Nested auth writes join the same
+// scope. Credential-attempt admission is separate: built-in stores reject
+// TakeRateLimit in this scope with ErrRateLimitTransactionUnsupported. Call
+// rate-limited Runtime operations outside an outer transaction.
 // Hooks must not perform irreversible external actions inside this callback.
 type AuthTransaction interface {
 	InAuthTransaction(ctx context.Context, fn func(context.Context) error) error

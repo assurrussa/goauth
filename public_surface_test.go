@@ -31,6 +31,7 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = (*goauth.Runtime).VerifyJWT
 	_ = (*goauth.Runtime).AuthenticateSession
 	_ = goauth.ErrOperationOutcomeUnknown
+	_ = goauth.ErrRateLimitTransactionUnsupported
 	_ = goauth.ErrPasswordHashOverloaded
 	_ = goauth.ErrPasswordVerificationUnavailable
 	_ = goauth.DefaultMaxConcurrentPasswordHashes

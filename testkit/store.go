@@ -15,7 +15,6 @@ import (
 type Store struct {
 	audits       []goauth.SecurityEvent
 	mu           sync.Mutex
-	rateMu       sync.Mutex
 	accounts     map[string]goauth.Account
 	identifiers  map[string]string
 	passwords    map[string]string
@@ -622,45 +621,43 @@ func (s *Store) IssueEmailChallenge(
 
 	key := challengeKey(record.SubjectID, record.Purpose)
 	rateKey := rateBucketKey(record.RateDigest, "email_challenge:"+string(record.Purpose))
-	s.rateMu.Lock()
 	events := s.rateEvents[rateKey]
 	quota := evaluateEmailQuota(events, record.CreatedAt, limits)
 	if quota.waiting {
-		s.rateMu.Unlock()
 		return goauth.EmailChallengeIssueResult{Status: goauth.EmailChallengeWait, RetryAt: quota.retryAt}, nil
 	}
 	if quota.hourly {
-		s.rateMu.Unlock()
 		return goauth.EmailChallengeIssueResult{Status: goauth.EmailChallengeHourlyLimit, RetryAt: quota.retryAt}, nil
 	}
 	if quota.daily {
-		s.rateMu.Unlock()
 		return goauth.EmailChallengeIssueResult{Status: goauth.EmailChallengeDailyLimit, RetryAt: quota.retryAt}, nil
 	}
 	s.rateEvents[rateKey] = append(events, record.CreatedAt)
-	s.rateMu.Unlock()
 	s.challenges[key] = append(s.challenges[key], &emailChallenge{Record: cloneChallengeRecord(record)})
 
 	return goauth.EmailChallengeIssueResult{Status: goauth.EmailChallengeIssued}, nil
 }
 
+// TakeRateLimit admits an attempt outside any managed auth transaction.
+// Auth writes may roll back; attempt accounting must not roll back with them.
 func (s *Store) TakeRateLimit(
 	ctx context.Context,
 	request goauth.RateLimitRequest,
 ) (goauth.RateLimitResult, error) {
-	root := s
-	if scope, ok := ctx.Value(storeScopeKey{}).(storeScope); ok && scope.original != nil {
-		root = scope.original
-	}
-	root.rateMu.Lock()
-	defer root.rateMu.Unlock()
-
 	if request.Action == "" || request.Limit <= 0 || request.Window <= 0 ||
 		request.Bucket.KeyID == "" || len(request.Bucket.Digest) != 32 || request.Now.IsZero() {
 		return goauth.RateLimitResult{}, errors.New("invalid test rate limit request")
 	}
+	if scope, ok := ctx.Value(storeScopeKey{}).(storeScope); ok &&
+		(scope.original == s || scope.working == s) {
+		// Check before locking: the outer transaction already holds s.mu.
+		return goauth.RateLimitResult{}, goauth.ErrRateLimitTransactionUnsupported
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	key := rateBucketKey(request.Bucket, request.Action)
-	events := root.rateEvents[key]
+	events := s.rateEvents[key]
 	cutoff := request.Now.Add(-request.Window)
 	active := make([]time.Time, 0, len(events)+1)
 	for _, occurredAt := range events {
@@ -672,14 +669,7 @@ func (s *Store) TakeRateLimit(
 		sort.Slice(active, func(i, j int) bool { return active[i].After(active[j]) })
 		return goauth.RateLimitResult{RetryAt: active[request.Limit-1].Add(request.Window)}, nil
 	}
-	active = append(active, request.Now)
-	root.rateEvents[key] = active
-	if s != root {
-		s.rateMu.Lock()
-		s.rateEvents[key] = active
-		s.rateMu.Unlock()
-	}
-
+	s.rateEvents[key] = append(active, request.Now)
 	return goauth.RateLimitResult{Allowed: true}, nil
 }
 
@@ -761,19 +751,15 @@ func (s *Store) IssueEmailChange(
 		return goauth.EmailChangeIssueResult{}, goauth.ErrIdentifierAlreadyExists
 	}
 	rateKey := rateBucketKey(record.RateDigest, "email_change")
-	s.rateMu.Lock()
 	events := s.rateEvents[rateKey]
 	quota := evaluateEmailQuota(events, record.CreatedAt, limits)
 	if quota.waiting {
-		s.rateMu.Unlock()
 		return goauth.EmailChangeIssueResult{Status: goauth.EmailChangeWait, RetryAt: quota.retryAt}, nil
 	}
 	if quota.hourly {
-		s.rateMu.Unlock()
 		return goauth.EmailChangeIssueResult{Status: goauth.EmailChangeHourlyLimit, RetryAt: quota.retryAt}, nil
 	}
 	if quota.daily {
-		s.rateMu.Unlock()
 		return goauth.EmailChangeIssueResult{Status: goauth.EmailChangeDailyLimit, RetryAt: quota.retryAt}, nil
 	}
 	now := record.CreatedAt
@@ -783,7 +769,6 @@ func (s *Store) IssueEmailChange(
 		}
 	}
 	s.rateEvents[rateKey] = append(events, record.CreatedAt)
-	s.rateMu.Unlock()
 	s.emailChanges[record.SubjectID.String()] = append(
 		s.emailChanges[record.SubjectID.String()],
 		&emailChange{Record: cloneEmailChangeRecord(record)},

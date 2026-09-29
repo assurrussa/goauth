@@ -51,13 +51,10 @@ func (s *Store) InAuthTransaction(ctx context.Context, fn func(context.Context) 
 	s.resets = working.resets
 	s.challenges = working.challenges
 	s.emailChanges = working.emailChanges
-	s.rateMu.Lock()
-	working.rateMu.Lock()
-	for k, v := range working.rateEvents {
-		s.rateEvents[k] = append(v[:0:0], v...)
-	}
-	working.rateMu.Unlock()
-	s.rateMu.Unlock()
+	// TakeRateLimit rejects this scope before taking the same mutex. No
+	// independently admitted attempt can be overwritten by this snapshot.
+	// Email-issue quotas remain transactional and roll back with their writes.
+	s.rateEvents = working.rateEvents
 	return nil
 }
 
@@ -119,11 +116,9 @@ func (s *Store) snapshot() *Store {
 			c.emailChanges[k] = append(c.emailChanges[k], &x)
 		}
 	}
-	s.rateMu.Lock()
 	for k, v := range s.rateEvents {
 		c.rateEvents[k] = append(v[:0:0], v...)
 	}
-	s.rateMu.Unlock()
 	return c
 }
 
