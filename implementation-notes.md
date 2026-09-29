@@ -248,3 +248,31 @@ Review lens: Security Engineering + Go/Backend + Browser/Mobile boundaries.
   specification, all 38 blocking scenario entries, complete evidence fields,
   relative file links and absence of machine-local paths. Full release/host
   acceptance and anonymous published-tag resolution remain open.
+
+## 2026-09-29: PR #8 review follow-up
+
+- Goal: fix the reviewed HTTP error contracts without changing canonical auth
+  transactions or store APIs. Base: `d72ad96`; no initial local changes.
+- Unknown commit outcomes must take precedence over joined cancellation,
+  deadline, overload or throttle causes in both HTTP adapters and must not emit
+  retry guidance. Plain infrastructure failures retain their existing mapping.
+- Net/http account validation errors use explicit 422 codes, concurrent password
+  change uses 409, and missing pending email change uses 404; unexpected internal
+  errors remain redacted 500 responses.
+- HTTP regression tests reproduced both findings before the fixes, including
+  actual account handlers through authenticated middleware. They now check
+  joined/wrapped error precedence, unchanged ordinary failures, redaction and
+  retained canonical account, credential, session and notification state.
+- Commit-outcome tests also cover cancellation and deadline errors returned by
+  the driver's commit operation. No production transaction or store API changed.
+- Final `make release-candidate-readiness` PASS: source guards, formatting,
+  vet/lint (0 issues), race/coverage, local consumers, PostgreSQL/Redis,
+  dump/restore and Chromium/HTTPS acceptance. Root coverage 83.9%, PostgreSQL
+  80.7%; govulncheck reports no reachable vulnerabilities and three unreachable
+  required-module findings.
+- Independent read-only security/HTTP review found no issues in the six-file
+  frozen snapshot. Actual PostgreSQL network-failure injection and an HTTP
+  concurrent-password race are outside these added regression tests.
+- Source fingerprint: `db4fde8f549eb9b36fcf7b91fa6c31d46c1632e2158c45c3b222211d9e65e8f7`
+  over 129 non-documentation files. Full release-SHA acceptance, publication
+  and deployment remain separate.

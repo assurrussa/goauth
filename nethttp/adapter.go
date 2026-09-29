@@ -314,16 +314,27 @@ func decode(w http.ResponseWriter, r *http.Request, value any) error {
 
 func mapError(err error) (status int, code, message string) {
 	switch {
+	case errors.Is(err, goauth.ErrOperationOutcomeUnknown):
+		// A canceled commit may have persisted; its cause must not imply safe retry.
+		return http.StatusServiceUnavailable, "operation_outcome_unknown", "operation outcome unknown"
 	case errors.Is(err, goauth.ErrPasswordHashOverloaded):
 		return http.StatusServiceUnavailable, "password_hash_overloaded", "authentication temporarily unavailable"
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return http.StatusServiceUnavailable, "authentication_unavailable", "authentication temporarily unavailable"
-	case errors.Is(err, goauth.ErrOperationOutcomeUnknown):
-		return http.StatusServiceUnavailable, "operation_outcome_unknown", "operation outcome unknown"
 	case errors.Is(err, goauth.ErrAuthenticationRateLimited):
 		return http.StatusTooManyRequests, "authentication_rate_limited", "too many authentication attempts"
 	case errors.Is(err, goauth.ErrInvalidCredentials):
 		return http.StatusUnauthorized, "invalid_credentials", "invalid credentials"
+	case errors.Is(err, goauth.ErrCurrentPasswordInvalid):
+		return http.StatusUnprocessableEntity, "current_password_invalid", "current password is invalid"
+	case errors.Is(err, goauth.ErrPasswordUnchanged):
+		return http.StatusUnprocessableEntity, "password_unchanged", "new password matches current password"
+	case errors.Is(err, goauth.ErrPasswordChangeConflict):
+		return http.StatusConflict, "password_change_conflict", "password changed concurrently"
+	case errors.Is(err, goauth.ErrEmailChangeSameValue):
+		return http.StatusUnprocessableEntity, "email_change_same_value", "new email matches current email"
+	case errors.Is(err, goauth.ErrEmailChangeNotFound):
+		return http.StatusNotFound, "email_change_not_found", "pending email change not found"
 	case errors.Is(err, goauth.ErrInvalidToken), errors.Is(err, goauth.ErrExpiredToken),
 		errors.Is(err, goauth.ErrSessionRevoked), errors.Is(err, goauth.ErrSecurityVersionMismatch):
 		return http.StatusUnauthorized, "invalid_token", "invalid or expired token"
@@ -354,6 +365,9 @@ func mapError(err error) (status int, code, message string) {
 }
 
 func retryAfterSeconds(err error) (int, bool) {
+	if errors.Is(err, goauth.ErrOperationOutcomeUnknown) {
+		return 0, false
+	}
 	if errors.Is(err, goauth.ErrPasswordHashOverloaded) {
 		return 1, true
 	}

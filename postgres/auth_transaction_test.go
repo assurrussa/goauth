@@ -42,6 +42,8 @@ func TestAuthTransactionCommitOutcome(t *testing.T) {
 		unknown   bool
 	}{
 		{"network loss", io.ErrUnexpectedEOF, true},
+		{"commit cancellation", context.Canceled, true},
+		{"commit deadline", context.DeadlineExceeded, true},
 		{"server rejected commit", &pgconn.PgError{Code: "40001", Message: "serialization failure"}, false},
 		{"successful commit", nil, false},
 	} {

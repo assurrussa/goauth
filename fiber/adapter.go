@@ -257,14 +257,15 @@ func WriteError(c gofiber.Ctx, err error) error {
 
 func mapError(err error) (status int, code, message string) {
 	switch {
+	case errors.Is(err, goauth.ErrOperationOutcomeUnknown):
+		// A canceled commit may have persisted; its cause must not imply safe retry.
+		return gofiber.StatusServiceUnavailable, "operation_outcome_unknown", "operation outcome is unknown; authenticate again"
 	case errors.Is(err, goauth.ErrPasswordHashOverloaded):
 		return gofiber.StatusServiceUnavailable, "password_hash_overloaded", "authentication temporarily unavailable"
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return gofiber.StatusServiceUnavailable, "authentication_unavailable", "authentication temporarily unavailable"
 	case errors.Is(err, goauth.ErrAuthenticationRateLimited):
 		return gofiber.StatusTooManyRequests, "authentication_rate_limited", "too many authentication attempts"
-	case errors.Is(err, goauth.ErrOperationOutcomeUnknown):
-		return gofiber.StatusServiceUnavailable, "operation_outcome_unknown", "operation outcome is unknown; authenticate again"
 	case errors.Is(err, goauth.ErrInvalidCredentials):
 		return gofiber.StatusUnauthorized, "invalid_credentials", "invalid credentials"
 	case errors.Is(err, goauth.ErrInvalidToken), errors.Is(err, goauth.ErrExpiredToken),
@@ -297,6 +298,9 @@ func mapError(err error) (status int, code, message string) {
 }
 
 func retryAfterSeconds(err error) (int, bool) {
+	if errors.Is(err, goauth.ErrOperationOutcomeUnknown) {
+		return 0, false
+	}
 	if errors.Is(err, goauth.ErrPasswordHashOverloaded) {
 		return 1, true
 	}
