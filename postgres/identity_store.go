@@ -17,7 +17,7 @@ func (s *Store) ResolveIdentityLink(
 	externalSubject string,
 ) (goauth.Account, goauth.IdentityLink, error) {
 	var link goauth.IdentityLink
-	err := s.db.QueryRowContext(ctx, `
+	err := s.queryer(ctx).QueryRowContext(ctx, `
 SELECT id, subject_id, issuer, external_subject, email_normalized, email_verified, created_at, updated_at
 FROM auth_identity_links
 WHERE issuer = $1 AND external_subject = $2`, issuer, externalSubject).Scan(
@@ -36,7 +36,7 @@ WHERE issuer = $1 AND external_subject = $2`, issuer, externalSubject).Scan(
 	if err != nil {
 		return goauth.Account{}, goauth.IdentityLink{}, fmt.Errorf("resolve identity link: %w", err)
 	}
-	account, err := getAccount(ctx, s.db, link.SubjectID)
+	account, err := getAccount(ctx, s.queryer(ctx), link.SubjectID)
 	if err != nil {
 		return goauth.Account{}, goauth.IdentityLink{}, err
 	}
@@ -52,11 +52,11 @@ func (s *Store) CreateSSOAccount(
 	if account.Subject.IsZero() || account.PrimaryEmail.ID == "" || record.Link.ID == "" {
 		return goauth.Account{}, goauth.IdentityLink{}, errors.New("invalid SSO account record")
 	}
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
 		return goauth.Account{}, goauth.IdentityLink{}, fmt.Errorf("begin SSO account transaction: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackWrite(tx, owned)
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO auth_subjects (id, status, security_version, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5)`,
@@ -103,7 +103,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 	if err := insertIdentityLink(ctx, tx, record.Link); err != nil {
 		return goauth.Account{}, goauth.IdentityLink{}, err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := finishWrite(tx, owned); err != nil {
 		return goauth.Account{}, goauth.IdentityLink{}, fmt.Errorf("commit SSO account transaction: %w", err)
 	}
 
@@ -111,7 +111,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 }
 
 func (s *Store) LinkIdentity(ctx context.Context, link goauth.IdentityLink) (goauth.IdentityLink, error) {
-	if err := insertIdentityLink(ctx, s.db, link); err != nil {
+	if err := insertIdentityLink(ctx, s.notificationExecer(ctx), link); err != nil {
 		return goauth.IdentityLink{}, err
 	}
 

@@ -13,5 +13,5 @@ maintainer time to reproduce and coordinate a fix before public disclosure.
 
 Security fixes are evaluated against the latest tagged release. The maintainer
 will state affected and fixed versions in the eventual advisory; older release
-lines have no standing support guarantee. At present `v0.4.0` is the latest
+lines have no standing support guarantee. At present `v0.4.1` is the latest
 existing tag.

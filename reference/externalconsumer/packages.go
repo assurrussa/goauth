@@ -6,6 +6,7 @@ package externalconsumer
 var StablePublicPackages = [...]string{
 	"github.com/assurrussa/goauth",
 	"github.com/assurrussa/goauth/fiber",
+	"github.com/assurrussa/goauth/nethttp",
 	"github.com/assurrussa/goauth/oidc",
 	"github.com/assurrussa/goauth/oidc/provider",
 	"github.com/assurrussa/goauth/oidc/verifier",

@@ -3,6 +3,7 @@ package goauth
 import "errors"
 
 var (
+	ErrOperationOutcomeUnknown   = errors.New("operation commit outcome is unknown")
 	ErrInvalidSubjectID          = errors.New("invalid subject ID")
 	ErrInvalidSubjectStatus      = errors.New("invalid subject status")
 	ErrInvalidIdentifierScheme   = errors.New("invalid identifier scheme")
@@ -18,6 +19,7 @@ var (
 	ErrPasswordUnchanged         = errors.New("new password matches current password")
 	ErrPasswordChangeConflict    = errors.New("password changed concurrently")
 	ErrAuthenticationRateLimited = errors.New("authentication rate limited")
+	ErrPasswordHashOverloaded    = errors.New("password hashing capacity exhausted")
 	ErrMembershipDenied          = errors.New("realm membership denied")
 	ErrEmailVerificationRequired = errors.New("verified email required")
 	ErrInvalidPassword           = errors.New("invalid password")

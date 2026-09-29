@@ -1,0 +1,61 @@
+schema_version: 1
+status: template_not_executed
+candidate:
+  version: v0.5.0
+  base_sha: null
+  working_tree_fingerprint: null
+  committed: false
+  published: false
+  deployed: false
+profiles: [P1, P2, P3, P4]
+environment:
+  go: null
+  postgres: null
+  redis: null
+  browser: null
+  identity_provider: null
+checks: []
+review:
+  status: not_run
+  source_fingerprint: null
+  scope: null
+  limitations: []
+scenarios:
+  SEC-01: {status: not_run, evidence: [], limitations: []}
+  SEC-02: {status: not_run, evidence: [], limitations: []}
+  SEC-03: {status: not_run, evidence: [], limitations: []}
+  SEC-04: {status: not_run, evidence: [], limitations: []}
+  SEC-05: {status: not_run, evidence: [], limitations: []}
+  SEC-06: {status: not_run, evidence: [], limitations: []}
+  SEC-07: {status: not_run, evidence: [], limitations: []}
+  SEC-08: {status: not_run, evidence: [], limitations: []}
+  SEC-09: {status: not_run, evidence: [], limitations: []}
+  SEC-10: {status: not_run, evidence: [], limitations: []}
+  SEC-11: {status: not_run, evidence: [], limitations: []}
+  SEC-12: {status: not_run, evidence: [], limitations: []}
+  SEC-13: {status: not_run, evidence: [], limitations: []}
+  SEC-14: {status: not_run, evidence: [], limitations: []}
+  SEC-15: {status: not_run, evidence: [], limitations: []}
+  SEC-16: {status: not_run, evidence: [], limitations: []}
+  SEC-17: {status: not_run, evidence: [], limitations: []}
+  SEC-18: {status: not_run, evidence: [], limitations: []}
+  SEC-19: {status: not_run, evidence: [], limitations: []}
+  SEC-20: {status: not_run, evidence: [], limitations: []}
+  WEB-01: {status: not_run, evidence: [], limitations: []}
+  WEB-02: {status: not_run, evidence: [], limitations: []}
+  WEB-03: {status: not_run, evidence: [], limitations: []}
+  WEB-04: {status: not_run, evidence: [], limitations: []}
+  WEB-05: {status: not_run, evidence: [], limitations: []}
+  WEB-06: {status: not_run, evidence: [], limitations: []}
+  WEB-07: {status: not_run, evidence: [], limitations: []}
+  WEB-08: {status: not_run, evidence: [], limitations: []}
+  ADM-01: {status: not_run, evidence: [], limitations: []}
+  ADM-02: {status: not_run, evidence: [], limitations: []}
+  ADM-03: {status: not_run, evidence: [], limitations: []}
+  ADM-04: {status: not_run, evidence: [], limitations: []}
+  OID-01: {status: not_run, evidence: [], limitations: []}
+  OID-02: {status: not_run, evidence: [], limitations: []}
+  OPS-01: {status: not_run, evidence: [], limitations: []}
+  OPS-02: {status: not_run, evidence: [], limitations: []}
+  OPS-03: {status: not_run, evidence: [], limitations: []}
+  OPS-04: {status: not_run, evidence: [], limitations: []}

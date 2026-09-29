@@ -12,6 +12,7 @@ import (
 
 	"github.com/assurrussa/goauth"
 	goauthfiber "github.com/assurrussa/goauth/fiber"
+	goauthhttp "github.com/assurrussa/goauth/nethttp"
 	"github.com/assurrussa/goauth/oidc"
 	"github.com/assurrussa/goauth/oidc/provider"
 	"github.com/assurrussa/goauth/oidc/verifier"
@@ -25,6 +26,24 @@ import (
 func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	t.Helper()
 
+	var authTransaction goauth.AuthTransaction = (*postgres.Store)(nil)
+	_ = authTransaction
+	_ = (*goauth.Runtime).VerifyJWT
+	_ = (*goauth.Runtime).AuthenticateSession
+	_ = goauth.ErrOperationOutcomeUnknown
+	_ = goauth.ErrPasswordHashOverloaded
+	_ = goauth.DefaultMaxConcurrentPasswordHashes
+	_ = goauth.Config{MaxConcurrentPasswordHashes: 4}
+	_ = goauth.Config{AutoLinkVerifiedEmailIssuers: []string{}, AuthTransaction: authTransaction}
+	_ = goauth.PasswordPolicy{DisableBlocklist: true}
+	_ = goauthhttp.New
+	_ = goauthhttp.RealmMiddlewareOptions{OfflineJWT: true}
+	_ = goauthhttp.AuthContext
+	_ = goauthhttp.WriteError
+	_ = verifier.Options{DiscoveryURL: "", HTTPTimeout: 0, MaxResponseBytes: 0, AllowInsecureHTTP: false}
+	_ = verifier.Options{AccessTokenProfile: verifier.AccessTokenProfileZITADEL}
+	_ = verifier.AccessTokenProfileGoAuth
+	_ = verifier.AccessTokenProfile("")
 	_ = goauth.NewRuntime
 	_ = goauth.NewKeyRing
 	_ = goauth.NewArgon2idHasher

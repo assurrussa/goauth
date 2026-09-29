@@ -1,10 +1,10 @@
 .DEFAULT_GOAL := full
 
-.PHONY: full prepare check tidy-check tidy generate fmt fmt-check lint lint-fix vet test test-full test-race bench-all cover-html coverage-unit-check coverage-integration-check coverage-aggregate integration integration-up integration-down integration-local vulnerability-check externalconsumer-local externalconsumer-postgres-local externalconsumer-published release-candidate-readiness release-readiness
+.PHONY: full prepare check tidy-check tidy generate fmt fmt-check lint lint-fix vet test test-full test-race bench-all cover-html coverage-unit-check coverage-integration-check coverage-aggregate integration integration-up integration-down integration-local vulnerability-check externalconsumer-local externalconsumer-postgres-local externalconsumer-published release-candidate-readiness release-readiness browser-acceptance backup-restore-check
 
 GO_MODULE := $(shell awk '$$1 == "module" { print $$2; exit }' go.mod)
 GO_FILES := $(shell find . -type f -name '*.go' -not -path './.cache/*' -not -path './.go-cache/*' -not -path './tmp/*' -not -path './vendor/*')
-VERSION ?= v0.4.0
+VERSION ?= v0.5.0
 GOCACHE ?= $(CURDIR)/.go-cache/gocache
 GOMODCACHE ?= $(CURDIR)/.go-cache/gomodcache
 GOPATH ?= $(CURDIR)/.go-cache/gopath
@@ -27,7 +27,7 @@ prepare: tidy generate fmt lint-fix
 
 check: tidy-check fmt-check vet lint test-full coverage-unit-check externalconsumer-local
 
-release-candidate-readiness: check integration vulnerability-check coverage-aggregate
+release-candidate-readiness: check integration vulnerability-check coverage-aggregate backup-restore-check browser-acceptance
 
 release-readiness: release-candidate-readiness externalconsumer-published
 
@@ -96,6 +96,13 @@ integration-up:
 integration-down:
 	docker compose -f compose.integration.yml -p goauth-v02-integration down -v
 
+# Explicit invocations must fail when their tools/engine are missing.
+browser-acceptance:
+	GOAUTH_BROWSER_ACCEPTANCE=1 go test -race -tags=integration -run '^TestPostgresBrowserAcceptance$$' -count=1 ./examples/nethttp
+
+backup-restore-check:
+	GOAUTH_TEST_BACKUP_RESTORE=1 go test -race -tags=integration -run '^TestPostgresBackupRestore$$' -count=1 ./postgres
+
 integration-local: integration-up
 	@status=0; \
 		$(MAKE) integration || status=$$?; \
@@ -112,4 +119,4 @@ externalconsumer-postgres-local:
 	go run ./cmd/externalconsumerprobe --local-path "$(CURDIR)" --go-mod-cache "$(GOMODCACHE)" --postgres-integration
 
 externalconsumer-published:
-	go run ./cmd/externalconsumerprobe --version "$(VERSION)" --go-mod-cache "$(GOMODCACHE)"
+	go run ./cmd/externalconsumerprobe --version "$(VERSION)" --go-mod-cache "$(GOMODCACHE)" --postgres-integration

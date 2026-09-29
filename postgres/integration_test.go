@@ -88,18 +88,24 @@ subject_id UUID PRIMARY KEY REFERENCES auth_subjects(id)
 	_, err = db.Exec(`
 CREATE TABLE auth_confirmation_codes (id BIGSERIAL PRIMARY KEY);
 CREATE TABLE auth_external_identities (id BIGSERIAL PRIMARY KEY);
-CREATE TABLE role_hierarchy (id BIGSERIAL PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS role_hierarchy (id BIGSERIAL PRIMARY KEY);
 CREATE TABLE goauth_goose_db_version (id BIGSERIAL PRIMARY KEY);`)
 	require.NoError(t, err)
 	require.NoError(t, postgres.Down(context.Background(), db, postgres.ConfirmResetAuthState))
 	for _, table := range []string{
 		"auth_subjects", "auth_confirmation_codes", "auth_external_identities",
-		"role_hierarchy", "goauth_goose_db_version",
+		"goauth_goose_db_version",
 	} {
 		var relation sql.NullString
 		require.NoError(t, db.QueryRow(`SELECT to_regclass($1)::text`, "public."+table).Scan(&relation))
 		require.False(t, relation.Valid, table)
 	}
+	var hostTable sql.NullString
+	require.NoError(t, db.QueryRow(`SELECT to_regclass('public.role_hierarchy')::text`).Scan(&hostTable))
+	require.True(t, hostTable.Valid, "host RBAC table must survive auth reset")
+	_, err = db.Exec(`DROP TABLE role_hierarchy`)
+	require.NoError(t, err)
+
 	require.NoError(t, postgres.Migrate(context.Background(), db))
 
 	resetSchema(t, db)

@@ -10,23 +10,52 @@ import (
 	"github.com/google/uuid"
 )
 
-func (r *Runtime) ResolveExternalIdentity(
-	ctx context.Context,
-	external ExternalIdentity,
-) (Account, error) {
-	external, normalizedEmail, err := normalizeExternalIdentity(external)
+// ResolveExternalIdentity accepts only identity claims verified by a trusted
+// provider adapter. Never bind unverified client JSON directly to this method.
+func (r *Runtime) ResolveExternalIdentity(ctx context.Context, external ExternalIdentity) (Account, error) {
+	account, write, err := r.prepareExternalIdentity(ctx, external)
 	if err != nil {
 		return Account{}, err
+	}
+	if err := r.authTransaction.InAuthTransaction(ctx, write); err != nil {
+		return Account{}, err
+	}
+	return account, nil
+}
+
+func (r *Runtime) allowsAutoLink(issuer string) bool {
+	for _, allowed := range r.autoLinkIssuers {
+		if allowed == "*" || allowed == issuer {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *Runtime) prepareExternalIdentity(
+	ctx context.Context,
+	external ExternalIdentity,
+) (Account, func(context.Context) error, error) {
+	if external.Issuer == "" || external.Subject == "" {
+		return Account{}, nil, ErrInvalidIdentifier
 	}
 	account, _, err := r.store.ResolveIdentityLink(ctx, external.Issuer, external.Subject)
 	if err == nil {
 		if account.Subject.Status != SubjectStatusActive {
-			return Account{}, ErrAccountUnavailable
+			return Account{}, nil, ErrAccountUnavailable
 		}
-		return account, nil
+		return account, func(context.Context) error { return nil }, nil
 	}
 	if !errors.Is(err, ErrIdentityLinkNotFound) {
-		return Account{}, fmt.Errorf("resolve identity link: %w", err)
+		return Account{}, nil, fmt.Errorf("resolve identity link: %w", err)
+	}
+
+	external, normalizedEmail, err := normalizeExternalIdentity(external)
+	if err != nil {
+		return Account{}, nil, err
+	}
+	if normalizedEmail == "" {
+		return Account{}, nil, ErrInvalidIdentifier
 	}
 
 	existing, findErr := r.store.FindAccount(ctx, IdentifierInput{
@@ -35,22 +64,34 @@ func (r *Runtime) ResolveExternalIdentity(
 	})
 	switch {
 	case findErr == nil && !existing.IsZero():
-		if !external.EmailVerified || !existing.EmailVerified() {
-			return Account{}, ErrExplicitIdentityLink
+		if !external.EmailVerified || !existing.EmailVerified() || !r.allowsAutoLink(external.Issuer) {
+			return Account{}, nil, ErrExplicitIdentityLink
 		}
 		link := newIdentityLink(existing.Subject.ID, external, normalizedEmail, r.now().UTC())
-		if _, err := r.store.LinkIdentity(ctx, link); err != nil {
-			return Account{}, fmt.Errorf("auto-link verified identity: %w", err)
+		if existing.Subject.Status != SubjectStatusActive {
+			return Account{}, nil, ErrAccountUnavailable
 		}
-		_ = r.recordAudit(ctx, SecurityEvent{
-			Type:       SecurityEventIdentityLinked,
-			SubjectID:  existing.Subject.ID,
-			At:         r.now().UTC(),
-			Attributes: map[string]string{"issuer": external.Issuer, "mode": "verified_email"},
-		})
-		return existing, nil
+		return existing, func(ctx context.Context) error {
+			current, err := r.store.LockAccount(ctx, existing.Subject.ID)
+			if err != nil {
+				return err
+			}
+			if current.Subject.Status != SubjectStatusActive ||
+				current.Subject.SecurityVersion != existing.Subject.SecurityVersion ||
+				!current.EmailVerified() || current.PrimaryEmail.NormalizedValue != normalizedEmail {
+				return ErrExplicitIdentityLink
+			}
+			if _, err := r.store.LinkIdentity(ctx, link); err != nil {
+				return fmt.Errorf("auto-link verified identity: %w", err)
+			}
+			return r.recordAudit(ctx, SecurityEvent{
+				Type: SecurityEventIdentityLinked, SubjectID: existing.Subject.ID, At: r.now().UTC(),
+				Attributes: map[string]string{"issuer": external.Issuer, "mode": "verified_email"},
+			})
+		}, nil
+
 	case findErr != nil && !errors.Is(findErr, ErrAccountNotFound):
-		return Account{}, fmt.Errorf("find account for external identity: %w", findErr)
+		return Account{}, nil, fmt.Errorf("find account for external identity: %w", findErr)
 	}
 
 	now := r.now().UTC()
@@ -79,12 +120,10 @@ func (r *Runtime) ResolveExternalIdentity(
 		account.PrimaryEmail.VerifiedAt = &verifiedAt
 	}
 	link := newIdentityLink(subjectID, external, normalizedEmail, now)
-	created, _, err := r.store.CreateSSOAccount(ctx, SSOAccountRecord{Account: account, Link: link})
-	if err != nil {
-		return Account{}, fmt.Errorf("create SSO-only account: %w", err)
-	}
-
-	return created, nil
+	return account, func(ctx context.Context) error {
+		_, _, err := r.store.CreateSSOAccount(ctx, SSOAccountRecord{Account: account, Link: link})
+		return err
+	}, nil
 }
 
 type ExternalLoginRequest struct {
@@ -103,7 +142,7 @@ func (r *Runtime) LoginExternal(ctx context.Context, request ExternalLoginReques
 	if err := r.validateRealm(realm); err != nil {
 		return LoginResult{}, err
 	}
-	account, err := r.ResolveExternalIdentity(ctx, request.Identity)
+	account, write, err := r.prepareExternalIdentity(ctx, request.Identity)
 	if err != nil {
 		return LoginResult{}, err
 	}
@@ -114,21 +153,45 @@ func (r *Runtime) LoginExternal(ctx context.Context, request ExternalLoginReques
 	if err != nil {
 		return LoginResult{}, err
 	}
-	tokens, err := r.issueSession(ctx, account, realm, scope)
+	prepared, err := r.prepareSession(ctx, account, realm, scope)
 	if err != nil {
 		return LoginResult{}, err
 	}
 
-	return LoginResult{Account: account, Tokens: tokens}, nil
+	if err := r.authTransaction.InAuthTransaction(ctx, func(ctx context.Context) error {
+		if err := write(ctx); err != nil {
+			return err
+		}
+		return r.store.CreateSession(ctx, prepared.record)
+	}); err != nil {
+		return LoginResult{}, err
+	}
+	return LoginResult{Account: account, Tokens: prepared.tokens}, nil
 }
 
-func (r *Runtime) LinkExternalIdentity(
+func (r *Runtime) LinkExternalIdentity(ctx context.Context, auth AuthContext, external ExternalIdentity) (IdentityLink, error) {
+	var link IdentityLink
+	err := r.authTransaction.InAuthTransaction(ctx, func(ctx context.Context) error {
+		var err error
+		link, err = r.linkExternalIdentity(ctx, auth, external)
+		return err
+	})
+	if err != nil {
+		return IdentityLink{}, err
+	}
+	return link, nil
+}
+
+func (r *Runtime) linkExternalIdentity(
 	ctx context.Context,
 	auth AuthContext,
 	external ExternalIdentity,
 ) (IdentityLink, error) {
 	if auth.SubjectID.IsZero() || auth.SessionID == "" || auth.Scope != SessionScopeAuthenticated {
 		return IdentityLink{}, ErrExplicitIdentityLink
+	}
+	if _, err := r.store.LockAccount(ctx, auth.SubjectID); err != nil {
+		return IdentityLink{}, err
 	}
 	security, err := r.store.IntrospectSession(ctx, auth.SessionID)
 	now := r.now().UTC()
@@ -171,11 +234,12 @@ func (r *Runtime) LinkExternalIdentity(
 }
 
 func normalizeExternalIdentity(external ExternalIdentity) (ExternalIdentity, string, error) {
-	external.Issuer = strings.TrimRight(strings.TrimSpace(external.Issuer), "/")
-	external.Subject = strings.TrimSpace(external.Subject)
 	external.Email = strings.TrimSpace(external.Email)
-	if external.Issuer == "" || external.Subject == "" || external.Email == "" {
+	if external.Issuer == "" || external.Subject == "" {
 		return ExternalIdentity{}, "", ErrInvalidIdentifier
+	}
+	if external.Email == "" {
+		return external, "", nil
 	}
 	normalizedEmail, err := NormalizeEmail(external.Email)
 	if err != nil {

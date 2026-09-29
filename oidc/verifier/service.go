@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -18,47 +20,108 @@ import (
 )
 
 const (
-	defaultHTTPTimeout = 5 * time.Second
-	defaultCacheTTL    = 5 * time.Minute
+	defaultHTTPTimeout              = 5 * time.Second
+	defaultCacheTTL                 = 5 * time.Minute
+	defaultMaxResponseBytes   int64 = 1 << 20
+	unknownKeyRefreshCooldown       = 30 * time.Second
 )
 
 var errUnknownKeyID = errors.New("oidc verifier key id was not found in jwks")
 
+// AccessTokenProfile defines the issuer-specific evidence that a JWT is an access token.
+// Profiles are explicit: signature, issuer and audience alone do not distinguish ID tokens.
+type AccessTokenProfile string
+
+const (
+	AccessTokenProfileGoAuth  AccessTokenProfile = "goauth"
+	AccessTokenProfileZITADEL AccessTokenProfile = "zitadel-jwt" //nolint:gosec // Public profile name, not a credential.
+)
+
 type Options struct {
-	Issuer         string
-	Audience       string
-	RequiredScopes []string
-	HTTPClient     *http.Client
-	CacheTTL       time.Duration
-	Now            func() time.Time
+	// AccessTokenProfile defaults to GoAuth, which requires token_use=access.
+	AccessTokenProfile AccessTokenProfile
+	Issuer             string
+	// DiscoveryURL overrides the discovery endpoint without changing issuer identity.
+	DiscoveryURL string
+	// HTTPTimeout bounds each fetch, including clients without a Timeout. Defaults to five seconds.
+	HTTPTimeout time.Duration
+	// MaxResponseBytes bounds each discovery or JWKS response. Defaults to one MiB.
+	MaxResponseBytes int64
+	// AllowInsecureHTTP explicitly permits HTTP endpoints for local development.
+	AllowInsecureHTTP bool
+	Audience          string
+	RequiredScopes    []string
+	HTTPClient        *http.Client
+	CacheTTL          time.Duration
+	Now               func() time.Time
 }
 
 type Service struct {
-	issuer         string
-	audience       string
-	requiredScopes []string
-	httpClient     *http.Client
-	cacheTTL       time.Duration
-	now            func() time.Time
+	accessTokenProfile AccessTokenProfile
+	issuer             string
+	discoveryURL       string
+	httpTimeout        time.Duration
+	maxResponseBytes   int64
+	allowInsecureHTTP  bool
+	audience           string
+	requiredScopes     []string
+	httpClient         *http.Client
+	cacheTTL           time.Duration
+	now                func() time.Time
 
 	mu               sync.RWMutex
 	discovery        oidc.DiscoveryMetadata
 	discoveryFetched time.Time
 	jwks             map[string]*rsa.PublicKey
 	jwksFetched      time.Time
+	refresh          *refreshFlight
+	unknownRefreshAt time.Time
+}
+
+type refreshFlight struct {
+	done chan struct{}
+	err  error
 }
 
 type accessTokenClaims struct {
+	raw      map[string]json.RawMessage
 	ClientID string `json:"client_id,omitempty"`
 	Scope    string `json:"scope,omitempty"`
-	TokenUse string `json:"token_use"`
 	jwt.RegisteredClaims
 }
 
+func (c *accessTokenClaims) UnmarshalJSON(data []byte) error {
+	type plain accessTokenClaims
+	if err := json.Unmarshal(data, (*plain)(c)); err != nil {
+		return err
+	}
+	return json.Unmarshal(data, &c.raw)
+}
+
 func New(opts Options) (*Service, error) {
-	issuer := strings.TrimRight(strings.TrimSpace(opts.Issuer), "/")
+	profile := opts.AccessTokenProfile
+	if profile == "" {
+		profile = AccessTokenProfileGoAuth
+	}
+	if profile != AccessTokenProfileGoAuth && profile != AccessTokenProfileZITADEL {
+		return nil, errors.New("unsupported access token profile")
+	}
+	issuer := opts.Issuer
 	if issuer == "" {
 		return nil, errors.New("issuer is required")
+	}
+	if strings.Contains(issuer, "?") {
+		return nil, errors.New("issuer must not contain a query")
+	}
+	if err := validateEndpoint(issuer, opts.AllowInsecureHTTP); err != nil {
+		return nil, fmt.Errorf("invalid issuer: %w", err)
+	}
+	discoveryURL := opts.DiscoveryURL
+	if discoveryURL == "" {
+		discoveryURL = strings.TrimRight(issuer, "/") + "/.well-known/openid-configuration"
+	}
+	if err := validateEndpoint(discoveryURL, opts.AllowInsecureHTTP); err != nil {
+		return nil, fmt.Errorf("invalid discovery URL: %w", err)
 	}
 	audience := strings.TrimSpace(opts.Audience)
 	if audience == "" {
@@ -67,9 +130,19 @@ func New(opts Options) (*Service, error) {
 
 	httpClient := opts.HTTPClient
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: defaultHTTPTimeout}
+		httpClient = &http.Client{}
 	}
 
+	clientCopy := *httpClient
+	clientCopy.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
+	httpTimeout := opts.HTTPTimeout
+	if httpTimeout <= 0 {
+		httpTimeout = defaultHTTPTimeout
+	}
+	maxResponseBytes := opts.MaxResponseBytes
+	if maxResponseBytes <= 0 {
+		maxResponseBytes = defaultMaxResponseBytes
+	}
 	cacheTTL := opts.CacheTTL
 	if cacheTTL <= 0 {
 		cacheTTL = defaultCacheTTL
@@ -81,13 +154,18 @@ func New(opts Options) (*Service, error) {
 	}
 
 	return &Service{
-		issuer:         issuer,
-		audience:       audience,
-		requiredScopes: oidc.NormalizeScopes(opts.RequiredScopes),
-		httpClient:     httpClient,
-		cacheTTL:       cacheTTL,
-		now:            now,
-		jwks:           make(map[string]*rsa.PublicKey),
+		accessTokenProfile: profile,
+		issuer:             issuer,
+		discoveryURL:       discoveryURL,
+		httpTimeout:        httpTimeout,
+		maxResponseBytes:   maxResponseBytes,
+		allowInsecureHTTP:  opts.AllowInsecureHTTP,
+		audience:           audience,
+		requiredScopes:     oidc.NormalizeScopes(opts.RequiredScopes),
+		httpClient:         &clientCopy,
+		cacheTTL:           cacheTTL,
+		now:                now,
+		jwks:               make(map[string]*rsa.PublicKey),
 	}, nil
 }
 
@@ -111,8 +189,8 @@ func (s *Service) VerifyAccessToken(ctx context.Context, rawToken string) (Verif
 	if err != nil {
 		return VerifiedAccessToken{}, err
 	}
-	if claims.TokenUse != "" && claims.TokenUse != "access" {
-		return VerifiedAccessToken{}, errors.New("token_use must be access")
+	if err := s.validateTokenProfile(claims); err != nil {
+		return VerifiedAccessToken{}, err
 	}
 
 	scopes := oidc.ParseScope(claims.Scope)
@@ -142,6 +220,46 @@ func (s *Service) VerifyAccessToken(ctx context.Context, rawToken string) (Verif
 	return verified, nil
 }
 
+func (s *Service) validateTokenProfile(claims *accessTokenClaims) error {
+	use, present := claims.raw["token_use"]
+	var tokenUse string
+	if present {
+		if err := json.Unmarshal(use, &tokenUse); err != nil || tokenUse != "access" {
+			return errors.New("token_use must be access")
+		}
+	}
+	if s.accessTokenProfile == AccessTokenProfileGoAuth {
+		if !present {
+			return errors.New("token_use must be access")
+		}
+		return nil
+	}
+	// ZITADEL v4 access tokens have jti and nbf; ID and logout JWTs have
+	// authentication/session claims instead. Presence, including null or empty
+	// values, is rejected so malformed claims cannot erase the token distinction.
+	for _, name := range []string{"nonce", "auth_time", "amr", "acr", "sid", "events", "at_hash", "c_hash", "s_hash"} {
+		if _, present := claims.raw[name]; present {
+			return fmt.Errorf("claim %q is not allowed in a ZITADEL access token", name)
+		}
+	}
+	var tokenID string
+	if err := json.Unmarshal(claims.raw["jti"], &tokenID); err != nil || strings.TrimSpace(tokenID) == "" {
+		return errors.New("jti is required for a ZITADEL access token")
+	}
+	nbf := strings.TrimSpace(string(claims.raw["nbf"]))
+	if claims.NotBefore == nil || nbf == "" || nbf[0] == '"' || nbf == "null" {
+		return errors.New("numeric nbf is required for a ZITADEL access token")
+	}
+	var declaredNBF jwt.NumericDate
+	if err := json.Unmarshal(claims.raw["nbf"], &declaredNBF); err != nil || !declaredNBF.Equal(claims.NotBefore.Time) {
+		return errors.New("nbf claim is ambiguous or malformed")
+	}
+	if !claims.NotBefore.Before(claims.ExpiresAt.Time) {
+		return errors.New("nbf must precede exp")
+	}
+	return nil
+}
+
 func (s *Service) parseAccessToken(rawToken string) (*accessTokenClaims, string, error) {
 	keys := s.snapshotJWKS()
 	parser := jwt.NewParser(
@@ -149,6 +267,8 @@ func (s *Service) parseAccessToken(rawToken string) (*accessTokenClaims, string,
 		jwt.WithIssuer(s.issuer),
 		jwt.WithAudience(s.audience),
 		jwt.WithTimeFunc(s.now),
+		jwt.WithExpirationRequired(),
+		jwt.WithIssuedAt(),
 	)
 
 	claims := &accessTokenClaims{}
@@ -169,6 +289,9 @@ func (s *Service) parseAccessToken(rawToken string) (*accessTokenClaims, string,
 		return nil, "", errors.New("access token is invalid")
 	}
 
+	if claims.Subject == "" {
+		return nil, "", errors.New("subject is required")
+	}
 	return claims, keyID, nil
 }
 
@@ -184,77 +307,75 @@ func (s *Service) snapshotJWKS() map[string]*rsa.PublicKey {
 	return snapshot
 }
 
-func (s *Service) ensureDiscovery(ctx context.Context, force bool) (oidc.DiscoveryMetadata, error) {
+// Fetches are serialized by ensureJWKS, so discovery and key rotation share one flight.
+func (s *Service) ensureDiscovery(ctx context.Context) (oidc.DiscoveryMetadata, error) {
 	s.mu.RLock()
-	if !force && s.discovery.Issuer != "" && !cacheExpired(s.discoveryFetched, s.cacheTTL, s.now) {
+	if s.discovery.Issuer != "" && !cacheExpired(s.discoveryFetched, s.cacheTTL, s.now) {
 		discovery := s.discovery
 		s.mu.RUnlock()
 		return discovery, nil
 	}
 	s.mu.RUnlock()
-
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, s.issuer+"/.well-known/openid-configuration", nil)
-	if err != nil {
-		return oidc.DiscoveryMetadata{}, fmt.Errorf("build discovery request: %w", err)
-	}
-
-	response, err := s.httpClient.Do(request)
-	if err != nil {
+	var metadata oidc.DiscoveryMetadata
+	if err := s.fetchJSON(ctx, s.discoveryURL, &metadata); err != nil {
 		return oidc.DiscoveryMetadata{}, fmt.Errorf("fetch discovery metadata: %w", err)
 	}
-	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode != http.StatusOK {
-		return oidc.DiscoveryMetadata{}, fmt.Errorf("fetch discovery metadata: unexpected status %d", response.StatusCode)
+	if metadata.Issuer != s.issuer {
+		return oidc.DiscoveryMetadata{}, errors.New("discovery issuer does not match configured issuer")
 	}
-
-	var metadata oidc.DiscoveryMetadata
-	if err := json.NewDecoder(response.Body).Decode(&metadata); err != nil {
-		return oidc.DiscoveryMetadata{}, fmt.Errorf("decode discovery metadata: %w", err)
+	if err := validateEndpoint(metadata.JWKSURI, s.allowInsecureHTTP); err != nil {
+		return oidc.DiscoveryMetadata{}, fmt.Errorf("invalid jwks_uri: %w", err)
 	}
-
 	s.mu.Lock()
 	s.discovery = metadata
 	s.discoveryFetched = s.now()
 	s.mu.Unlock()
-
 	return metadata, nil
 }
 
 func (s *Service) ensureJWKS(ctx context.Context, force bool) error {
-	s.mu.RLock()
+	s.mu.Lock()
 	if !force && len(s.jwks) > 0 && !cacheExpired(s.jwksFetched, s.cacheTTL, s.now) {
-		s.mu.RUnlock()
+		s.mu.Unlock()
 		return nil
 	}
-	s.mu.RUnlock()
+	if flight := s.refresh; flight != nil {
+		s.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-flight.done:
+			return flight.err
+		}
+	}
+	if force && !s.unknownRefreshAt.IsZero() && s.now().Before(s.unknownRefreshAt.Add(unknownKeyRefreshCooldown)) {
+		s.mu.Unlock()
+		return nil
+	}
+	flight := &refreshFlight{done: make(chan struct{})}
+	s.refresh = flight
+	if force {
+		s.unknownRefreshAt = s.now()
+	}
+	s.mu.Unlock()
+	err := s.refreshJWKS(ctx)
+	s.mu.Lock()
+	flight.err = err
+	s.refresh = nil
+	close(flight.done)
+	s.mu.Unlock()
+	return err
+}
 
-	discovery, err := s.ensureDiscovery(ctx, force)
+func (s *Service) refreshJWKS(ctx context.Context) error {
+	discovery, err := s.ensureDiscovery(ctx)
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(discovery.JWKSURI) == "" {
-		return errors.New("jwks_uri is empty")
-	}
-
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, discovery.JWKSURI, nil)
-	if err != nil {
-		return fmt.Errorf("build jwks request: %w", err)
-	}
-
-	response, err := s.httpClient.Do(request)
-	if err != nil {
+	var jwks oidc.JWKS
+	if err := s.fetchJSON(ctx, discovery.JWKSURI, &jwks); err != nil {
 		return fmt.Errorf("fetch jwks: %w", err)
 	}
-	defer func() { _ = response.Body.Close() }()
-	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("fetch jwks: unexpected status %d", response.StatusCode)
-	}
-
-	var jwks oidc.JWKS
-	if err := json.NewDecoder(response.Body).Decode(&jwks); err != nil {
-		return fmt.Errorf("decode jwks: %w", err)
-	}
-
 	keys := make(map[string]*rsa.PublicKey, len(jwks.Keys))
 	for _, key := range jwks.Keys {
 		if strings.TrimSpace(key.Kid) == "" {
@@ -266,12 +387,58 @@ func (s *Service) ensureJWKS(ctx context.Context, force bool) error {
 		}
 		keys[key.Kid] = publicKey
 	}
-
+	if len(keys) == 0 {
+		return errors.New("jwks contains no usable keys")
+	}
 	s.mu.Lock()
 	s.jwks = keys
 	s.jwksFetched = s.now()
 	s.mu.Unlock()
+	return nil
+}
 
+func (s *Service) fetchJSON(ctx context.Context, endpoint string, target any) error {
+	if err := validateEndpoint(endpoint, s.allowInsecureHTTP); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, s.httpTimeout)
+	defer cancel()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	response, err := s.httpClient.Do(request)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status %d", response.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, s.maxResponseBytes+1))
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+	if int64(len(body)) > s.maxResponseBytes {
+		return errors.New("response exceeds maximum size")
+	}
+	if err := json.Unmarshal(body, target); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+	return nil
+}
+
+func validateEndpoint(endpoint string, allowInsecureHTTP bool) error {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return err
+	}
+	if parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
+		return errors.New("endpoint must be an absolute URL without credentials or fragment")
+	}
+	if parsed.Scheme != "https" && (!allowInsecureHTTP || parsed.Scheme != "http") {
+		return errors.New("endpoint must use HTTPS")
+	}
 	return nil
 }
 

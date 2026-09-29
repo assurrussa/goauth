@@ -29,6 +29,9 @@ func (s *Store) IssueEmailChange(
 		return goauth.EmailChangeIssueResult{}, fmt.Errorf("begin email change issue: %w", err)
 	}
 	defer rollbackWrite(tx, owned)
+	if err := lockSubject(ctx, tx, record.SubjectID); err != nil {
+		return goauth.EmailChangeIssueResult{}, err
+	}
 
 	lockKey := record.RateDigest.KeyID + ":" + hex.EncodeToString(record.RateDigest.Digest) + ":" + action
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, lockKey); err != nil {
@@ -147,7 +150,7 @@ func (s *Store) GetPendingEmailChange(
 	now time.Time,
 ) (goauth.PendingEmailChange, error) {
 	var pending goauth.PendingEmailChange
-	err := s.db.QueryRowContext(ctx, `
+	err := s.queryer(ctx).QueryRowContext(ctx, `
 SELECT id, subject_id, new_display_value, attempts, max_attempts, created_at, expires_at
 FROM auth_email_change_records
 WHERE subject_id = $1 AND consumed_at IS NULL AND expires_at > $2
@@ -180,6 +183,9 @@ func (s *Store) VerifyEmailChange(
 		return goauth.EmailChangeVerifyResult{}, fmt.Errorf("begin email change verification: %w", err)
 	}
 	defer rollbackWrite(tx, owned)
+	if err := lockSubject(ctx, tx, request.SubjectID); err != nil {
+		return goauth.EmailChangeVerifyResult{}, err
+	}
 
 	var (
 		id           string

@@ -97,6 +97,7 @@ import (
 
 	goauth "GOAUTH_MODULE"
 	goauthfiber "GOAUTH_MODULE/fiber"
+ goauthhttp "GOAUTH_MODULE/nethttp"
 	"GOAUTH_MODULE/oidc"
 	"GOAUTH_MODULE/oidc/provider"
 	"GOAUTH_MODULE/oidc/verifier"
@@ -147,6 +148,15 @@ func TestRuntimeFiberOIDCAndRBACWiring(t *testing.T) {
 	if response.StatusCode != http.StatusCreated {
 		t.Fatalf("register status = %d", response.StatusCode)
 	}
+
+ httpAdapter,err:=goauthhttp.New(fixture.Runtime)
+ if err!=nil{t.Fatal(err)}
+ httpRequest:=httptest.NewRequest(http.MethodPost,"/auth/register",
+strings.NewReader("{\"email\":\"http-probe@example.test\",\"password\":\"Probe-Passphrase-123\"}"))
+ httpRequest.Header.Set("Content-Type","application/json")
+ recorded:=httptest.NewRecorder()
+ httpAdapter.Register(recorded,httpRequest)
+ if recorded.Code!=http.StatusCreated{t.Fatalf("net/http register status = %d",recorded.Code)}
 
 	permissionService, err := rbac.New(allowRBACStore{}, nil)
 	if err != nil {
@@ -214,6 +224,7 @@ import (
 
 	goauth "GOAUTH_MODULE"
 	goauthfiber "GOAUTH_MODULE/fiber"
+ goauthhttp "GOAUTH_MODULE/nethttp"
 	"GOAUTH_MODULE/postgres"
 	"GOAUTH_MODULE/rbac"
 )
@@ -422,6 +433,18 @@ func TestPostgresRuntimeExternalConsumer(t *testing.T) {
 	if response.StatusCode != http.StatusNoContent {
 		t.Fatalf("introspected protected route status = %d", response.StatusCode)
 	}
+
+ httpAdapter,err:=goauthhttp.New(runtime)
+ if err!=nil{t.Fatal(err)}
+ protected:=httpAdapter.RequireRealm(goauth.RealmUser,goauthhttp.RealmMiddlewareOptions{})(
+http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
+  auth,ok:=goauthhttp.AuthContext(r.Context())
+  if !ok||auth.SubjectID!=subjectID{t.Error("net/http lost auth context")}
+  w.WriteHeader(http.StatusNoContent)
+ }))
+ recorded:=httptest.NewRecorder()
+ protected.ServeHTTP(recorded,protectedRequest())
+ if recorded.Code!=http.StatusNoContent{t.Fatalf("net/http PostgreSQL protected status = %d",recorded.Code)}
 
 	permissions, err := runtime.RBAC(nil)
 	if err != nil {

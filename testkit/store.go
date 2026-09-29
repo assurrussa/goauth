@@ -13,6 +13,7 @@ import (
 )
 
 type Store struct {
+	audits       []goauth.SecurityEvent
 	mu           sync.Mutex
 	accounts     map[string]goauth.Account
 	identifiers  map[string]string
@@ -78,9 +79,10 @@ func NewStore() *Store {
 }
 
 func (s *Store) FindAccount(
-	_ context.Context,
+	ctx context.Context,
 	identifier goauth.IdentifierInput,
 ) (goauth.Account, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -93,10 +95,11 @@ func (s *Store) FindAccount(
 }
 
 func (s *Store) ResolveIdentityLink(
-	_ context.Context,
+	ctx context.Context,
 	issuer string,
 	externalSubject string,
 ) (goauth.Account, goauth.IdentityLink, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -109,9 +112,10 @@ func (s *Store) ResolveIdentityLink(
 }
 
 func (s *Store) CreateSSOAccount(
-	_ context.Context,
+	ctx context.Context,
 	record goauth.SSOAccountRecord,
 ) (goauth.Account, goauth.IdentityLink, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -132,7 +136,8 @@ func (s *Store) CreateSSOAccount(
 	return cloneAccount(account), record.Link, nil
 }
 
-func (s *Store) LinkIdentity(_ context.Context, link goauth.IdentityLink) (goauth.IdentityLink, error) {
+func (s *Store) LinkIdentity(ctx context.Context, link goauth.IdentityLink) (goauth.IdentityLink, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -152,9 +157,10 @@ func (s *Store) LinkIdentity(_ context.Context, link goauth.IdentityLink) (goaut
 }
 
 func (s *Store) CreateLocalAccount(
-	_ context.Context,
+	ctx context.Context,
 	record goauth.LocalAccountRecord,
 ) (goauth.Account, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -172,9 +178,10 @@ func (s *Store) CreateLocalAccount(
 }
 
 func (s *Store) FindLocalAccount(
-	_ context.Context,
+	ctx context.Context,
 	identifier goauth.IdentifierInput,
 ) (goauth.LocalAccountRecord, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -191,9 +198,10 @@ func (s *Store) FindLocalAccount(
 }
 
 func (s *Store) GetLocalAccount(
-	_ context.Context,
+	ctx context.Context,
 	subjectID goauth.SubjectID,
 ) (goauth.LocalAccountRecord, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -210,7 +218,8 @@ func (s *Store) GetLocalAccount(
 	return goauth.LocalAccountRecord{Account: cloneAccount(account), PasswordPHC: password}, nil
 }
 
-func (s *Store) GetAccount(_ context.Context, subjectID goauth.SubjectID) (goauth.Account, error) {
+func (s *Store) GetAccount(ctx context.Context, subjectID goauth.SubjectID) (goauth.Account, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -223,11 +232,12 @@ func (s *Store) GetAccount(_ context.Context, subjectID goauth.SubjectID) (goaut
 }
 
 func (s *Store) UpdateBasicProfile(
-	_ context.Context,
+	ctx context.Context,
 	subjectID goauth.SubjectID,
 	profile goauth.BasicProfile,
 	now time.Time,
 ) (goauth.Account, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -244,9 +254,10 @@ func (s *Store) UpdateBasicProfile(
 }
 
 func (s *Store) ChangePassword(
-	_ context.Context,
+	ctx context.Context,
 	request goauth.PasswordChangeStoreRequest,
 ) (goauth.PasswordChangeStoreResult, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -278,10 +289,18 @@ func (s *Store) ChangePassword(
 	}, nil
 }
 
-func (s *Store) CreateSession(_ context.Context, record goauth.SessionRecord) error {
+func (s *Store) CreateSession(ctx context.Context, record goauth.SessionRecord) error {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	account, found := s.accounts[record.Session.SubjectID.String()]
+	if !found || account.Subject.Status != goauth.SubjectStatusActive {
+		return goauth.ErrAccountUnavailable
+	}
+	if account.Subject.SecurityVersion != record.Session.SecurityVersion {
+		return goauth.ErrSecurityVersionMismatch
+	}
 	if _, exists := s.sessions[record.Session.ID]; exists {
 		return errors.New("duplicate test session")
 	}
@@ -300,10 +319,20 @@ func (s *Store) CreateSession(_ context.Context, record goauth.SessionRecord) er
 	return nil
 }
 
-func (s *Store) RotateRefresh(
-	_ context.Context,
+func (s *Store) PeekRefresh(ctx context.Context, request goauth.RefreshRotationRequest) (goauth.RefreshRotationResult, error) {
+	return s.rotateRefresh(ctx, request, true)
+}
+
+func (s *Store) RotateRefresh(ctx context.Context, request goauth.RefreshRotationRequest) (goauth.RefreshRotationResult, error) {
+	return s.rotateRefresh(ctx, request, false)
+}
+
+func (s *Store) rotateRefresh(
+	ctx context.Context,
 	request goauth.RefreshRotationRequest,
+	peek bool,
 ) (goauth.RefreshRotationResult, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -324,6 +353,10 @@ func (s *Store) RotateRefresh(
 		return result, nil
 	}
 	if token.ConsumedAt != nil {
+		if peek {
+			result.Status = goauth.RefreshRotationReplayed
+			return result, nil
+		}
 		now := request.Now
 		family.RevokedAt = &now
 		family.ReplayedAt = &now
@@ -343,6 +376,20 @@ func (s *Store) RotateRefresh(
 		result.Status = goauth.RefreshRotationRevoked
 		return result, nil
 	}
+	if request.ExpectedSecurityVersion != 0 && (account.Subject.SecurityVersion != request.ExpectedSecurityVersion ||
+		account.PrimaryEmail.NormalizedValue != request.ExpectedNormalizedEmail ||
+		account.EmailVerified() != request.ExpectedEmailVerified) {
+		result.Status = goauth.RefreshRotationRevoked
+		return result, nil
+	}
+	if peek {
+		result.Status = goauth.RefreshRotationSucceeded
+		return result, nil
+	}
+	if request.NextSelector == "" || len(request.NextDigest.Digest) != 32 {
+		result.Status = goauth.RefreshRotationInvalid
+		return result, nil
+	}
 	now := request.Now
 	token.ConsumedAt = &now
 	s.refresh[request.NextSelector] = &refreshToken{
@@ -355,7 +402,8 @@ func (s *Store) RotateRefresh(
 	return result, nil
 }
 
-func (s *Store) IntrospectSession(_ context.Context, sessionID string) (goauth.SessionSecurity, error) {
+func (s *Store) IntrospectSession(ctx context.Context, sessionID string) (goauth.SessionSecurity, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -373,11 +421,12 @@ func (s *Store) IntrospectSession(_ context.Context, sessionID string) (goauth.S
 }
 
 func (s *Store) RevokeSession(
-	_ context.Context,
+	ctx context.Context,
 	subjectID goauth.SubjectID,
 	sessionID string,
 	now time.Time,
 ) (bool, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -399,13 +448,22 @@ func (s *Store) RevokeSession(
 }
 
 func (s *Store) RevokeSubjectSessions(
-	_ context.Context,
+	ctx context.Context,
 	subjectID goauth.SubjectID,
 	now time.Time,
 ) (int64, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	key := subjectID.String()
+	account, found := s.accounts[key]
+	if !found {
+		return 0, nil
+	}
+	account.Subject.SecurityVersion++
+	account.Subject.UpdatedAt = now
+	s.accounts[key] = account
 	return s.revokeSubjectSecurityLocked(subjectID, now), nil
 }
 
@@ -433,11 +491,12 @@ func (s *Store) revokeSubjectSecurityLocked(subjectID goauth.SubjectID, now time
 }
 
 func (s *Store) SetSubjectStatus(
-	_ context.Context,
+	ctx context.Context,
 	subjectID goauth.SubjectID,
 	status goauth.SubjectStatus,
 	now time.Time,
 ) (goauth.Subject, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -458,7 +517,8 @@ func (s *Store) SetSubjectStatus(
 	return account.Subject, nil
 }
 
-func (s *Store) CreatePasswordReset(_ context.Context, record goauth.PasswordResetRecord) error {
+func (s *Store) CreatePasswordReset(ctx context.Context, record goauth.PasswordResetRecord) error {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	account, found := s.accounts[record.SubjectID.String()]
@@ -484,9 +544,10 @@ func (s *Store) CreatePasswordReset(_ context.Context, record goauth.PasswordRes
 }
 
 func (s *Store) ConsumePasswordReset(
-	_ context.Context,
+	ctx context.Context,
 	request goauth.PasswordResetConsumeRequest,
 ) (goauth.PasswordResetConsumeResult, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -520,10 +581,11 @@ func (s *Store) ConsumePasswordReset(
 }
 
 func (s *Store) IssueEmailChallenge(
-	_ context.Context,
+	ctx context.Context,
 	record goauth.EmailChallengeRecord,
 	limits goauth.EmailChallengeLimits,
 ) (goauth.EmailChallengeIssueResult, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if record.ExpectedSecurityVersion > 0 || record.ExpectedNormalizedEmail != "" {
@@ -574,9 +636,10 @@ func (s *Store) IssueEmailChallenge(
 }
 
 func (s *Store) TakeRateLimit(
-	_ context.Context,
+	ctx context.Context,
 	request goauth.RateLimitRequest,
 ) (goauth.RateLimitResult, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -603,9 +666,10 @@ func (s *Store) TakeRateLimit(
 }
 
 func (s *Store) VerifyEmailChallenge(
-	_ context.Context,
+	ctx context.Context,
 	request goauth.EmailChallengeVerifyRequest,
 ) (goauth.EmailChallengeVerifyResult, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -659,10 +723,11 @@ func (s *Store) VerifyEmailChallenge(
 }
 
 func (s *Store) IssueEmailChange(
-	_ context.Context,
+	ctx context.Context,
 	record goauth.EmailChangeRecord,
 	limits goauth.EmailChallengeLimits,
 ) (goauth.EmailChangeIssueResult, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -717,10 +782,11 @@ func (s *Store) IssueEmailChange(
 }
 
 func (s *Store) GetPendingEmailChange(
-	_ context.Context,
+	ctx context.Context,
 	subjectID goauth.SubjectID,
 	now time.Time,
 ) (goauth.PendingEmailChange, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -741,9 +807,10 @@ func (s *Store) GetPendingEmailChange(
 }
 
 func (s *Store) VerifyEmailChange(
-	_ context.Context,
+	ctx context.Context,
 	request goauth.EmailChangeVerifyRequest,
 ) (goauth.EmailChangeVerifyResult, error) {
+	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -886,3 +953,18 @@ func matchesDigest(stored goauth.SecretDigest, candidates []goauth.SecretDigest)
 }
 
 var _ goauth.RuntimeStore = (*Store)(nil)
+
+func (s *Store) LockAccount(ctx context.Context, id goauth.SubjectID) (goauth.Account, error) {
+	if s.scoped(ctx) == s {
+		return goauth.Account{}, errors.New("LockAccount requires AuthTransaction")
+	}
+	return s.GetAccount(ctx, id)
+}
+
+func (s *Store) RecordSecurityEvent(ctx context.Context, event goauth.SecurityEvent) error {
+	s = s.scoped(ctx)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.audits = append(s.audits, event)
+	return nil
+}

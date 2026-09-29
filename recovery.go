@@ -306,15 +306,27 @@ func (r *Runtime) VerifyEmailChallenge(
 		return Account{}, err
 	}
 	now := r.now().UTC()
-	result, err := r.store.VerifyEmailChallenge(ctx, EmailChallengeVerifyRequest{
-		SubjectID: subjectID,
-		Purpose:   purpose,
-		Digests:   digests,
-		Now:       now,
+	var result EmailChallengeVerifyResult
+	err = r.authTransaction.InAuthTransaction(ctx, func(ctx context.Context) error {
+		var err error
+		result, err = r.store.VerifyEmailChallenge(ctx, EmailChallengeVerifyRequest{
+			SubjectID: subjectID,
+			Purpose:   purpose,
+			Digests:   digests,
+			Now:       now,
+		})
+		if err != nil {
+			return fmt.Errorf("verify email challenge: %w", err)
+		}
+		if result.Status == EmailChallengeVerified {
+			return r.recordAudit(ctx, SecurityEvent{Type: SecurityEventEmailVerified, SubjectID: subjectID, At: now})
+		}
+		return nil
 	})
 	if err != nil {
-		return Account{}, fmt.Errorf("verify email challenge: %w", err)
+		return Account{}, err
 	}
+
 	switch result.Status {
 	case EmailChallengeVerified:
 	case EmailChallengeInvalid:
@@ -327,13 +339,6 @@ func (r *Runtime) VerifyEmailChallenge(
 		return result.Account, nil
 	default:
 		return Account{}, ErrInvalidConfirmationCode
-	}
-	if err := r.recordAudit(ctx, SecurityEvent{
-		Type:      SecurityEventEmailVerified,
-		SubjectID: subjectID,
-		At:        now,
-	}); err != nil {
-		return Account{}, err
 	}
 
 	return result.Account, nil
@@ -472,7 +477,7 @@ func (r *Runtime) waitForResetResponseFloor(startedAt time.Time) {
 }
 
 func validatePasswordResetURL(value string) error {
-	parsed, err := url.ParseRequestURI(strings.TrimSpace(value))
+	parsed, err := url.Parse(strings.TrimSpace(value))
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return errors.New("password reset URL must be absolute")
 	}
@@ -481,7 +486,9 @@ func validatePasswordResetURL(value string) error {
 	if parsed.Scheme != "https" && !isLocalHTTP {
 		return errors.New("password reset URL must use HTTPS")
 	}
-	if parsed.User != nil || parsed.Fragment != "" || parsed.Query().Get("email") != "" {
+	// Hosts may keep the one-time secret in a fragment so it is not sent with
+	// page navigation. Parse the complete URL rather than treating '#' as path.
+	if parsed.User != nil || parsed.Query().Get("email") != "" {
 		return errors.New("password reset URL contains forbidden components")
 	}
 

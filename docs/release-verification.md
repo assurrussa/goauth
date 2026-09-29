@@ -26,7 +26,7 @@ It also runs the PostgreSQL external consumer probe against
 `GOAUTH_TEST_POSTGRES_DSN`. The probe constructs `postgres.NewRuntime`, starts
 and stops `RunNotifications`, checks an email challenge was delivered and
 acknowledged, verifies the code, then exercises authenticated login, an
-introspected Fiber route, PostgreSQL RBAC, logout, password reset, and cleanup.
+current-session Fiber and net/http routes, PostgreSQL RBAC, logout, password reset, and cleanup.
 It requires a reachable, disposable integration database and fails if the DSN
 is missing or the database is down.
 
@@ -54,21 +54,35 @@ database in `compose.integration.yml`.
 For the full unpublished candidate gate, start the integration services:
 
 ```sh
+# Select an installed Playwright module and Chromium executable; no auto-install.
+export GOAUTH_BROWSER_PLAYWRIGHT_MODULE="$PLAYWRIGHT_MODULE"
+export GOAUTH_BROWSER_CHROMIUM_EXECUTABLE="$CHROMIUM_EXECUTABLE"
 make integration-up
 make release-candidate-readiness
 make integration-down
 ```
 
+The candidate gate also runs `make backup-restore-check` with real pg_dump/
+pg_restore in the disposable Compose project, and `make browser-acceptance`
+with a real HTTPS browser, canonical PostgreSQL Runtime, managed encrypted queue,
+full account lifecycle and exactly one refresh across two tabs after access expiry.
+Node, the selected installed Playwright module and Chromium must be available.
+An invoked gate fails when the engine is missing; it does not silently skip or
+install dependencies. These profiles use their own temporary databases. The
+browser proof is the public same-origin example; separate host suites cover the
+site's split API, opaque admin and live ZITADEL composition.
+
 After a new tag is published, run:
 
 ```sh
-make externalconsumer-published VERSION=v0.4.0
-make release-readiness VERSION=v0.4.0
+make externalconsumer-published VERSION=v0.5.0
+make release-readiness VERSION=v0.5.0
 ```
 
 The published probe creates a temporary module without a local replacement,
-builds a Runtime, mounts Fiber, initializes optional OIDC/Redis and RBAC, and
-runs the example test. A local replace proves only checkout compatibility.
+builds a Runtime, mounts net/http and Fiber, initializes optional OIDC/Redis and
+RBAC, and exercises the real PostgreSQL lifecycle against
+`GOAUTH_TEST_POSTGRES_DSN`. A local replace proves only checkout compatibility.
 Confirm the public release resolves without private module tokens or
 `GOPRIVATE`/`GONOSUMDB` settings. A release tag remains unpublished until its
 tag and published probe actually exist and pass.
@@ -78,3 +92,11 @@ tag and published probe actually exist and pass.
 Keep local verification, tag publication, consumer adoption, and production
 deployment as distinct claims. Record the exact version/commit for every gate;
 manual production smoke remains outstanding until it is actually performed.
+
+## Browser evidence
+
+Use the runnable [net/http example](../examples/nethttp/README.md) for browser
+signup, email verification, login/protected access, refresh and logout. The
+browser host also exposes password reset/change and email change. Verify CSRF
+rejection and that `/api` never accepts cookies as bearer credentials. Keep
+actual browser checks distinct from httptest and published-consumer evidence.

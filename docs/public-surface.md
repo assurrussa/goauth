@@ -4,7 +4,7 @@
 manifest. `imports.go`, `manifest_test.go`, `public_surface_test.go`, and the
 runnable external-consumer probe keep the declaration executable.
 
-The supported packages are root Runtime, PostgreSQL, Redis, Fiber, OIDC
+The supported packages are root Runtime, PostgreSQL, Redis, net/http, Fiber, OIDC
 protocol/provider/verifier, RBAC, and testkit. `HostSupportPackages` stays
 empty.
 

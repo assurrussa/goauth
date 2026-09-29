@@ -36,6 +36,7 @@ contract change.
   native encrypted notification queue and worker, audit persistence, cleanup,
   rate limiting, and RBAC storage.
 - `redis/`: atomic Redis-backed OIDC one-time state.
+- `nethttp/`: standard-library JSON handlers and secure realm middleware.
 - `fiber/`: JSON handlers, typed error mapping, and realm middleware.
 - `oidc/`: OIDC protocol, provider, and verifier contracts.
 - `rbac/`: hierarchy-free role and permission service.
@@ -94,9 +95,9 @@ Important invariants:
 - Explicit stress rerun: `make test-race`.
 - Explicit HTML coverage artifact: `make cover-html`.
 - Candidate release readiness: `make release-candidate-readiness`
-- Published release readiness after tagging: `make release-readiness VERSION=v0.4.0`
+- Published release readiness after tagging: `make release-readiness VERSION=v0.5.0`
 - Local clean-consumer probe: `make externalconsumer-local`
-- Published clean-consumer probe after tagging: `make externalconsumer-published VERSION=v0.4.0`
+- Published clean-consumer probe after tagging: `make externalconsumer-published VERSION=v0.5.0`
 
 The Makefile exports repo-local `GOCACHE`, `GOMODCACHE`, and `GOPATH` under
 `.go-cache/`. Prefer Makefile targets for verification. If running raw `go`
@@ -118,8 +119,7 @@ once after a coherent batch; do not stack it with `make test`,
 Do not rewrite existing tags. If `make` changes generated code, formatting,
 `go.mod`, or `go.sum`, commit those changes and publish a new semver tag.
 
-The frozen v0.1 compatibility baseline ends at `v0.1.7`. The current release
-tag is `v0.4.0`.
+The frozen v0.1 compatibility baseline ends at `v0.1.7`. The latest released baseline is `v0.4.1`; the current unpublished candidate is `v0.5.0`.
 
 The public module and CI must resolve all supported-package dependencies
 without private module credentials. Do not reintroduce a `GOPRIVATE` gate or

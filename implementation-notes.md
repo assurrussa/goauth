@@ -1,5 +1,46 @@
 # Implementation Notes
 
+## v0.5.0 candidate implementation (2026-09-28)
+
+- Accepted scope: transactional auth writes/audit/native encrypted notifications;
+  prepare hooks and JWT before session creation and refresh consumption; strict
+  replay revocation; explicit offline JWT vs current-session authentication.
+- External identity keys are exact issuer/sub strings. Verified-email auto-link
+  defaults to `["*"]` when configuration is nil; an explicit empty list disables
+  new auto-links. There are no production identities requiring legacy relinking.
+- Harden OIDC verification, inherit the default password blocklist, restrict
+  destructive schema reset to owned objects, and add net/http plus one runnable
+  PostgreSQL browser/JSON example. Preserve the native notification queue.
+- Root owns runtime/storage/testkit/public contracts and integration. Separate
+  workers own OIDC and nethttp/examples. Independent security/race review follows
+  the implementation freeze.
+- Validation: focused behavior tests, PostgreSQL/Redis integration, browser smoke,
+  then `make release-candidate-readiness`. Publication, tag creation, and public
+  visibility changes are separate and have not been authorized in this stage.
+- Released baseline is v0.4.1; candidate is v0.5.0. No tags are rewritten.
+- Implemented on `tasks/v0.5-auth-hardening` above `070b1f3`; changes remain
+  uncommitted. PostgreSQL assembly enforces its local audit sink; custom root
+  assembly explicitly owns transaction participation. `LockAccount` and
+  `PeekRefresh` are required store contracts. See `docs/v0.5-migration.md`.
+- Independent security/concurrency review found reset JSON fallthrough and a
+  PostgreSQL audit override. Both were fixed, regression-tested and re-reviewed.
+  Browser host security received additional source review without new findings.
+- Final `make release-candidate-readiness` passed after those fixes: lint 0
+  issues; race tests; PostgreSQL/Redis integration; both local consumer probes;
+  no reachable vulnerabilities. Root coverage 83.6%, PostgreSQL 80.7%.
+  gopls retained stale cross-file diagnostics for `LockAccount`; compiler, vet,
+  lint and race/integration checks all resolved the actual current API.
+- Real browser evidence is recorded in `examples/nethttp/README.md`: signup,
+  notification delivery, verification, login, refresh, logout/all, CSRF and
+  bearer/cookie isolation passed. Password-change/reset submission was blocked
+  by automatic approval review requiring user hand-off; email-change confirmation
+  was not completed. Multi-tab clicks completed, but no global request count was
+  retained. These limits do not become browser acceptance through unit tests.
+- Updated the existing shared platform wiki and added a sanitized candidate
+  snapshot, preserving its historical v0.2.1 release evidence. Publication,
+  production deployment, visibility/security-channel verification, history/tag
+  secret review and the published v0.5 consumer probe remain a separate stage.
+
 ## 2026-06-04 Project Initialization Docs
 
 - Kept repository docs in English to match the existing README, RELEASING, and
@@ -123,3 +164,61 @@
 - Reset issuance locks and checks the current account state; security changes
   retire existing reset records. A custom transaction alone does not select
   managed delivery or bypass its configured renderer.
+
+## Accepted browser/native/admin implementation (2026-09-28)
+
+- Goal: local v0.5 candidate plus real site/admin acceptance. Publication and deployment remain separate. Baseline snapshots preserve the pre-existing dirty goauth work. Host branches start from site `4614ee60e0839c4fb25f5a020301721844ba5a36` and goadmin `4152e0a490e786bd25e1623477b6ab41f05c79f0`.
+- Accepted contracts: browser access/refresh HttpOnly; readable `SSIDR=1` hint; explicit native Bearer API; coordinated switch and re-login; existing opaque admin session; strict refresh replay with no grace; explicit ZITADEL access-token profile.
+- Root owns runtime/password/errors, admin refresh consistency, native notification assembly and final gates. Helpers own site HTTP/frontend/OpenSpec and OIDC/pilot respectively. Host compatibility uses temporary modfiles; no committed local replacements.
+- Validation: focused regressions, real PostgreSQL/Redis atomicity, HTTPS browser scenarios, isolated ZITADEL pilot, one candidate gate, host gates and independent security/race review. Existing notes are historical evidence, not the current candidate result.
+- Resolved approval boundary: the initial broad site write was rejected; a concrete tested patch passed a safer automatic review and was applied. Host sources are integrated; no production deployment or publication occurred.
+
+- Integrated: bounded password work and TTLs, explicit native and cookie-only
+  site routes/frontend, managed encrypted notification supervision, opaque admin
+  owner/version journal and safe CSRF binding, explicit ZITADEL profile.
+- Actual scope evidence: real site HTTPS/PostgreSQL browser+native lifecycle,
+  two-tab single rotation, admin PostgreSQL/Redis refresh/permissions/revocation,
+  live ZITADEL canonical registration/link/re-login; engine absence fails invoked
+  suites. Final aggregate gates and independent delta review are recorded in the 2026-09-29 result below.
+- Added public same-origin browser and real backup/restore gates to candidate
+  readiness. OPS-03/04 remain distribution/history tasks, not executed claims.
+
+## 2026-09-29 Local auth profile implementation result
+
+Review lens: Security Engineering + Go/Backend + Browser/Mobile boundaries.
+
+- Implemented the accepted browser HttpOnly access/refresh and marker policy,
+  explicit full native token API, opaque admin owner/version journal and native
+  managed encrypted delivery; final source review found no open exploitable
+  blocker in these advertised profiles. Two import-guard findings were fixed
+  and re-reviewed with targeted positive/negative fixtures.
+- Final root `make release-candidate-readiness` PASS: lint 0, fmt/vet,
+  race/coverage (root 83.9%, PostgreSQL 80.7%), local consumers, real PG/Redis,
+  actual disposable dump/restore and public-example Chromium/HTTPS lifecycle.
+  `govulncheck` found no reachable vulnerabilities; three required-module
+  findings are unreachable, not a blanket clean dependency claim. PHC fuzz
+  executed 467499 cases in the bounded 10-second run.
+- Goadmin `make check` PASS with a temporary candidate module file, resources
+  and local consumer; independent actual PostgreSQL/Redis admin refresh,
+  permissions/membership and canonical logout-all acceptance PASS.
+- Site `task validate` PASS with temporary local candidate composition. Final
+  canonical PostgreSQL/HTTPS browser and native lifecycles PASS, including two
+  tabs and one rotation, delivery-confirmed reset/email/password transitions.
+  Frontend lint/typecheck, 14 regressions and production compile PASS; CMS
+  prerender was explicitly disabled for that compile.
+- Real isolated ZITADEL PKCE/host/PostgreSQL identity pilot PASS. Scope is the
+  resource-server/identity subset; full frontend SSO cookie callback and
+  production rollout are not verified. The stale draft callback requirement
+  was aligned with the accepted P4 subset and recorded as superseded.
+- `task platform:repo-check` was executed and FAILED at unrelated gouploads
+  generated-file drift. Its exact generated side effects were reversed from
+  the saved patch. Remaining auth/import/second-host/export guards passed;
+  runtime import inventory was reconciled with four imports already in the
+  original site HEAD and the explicit host CSRF dependency. No whole-platform
+  green claim is made.
+- Evidence: `docs/public-preview/release-evidence.local.yaml`. It preserves all
+  38 required IDs and separates complete cases from narrower passed checks.
+  The full security/fault/rollback/release matrix is still open; public tag,
+  anonymous resolution, history/asset audit and production acceptance remain
+  separate. No commit, tag, publication or deployment occurred. Existing user
+  changes, released host pins and old notification drain handlers are retained.

@@ -4,7 +4,7 @@ The module path is `github.com/assurrussa/goauth`.
 
 ## Version state
 
-- Current release version: `v0.4.0`; previous stable release: `v0.3.0`.
+- Latest released baseline: `v0.4.1`. Current unpublished candidate: `v0.5.0`.
 - `v0.2.0-rc.1` and `v0.2.0` resolve to the same fully verified commit. Both
   tags are immutable; future fixes require a new semver tag.
 - The frozen v0.1 compatibility line ends at `v0.1.7`.
@@ -14,7 +14,15 @@ The module path is `github.com/assurrussa/goauth`.
   `replace` directive.
 - Publication is not production deployment.
 
-## Breaking migration
+## v0.5 migration
+
+The v0.5 code changes Runtime/store contracts and HTTP authorization defaults.
+It preserves the version-3 database and existing rows; no `Down` is required.
+Read [docs/v0.5-migration.md](docs/v0.5-migration.md), including exact external
+issuer keys and custom transaction wiring. Candidate verification does not
+publish a tag, change visibility, or establish production adoption.
+
+## Breaking v0.1 to v0.2 migration
 
 v0.2 installs a clean baseline schema. `postgres.Migrate` detects a v0.1 auth
 schema and returns `postgres.ErrLegacySchemaRequiresReset` without deleting
@@ -58,6 +66,9 @@ and the runnable local clean-consumer probe. `make integration-up` and
 
 ## Public dependency prerequisite
 
+Scan the complete Git history and reachable tags for credentials before making
+the repository public; investigate findings and rotate any exposed credentials.
+Do not publish raw scan output that contains secret material.
 Enable and verify GitHub private vulnerability reporting before announcing or
 tagging the release so the channel in [SECURITY.md](SECURITY.md) is usable.
 The supported import graph and CI must resolve without `GOPRIVATE`, `GONOSUMDB`,
@@ -71,12 +82,12 @@ consumer after repository visibility and tagging.
 1. Verify the candidate commit, make sure repository visibility is public, and
    verify private vulnerability reporting. Check that all dependencies resolve
    without private credentials.
-2. Create and push a new semver tag (e.g. `v0.4.1`) from that commit. Do not
+2. Create and push a new semver tag (e.g. `v0.5.0`) from that commit. Do not
    rewrite an existing tag.
 3. Run the published-module gate:
 
    ```sh
-   make release-readiness VERSION=v0.4.0
+   make release-readiness VERSION=v0.5.0
    ```
 
 4. Test consumers in dependency order and record their own schema, realm,
@@ -94,6 +105,6 @@ Each consumer must record:
 - any remaining manual or production smoke separately from local verification.
 
 The historical v0.2 release train is recorded in
-[docs/compatibility.md](docs/compatibility.md). It does not prove v0.4
+[docs/compatibility.md](docs/compatibility.md). It does not prove v0.5
 compatibility. Keep that matrix and the shared platform wiki current after
 stable adoption. Do not claim a live deployment from tags or local gates alone.

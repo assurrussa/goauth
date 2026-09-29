@@ -17,7 +17,7 @@ production rollout.
 
 External consumers use the exact packages in
 `reference/externalconsumer.SupportedPackages`. The root package is the
-transport-neutral Runtime; `postgres`, `redis`, and `fiber` are adapters;
+transport-neutral Runtime; `postgres`, `redis`, `nethttp`, and `fiber` are adapters;
 `oidc`, `rbac`, and `testkit` are focused capabilities.
 
 The retired v0.1 implementation is absent from the current source tree. Its
@@ -41,3 +41,6 @@ Consumers resolve published semver tags without committed local replaces. A
 local sibling replace is development evidence only. Release readiness requires
 the runnable published clean-consumer probe plus each host's own schema,
 permission, and application gates.
+
+Accepted browser/native/admin/OIDC profiles and version-specific scenario evidence
+are maintained in [public-preview](public-preview/README.md).
