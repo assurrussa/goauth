@@ -83,6 +83,12 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = (*goauth.Runtime).UpdateBasicProfile
 	_ = (*goauth.Runtime).ChangePassword
 	_ = (*goauth.Runtime).RequestEmailChange
+	_ = (*goauth.Runtime).RequestEmailChangeWithPassword
+	_ = goauth.PasswordEmailChangeRequest{}
+	var passwordEmailChange goauthhttp.PasswordEmailChangeRuntime = (*goauth.Runtime)(nil)
+	_ = passwordEmailChange
+	var postgresPasswordEmailChange goauthhttp.PasswordEmailChangeRuntime = (*postgres.Runtime)(nil)
+	_ = postgresPasswordEmailChange
 	_ = (*goauth.Runtime).PendingEmailChange
 	_ = (*goauth.Runtime).ConfirmEmailChange
 	_ = (*goauth.Runtime).Logout

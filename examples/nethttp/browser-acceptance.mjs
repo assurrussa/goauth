@@ -32,11 +32,20 @@ try {
   assert.equal((await raw('/browser/login','POST',{},{Origin:origin})).status,403);
   assert.equal((await raw('/browser/login','POST',{},{Origin:hostile,'X-Goauth-CSRF':'1'})).status,403);
   const attacker=await context.newPage();await attacker.goto(hostile);await assert.rejects(attacker.evaluate(async origin=>fetch(origin+'/browser/logout',{method:'POST',credentials:'include',headers:{'X-Goauth-CSRF':'1'}}),origin));
-  assert.equal((await call('logout')).status,204);assert.equal((await call('me',{},'GET')).status,401);
+  const beforeLogout=(await raw('/fixture/stats')).data.submitted;
+  await new Promise(resolve=>setTimeout(resolve,36000)); // logout must work with a genuinely expired access cookie
+  assert.equal(await page.evaluate(async()=>{const response=await logout();return response?.status;}),204);
+  await second.evaluate(()=>refresh());
+  assert.equal((await raw('/fixture/stats')).data.submitted-beforeLogout,1,'logout refreshes once; a queued tab cannot revive the session');
+  assert(!(await context.cookies(origin)).some(c=>['__Host-SSID','__Host-UUIDR'].includes(c.name)));
+  assert.equal((await call('me',{},'GET')).status,401);
   assert.equal((await login()).status,200);assert.equal((await call('logout-all')).status,204);assert.equal((await call('me',{},'GET')).status,401);
   assert.equal((await call('reset-request',{email})).status,202);notice=await delivered(email,'password_reset');password='Public-Browser-Recovered-Password-2';assert.equal((await call('reset',{token:new URLSearchParams(new URL(notice.data.reset_url).hash.slice(1)).get('reset'),newPassword:password})).status,204);assert.equal((await login()).status,200);
   const changed='Public-Browser-Changed-Password-3';assert.equal((await call('password',{currentPassword:password,newPassword:changed})).status,200);password=changed;assert.equal((await call('me',{},'GET')).status,401);assert.equal((await login()).status,200);
-  assert.equal((await call('email-change',{email:newEmail})).status,202);notice=await delivered(newEmail,'email_change');assert.equal((await call('email-confirm',{code:notice.data.code})).status,200);
+  assert.equal((await call('email-change',{email:newEmail})).status,422);
+  assert.equal((await call('email-change',{email:newEmail,currentPassword:'wrong'})).status,422);
+  assert.equal((await call('email-change',{email:newEmail,currentPassword:password})).status,202);notice=await delivered(newEmail,'email_change');assert.equal((await call('email-confirm',{code:notice.data.code})).status,200);
+  const previousNotice=await delivered(email,'email_changed');assert(!previousNotice.data?.code,'previous mailbox must not receive a confirmation credential');
   assert.equal((await call('login',{scheme:'email',identifier:newEmail,password,realm:'user'})).status,200);assert.equal((await call('me',{},'GET')).status,200);
   const api=await raw('/api/login','POST',{scheme:'email',identifier:newEmail,password,realm:'user'});assert.equal(api.status,200);assert(api.data.tokens.accessToken&&api.data.tokens.refreshToken&&!api.headers['set-cookie']);
   assert.equal((await raw('/api/me','GET',undefined,{Cookie:cookieHeader})).status,401);assert.equal((await raw('/api/me','GET',undefined,{Authorization:'Bearer '+api.data.tokens.accessToken})).status,200);
