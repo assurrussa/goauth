@@ -331,3 +331,54 @@ Review lens: Security Engineering + Go/Backend + Browser/Mobile boundaries.
   unknown-outcome precedence and unchanged public signatures. Source SHA256:
   `f2fed1648ff2f7e4ef7ead74a58958ac9e6d8c59d81c578317a8353bbe1b6b8c`
   over 130 non-documentation files; full candidate acceptance is not rerun.
+
+## 2026-09-29: PR #8 hasher, refresh-expiry and provider review follow-up
+
+- Goal: fix the three new review threads against `2358ca9`; no initial local
+  changes. Preserve native custom-hasher mismatch behavior, compute replacement
+  refresh expiry at rotation time, and trim provider configuration whitespace
+  while retaining the exact trailing slash in its issuer.
+- Review lens: Security Engineering + Go/Backend + public-library compatibility.
+  Custom verification outages need an explicit, compatible error marker;
+  expired prepared access tokens must not consume a valid refresh token.
+- Ownership: root handles password/refresh behavior, regression tests and docs;
+  one fallback worker handles only the OIDC provider and its tests. A separate
+  read-only reviewer will inspect the frozen combined diff.
+- Validation: reproduce each finding before its fix, run focused root/provider
+  regressions and real PostgreSQL refresh checks, then one final candidate gate.
+  No schema, dependency, hosted workflow, release or deployment changes intended.
+- Superseded: a pre-rotation JWT-expiry rejection bypassed replay that occurred
+  after the authenticated snapshot. Independent review reproduced this race;
+  root and PostgreSQL regressions also reproduced it. The expiry guard now runs
+  after storage replay classification, rolling back ordinary expired rotation
+  while retaining committed replay revocation/audit. Store-latency regressions
+  cover access and refresh expiry during the transaction.
+- Result: native bcrypt errors (raw/wrapped/joined) retain denial semantics in
+  login, credential verification and current-password checks; a different
+  replacement password remains accepted. Additive
+  `ErrPasswordVerificationUnavailable` lets custom hashers report operational
+  verification faults with their cause. Existing overload/cancellation/deadline
+  errors also remain operational, without credential/session/notification writes.
+- Root/provider suites and PostgreSQL refresh regressions PASS, including
+  persisted expiry, absolute lifetime, second-precision JWT boundaries, rollback,
+  concurrent replay revocation and committed audit. Regressions reproduced the
+  original three findings and the intermediate replay regression before fixes.
+  Final independent read-only review found no actionable issues; its old replay
+  probe now observes replay detection and both winner credentials revoked.
+- `make release-candidate-readiness` completed its check, PostgreSQL/Redis,
+  local-consumer, vulnerability, aggregate-coverage and dump/restore components.
+  The aggregate command then failed before browser execution because no
+  Playwright module was selected. On the unchanged source, documented
+  `GOAUTH_BROWSER_PLAYWRIGHT_MODULE` and `GOAUTH_BROWSER_CHROMIUM_EXECUTABLE`
+  selected installed engines, and `make browser-acceptance` PASS. All component
+  gates passed; the aggregate command was not rerun after this environment fix.
+  The prior lint failure was confined to new test fixtures and was corrected.
+- Final lint: 0 issues; race/coverage: root 84.3%, PostgreSQL 80.7%, provider
+  82.4%. govulncheck: no reachable vulnerabilities, three unreachable findings
+  in required modules. Active root/provider gopls diagnostics are clean.
+- Source fingerprint: `da5e12096f55e53e5c927fda1b3847497a7d27d22a3fd1c3677f93dbd0ed7747`
+  over 133 non-documentation files (SHA256 of sorted path/NUL/content-SHA256/LF
+  entries). No schema, dependency or hosted-workflow changes. Existing public
+  signatures are retained; the new error marker is documented and compile-checked.
+  Real commit/network-latency injection, full release-SHA scenario acceptance,
+  anonymous published-tag resolution and production deployment remain separate.

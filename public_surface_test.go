@@ -32,6 +32,7 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = (*goauth.Runtime).AuthenticateSession
 	_ = goauth.ErrOperationOutcomeUnknown
 	_ = goauth.ErrPasswordHashOverloaded
+	_ = goauth.ErrPasswordVerificationUnavailable
 	_ = goauth.DefaultMaxConcurrentPasswordHashes
 	_ = goauth.Config{MaxConcurrentPasswordHashes: 4}
 	_ = goauth.Config{AutoLinkVerifiedEmailIssuers: []string{}, AuthTransaction: authTransaction}

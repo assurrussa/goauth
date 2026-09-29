@@ -136,7 +136,7 @@ func (r *Runtime) VerifyCredential(ctx context.Context, credential Credential) (
 	if lookupErr != nil && !errors.Is(lookupErr, ErrAccountNotFound) {
 		return Account{}, fmt.Errorf("find local credential: %w", lookupErr)
 	}
-	if passwordErr != nil && !errors.Is(passwordErr, ErrInvalidCredentials) {
+	if isPasswordVerificationFailure(passwordErr) {
 		return Account{}, fmt.Errorf("verify password: %w", passwordErr)
 	}
 	if lookupErr != nil || passwordErr != nil || record.Account.IsZero() {
@@ -186,7 +186,7 @@ func (r *Runtime) ChangePassword(ctx context.Context, request ChangePasswordRequ
 		return Account{}, fmt.Errorf("get local credential: %w", err)
 	}
 	if err := r.hasher.VerifyPassword(record.PasswordPHC, request.CurrentPassword); err != nil {
-		if !errors.Is(err, ErrInvalidCredentials) {
+		if isPasswordVerificationFailure(err) {
 			return Account{}, fmt.Errorf("verify current password: %w", err)
 		}
 		return Account{}, ErrCurrentPasswordInvalid
@@ -195,7 +195,7 @@ func (r *Runtime) ChangePassword(ctx context.Context, request ChangePasswordRequ
 	if passwordErr == nil {
 		return Account{}, ErrPasswordUnchanged
 	}
-	if !errors.Is(passwordErr, ErrInvalidCredentials) {
+	if isPasswordVerificationFailure(passwordErr) {
 		return Account{}, fmt.Errorf("compare replacement password: %w", passwordErr)
 	}
 	passwordPHC, err := r.hasher.HashPassword(request.NewPassword)

@@ -98,6 +98,10 @@ with Retry-After; it does not create an unbounded queue. All hash/verify inputs
 are valid UTF-8 and at most 128 code points before the hasher is called. Login
 never applies a new-secret minimum/blocklist to an existing legacy credential.
 Infrastructure errors retain their cause; HTTP errors expose only safe messages.
+Custom hashers retain native mismatch semantics. They mark operational
+verification failures with `ErrPasswordVerificationUnavailable` and preserve
+the underlying cause; overload, cancellation and deadline errors also remain
+operational failures. See `docs/v0.5-migration.md` for the compatible error contract.
 
 Reset URLs are absolute HTTPS URLs, with an explicit loopback HTTP allowance.
 They exclude URL user information and an email query parameter. Hosts may put

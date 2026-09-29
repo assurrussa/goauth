@@ -1,6 +1,7 @@
 package goauth
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
@@ -25,7 +26,16 @@ const (
 
 type PasswordHasher interface {
 	HashPassword(password string) (string, error)
+	// VerifyPassword returns nil on a match and an error on a mismatch. Runtime
+	// preserves native mismatch errors as invalid credentials. Operational errors
+	// must wrap ErrPasswordVerificationUnavailable, ErrPasswordHashOverloaded,
+	// context.Canceled or context.DeadlineExceeded instead.
 	VerifyPassword(phc, password string) error
+}
+
+func isPasswordVerificationFailure(err error) bool {
+	return errors.Is(err, ErrPasswordVerificationUnavailable) || errors.Is(err, ErrPasswordHashOverloaded) ||
+		errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 type Argon2idConfig struct {

@@ -46,3 +46,7 @@ var (
 	ErrIdentityLinkConflict      = errors.New("identity link conflict")
 	ErrExplicitIdentityLink      = errors.New("explicit authenticated identity linking is required")
 )
+
+// ErrPasswordVerificationUnavailable marks an operational failure from a custom
+// PasswordHasher. Wrap or join the underlying cause to preserve diagnostics.
+var ErrPasswordVerificationUnavailable = errors.New("password verification unavailable")

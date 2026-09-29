@@ -165,7 +165,7 @@ func New(opts Options) (*Service, error) {
 		refreshTokens:            opts.RefreshTokens,
 		keys:                     opts.Keys,
 		claims:                   opts.Claims,
-		issuer:                   opts.Issuer,
+		issuer:                   strings.TrimSpace(opts.Issuer),
 		frontendLoginURL:         strings.TrimSpace(opts.FrontendLoginURL),
 		tokenEndpointAuthMethods: tokenEndpointAuthMethods,
 		requestTTL:               requestTTL,

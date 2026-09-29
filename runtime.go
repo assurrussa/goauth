@@ -378,7 +378,7 @@ func (r *Runtime) Login(ctx context.Context, request LoginRequest) (LoginResult,
 	if lookupErr != nil && !errors.Is(lookupErr, ErrAccountNotFound) {
 		return LoginResult{}, fmt.Errorf("find local credential: %w", lookupErr)
 	}
-	if passwordErr != nil && !errors.Is(passwordErr, ErrInvalidCredentials) {
+	if isPasswordVerificationFailure(passwordErr) {
 		return LoginResult{}, fmt.Errorf("verify password: %w", passwordErr)
 	}
 	if lookupErr != nil || passwordErr != nil || record.Account.IsZero() {
@@ -421,7 +421,6 @@ func (r *Runtime) Refresh(ctx context.Context, rawRefreshToken string) (TokenPai
 		}
 		request.NextSelector = next.selector
 		request.NextDigest = nextDigest
-		request.NextExpiresAt = capExpiry(request.Now.Add(r.refreshTTL), snapshot.Session.ExpiresAt)
 		request.ExpectedSecurityVersion = snapshot.Account.Subject.SecurityVersion
 		request.ExpectedNormalizedEmail = snapshot.Account.PrimaryEmail.NormalizedValue
 		request.ExpectedEmailVerified = snapshot.Account.EmailVerified()
@@ -432,7 +431,7 @@ func (r *Runtime) Refresh(ctx context.Context, rawRefreshToken string) (TokenPai
 		}
 		tokens = TokenPair{
 			AccessToken: access, RefreshToken: next.raw, AccessExpiresAt: expiry,
-			RefreshExpiresAt: request.NextExpiresAt, Session: snapshot.Session,
+			Session: snapshot.Session,
 		}
 	} else if snapshot.Status != RefreshRotationReplayed {
 		return TokenPair{}, refreshOutcome(snapshot.Status)
@@ -441,6 +440,9 @@ func (r *Runtime) Refresh(ctx context.Context, rawRefreshToken string) (TokenPai
 	err = r.authTransaction.InAuthTransaction(ctx, func(ctx context.Context) error {
 		var err error
 		request.Now = r.now().UTC()
+		if snapshot.Status == RefreshRotationSucceeded {
+			request.NextExpiresAt = capExpiry(request.Now.Add(r.refreshTTL), snapshot.Session.ExpiresAt)
+		}
 		result, err = r.store.RotateRefresh(ctx, request)
 		if err != nil {
 			return err
@@ -451,6 +453,15 @@ func (r *Runtime) Refresh(ctx context.Context, rawRefreshToken string) (TokenPai
 				Realm: result.Session.Realm, At: request.Now,
 			})
 		}
+		if result.Status == RefreshRotationSucceeded {
+			// Detect replay before rejecting stale preparation. Returning an
+			// error here rolls back consumption and the replacement together.
+			// JWT exp has second precision.
+			now := r.now().UTC()
+			if now.Unix() >= tokens.AccessExpiresAt.Unix() || !now.Before(request.NextExpiresAt) {
+				return ErrExpiredToken
+			}
+		}
 		return nil
 	})
 	if err != nil {
@@ -459,6 +470,7 @@ func (r *Runtime) Refresh(ctx context.Context, rawRefreshToken string) (TokenPai
 	if err := refreshOutcome(result.Status); err != nil {
 		return TokenPair{}, err
 	}
+	tokens.RefreshExpiresAt = request.NextExpiresAt
 	return tokens, nil
 }
 
