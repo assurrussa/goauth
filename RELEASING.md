@@ -1,18 +1,22 @@
 # Releasing goauth
 
 The module path is `github.com/assurrussa/goauth`.
+Read [docs/public-release-plan.md](docs/public-release-plan.md) for the owner,
+acceptance criteria and sequence of the first public preview.
 
 ## Version state
 
-- Latest released baseline: `v0.4.1`. Current unpublished candidate: `v0.5.0`.
-- `v0.2.0-rc.1` and `v0.2.0` resolve to the same fully verified commit. Both
-  tags are immutable; future fixes require a new semver tag.
-- The frozen v0.1 compatibility line ends at `v0.1.7`.
-- The retired v0.1 implementation has been removed from the current source
-  tree; its immutable tags remain available to earlier consumers.
-- Never move or replace an existing tag. Never publish a committed local
-  `replace` directive.
-- Publication is not production deployment.
+Use repository tags/release notes for existing versions and select the target
+explicitly with `VERSION=<tag>`. There is no implicit latest/default version.
+During preparation on 2026-09-28, `v0.4.1` pointed to `070b1f3`; that observation
+alone is not evidence of public resolution or completed release checks.
+The current unpublished candidate is `v0.5.0`.
+
+Never move or replace a tag, publish a committed local `replace`, or describe a
+private tag as a verified public release. The frozen v0.1 compatibility line
+ends at `v0.1.7`; its implementation is absent from the current source tree.
+Publication, independent review, consumer adoption and deployment are separate
+claims. Fix a failed published candidate in a new commit and tag.
 
 ## v0.5 migration
 
@@ -45,66 +49,91 @@ the application only to a binary that accepts version 3; otherwise restore a
 pre-migration database snapshot after accounting for writes made since it was
 taken. Do not run `Down` against production data as a rollback mechanism.
 
-## Local release gate
+## Candidate gate (before tagging)
 
-Run preparation once, inspect its diff, then run the canonical non-mutating
-candidate gate once:
+Use the project's declared Go toolchain. Run `make prepare` once, inspect and
+commit any resulting changes, then run the non-mutating candidate gate against
+that exact SHA with disposable PostgreSQL and Redis services:
+
+Select an installed Playwright module and Chromium executable as described in
+[release verification](docs/release-verification.md); the candidate gate
+requires those tools and does not install them automatically.
 
 ```sh
-make prepare
 make integration-up
 make release-candidate-readiness
 make integration-down
 ```
 
-`make release-candidate-readiness` includes `make check`, PostgreSQL and Redis
-integration, reachable vulnerability analysis, and aggregate coverage.
-`make check` covers tidy diff, formatting, vet, lint, a single race/coverage
-test pass, the critical-package coverage floor, the exact public API manifest,
-and the runnable local clean-consumer probe. `make integration-up` and
-`make integration-down` manage the services in `compose.integration.yml`.
+Always tear down the disposable services even if verification fails.
+The candidate gate includes format/tidy/vet/lint, one race/coverage unit pass,
+public API checks, local consumer, PostgreSQL/Redis integration and real
+PostgreSQL consumer, reachable vulnerability analysis, and aggregate coverage.
+`make check` also runs the network-free source-guard regression tests.
+The candidate gate additionally exercises real PostgreSQL dump/restore and
+Chromium/HTTPS browser acceptance.
 
-## Public dependency prerequisite
+The `CI` workflow supports manual dispatch for a candidate branch as well as
+pushes/PRs. Record its SHA and outcome. A job that cannot acquire a runner is
+not a successful test run; resolve account/runner availability separately.
+Do not lower security checks or change visibility merely to bypass CI failure.
 
-Scan the complete Git history and reachable tags for credentials before making
-the repository public; investigate findings and rotate any exposed credentials.
-Do not publish raw scan output that contains secret material.
-Enable and verify GitHub private vulnerability reporting before announcing or
-tagging the release so the channel in [SECURITY.md](SECURITY.md) is usable.
-The supported import graph and CI must resolve without `GOPRIVATE`, `GONOSUMDB`,
-or a private Go module token. Public pull requests run the same CI job without
-repository secrets. A local probe uses a temporary `replace` and proves checkout
-compatibility only; the public distribution claim requires a clean published
-consumer after repository visibility and tagging.
+## First public-release prerequisites
 
-## Public release sequence
+Before changing visibility, close release-blocking security findings and
+review all history/refs that will become visible for secrets, internal data
+and redistribution rights. A HEAD-only scan is insufficient. Record the scope
+and outcome privately without publishing secrets. Changes of visibility or
+history require the maintainer's explicit approval.
 
-1. Verify the candidate commit, make sure repository visibility is public, and
-   verify private vulnerability reporting. Check that all dependencies resolve
-   without private credentials.
-2. Create and push a new semver tag (e.g. `v0.5.0`) from that commit. Do not
-   rewrite an existing tag.
-3. Run the published-module gate:
+Immediately after opening visibility, enable and verify private vulnerability
+reporting as described in [SECURITY.md](SECURITY.md), before announcing or
+tagging the public release. Review branch/tag protection and support scope.
 
-   ```sh
-   make release-readiness VERSION=v0.5.0
-   ```
+## Exact-tag publication gate
 
-4. Test consumers in dependency order and record their own schema, realm,
-   permission, and application gates. Keep manual production smoke separate
-   from local checks. Fix defects in a new commit and tag; never move a tag.
+Create a **new unused tag** at the reviewed, candidate-tested commit only after
+the prerequisites above. From a clean checkout at that tag, run:
+
+```sh
+make public-module-check VERSION=<tag>
+```
+
+`release-source-check` first checks that the tag exists locally, resolves to
+HEAD, and the checkout has no staged, unstaged or untracked changes. It changes
+no files or Git refs. `externalconsumer-published` then runs an executable
+consumer against exactly that public version. No credentials, user Go
+configuration, local module/build cache, workspace or direct-VCS fallback are
+available to the child Go commands. The public checksum service stays enabled.
+The selected module must still have the requested version and no replacement
+after test dependencies resolve.
+
+For the full candidate and publication gates on that same tag, with disposable
+integration services running:
+
+```sh
+make release-readiness VERSION=<tag>
+```
+
+Alternatively, dispatch `Public module verification` with the existing tag.
+It checks out `refs/tags/<version>`, disables persisted checkout credentials
+and the setup-go cache, and runs `make public-module-check`. It fails while the
+repository is private. It does not publish anything or alter settings.
+
+The public gate deliberately requires access to `proxy.golang.org` and
+`sum.golang.org`. Proxy propagation or network errors are not success; rerun
+after resolving them rather than adding a private proxy, disabling checksums,
+or reusing a developer cache. The installed Go executable, helper build and
+OS trust store are trusted inputs; this is not a hostile-code sandbox.
+
+Publish release notes/announce only after the gate passes. Include migrations,
+support limitations and actual evidence, not a blanket production-ready claim.
 
 ## Consumer evidence
 
-Each consumer must record:
-
-- the resolved `goauth` version and absence of a committed `replace`;
-- its canonical format, lint, test, migration, and PostgreSQL gates;
-- its realm membership and permission mapping checks;
-- explicit development/test schema reset evidence where applicable;
-- any remaining manual or production smoke separately from local verification.
-
-The historical v0.2 release train is recorded in
-[docs/compatibility.md](docs/compatibility.md). It does not prove v0.5
-compatibility. Keep that matrix and the shared platform wiki current after
-stable adoption. Do not claim a live deployment from tags or local gates alone.
+Each consumer records its resolved version and absence of local replacements,
+its own format/lint/test/migration gates, realm membership and permission
+checks, any explicit disposable-data resets, and unperformed/manual smoke
+checks separately. The historical matrix in [docs/compatibility.md](docs/compatibility.md)
+does not prove adoption of v0.5 or a newer release. Do not infer deployment from tags
+or local tests alone.

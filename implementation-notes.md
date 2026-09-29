@@ -222,3 +222,29 @@ Review lens: Security Engineering + Go/Backend + Browser/Mobile boundaries.
   anonymous resolution, history/asset audit and production acceptance remain
   separate. No commit, tag, publication or deployment occurred. Existing user
   changes, released host pins and old notification drain handlers are retained.
+
+## 2026-09-29: PR #8 integration with current master
+
+- Goal: remove PR #8 conflicts while retaining user commit `4bf77db` and the
+  accepted changes from PR #6/#7. Merge target: `8d99216`.
+- Combined the explicit exact-tag, isolated public consumer tooling with the
+  existing browser and backup/restore candidate gates. Workflow configuration
+  is retained exactly from master; no additional hosted jobs are introduced.
+- Preserved PR #7 AUTH IDs, all 38 release-blocking cases, per-case observation
+  fields and required successful release gates. Selected v0.5 profile details
+  now live in `docs/public-preview/candidate-assembly.md`; the pre-commit local
+  snapshot remains historical evidence, not full release-SHA acceptance.
+- Validation: `make release-candidate-readiness` PASS on the merged source:
+  source-guard regressions 14/14, fmt/vet/lint (0 issues), race/coverage,
+  PostgreSQL/Redis and local consumers, dump/restore, Chromium/HTTPS. Root
+  coverage 83.9%, PostgreSQL 80.7%; no reachable vulnerabilities, with three
+  unreachable required-module findings. gopls could not load the newly merged
+  helper files; the compiler, vet and lint checks above passed.
+- Source fingerprint: `609bdcc81a3c0ad1fe23fe6fe14bb1c8cb2dc57937e25f57c86fd70bcedb3a9e`
+  over 127 non-documentation files. Only master release tooling/workflows and
+  Makefile differ from the prior source snapshot; auth Runtime/adapters/stores
+  and OIDC are unchanged.
+- Documentation checks PASS: original AUTH meanings, exact PR #7 security
+  specification, all 38 blocking scenario entries, complete evidence fields,
+  relative file links and absence of machine-local paths. Full release/host
+  acceptance and anonymous published-tag resolution remain open.

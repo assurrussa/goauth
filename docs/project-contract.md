@@ -42,5 +42,16 @@ local sibling replace is development evidence only. Release readiness requires
 the runnable published clean-consumer probe plus each host's own schema,
 permission, and application gates.
 
-Accepted browser/native/admin/OIDC profiles and version-specific scenario evidence
-are maintained in [public-preview](public-preview/README.md).
+## Public-preview completion specification
+
+[The public-preview specification pack](public-preview/README.md) defines target
+profile contracts, security acceptance scenarios, local site/admin verification,
+implementation work packages, and publication/support evidence. The pack itself
+does not promote supported imports or claim that the target checks have passed.
+Cookies and CSRF remain optional outside browser integrations; the supported
+cookie-authenticated profile must supply tested CSRF protection. Actual host
+session behavior is verified locally before a new credential model is introduced.
+
+[Candidate assembly decisions](public-preview/candidate-assembly.md) record the
+v0.5 browser/native/admin/OIDC composition. Local verification is recorded
+separately from the complete release acceptance criteria.

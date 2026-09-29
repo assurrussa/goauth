@@ -1,53 +1,130 @@
-# Release and support contract
+# Publication, operations and ongoing support
 
-The current stage produces a locally verified unpublished candidate. It does
-not change repository visibility, move a tag or deploy a host. Goauth v0.4.1 is
-the released baseline; v0.5.0 is a candidate with deliberately changed store and
-transaction assembly contracts. Consult the v0.5 migration before adoption.
+Status: proposed release/support process. It does not enable repository settings,
+publish a tag, promise an SLA or certify security. Existing
+[RELEASING.md](../../RELEASING.md) and [SECURITY.md](../../SECURITY.md) remain the
+current instructions until implementation PRs align them with this specification.
 
-## Distribution
+The current v0.5 candidate has a dated [local evidence snapshot](release-evidence.local.yaml),
+not completed release acceptance. Preserve all passing-gate and per-case evidence
+requirements from the specification when combining implementation and release tooling.
 
-Finish the combined candidate gates and focused independent review first.
-Publish dependencies in order: canonical goauth, goadmin, then site. Pin exact
-released versions; remove temporary development replacements before published
-consumer verification. Never rewrite a published tag. A checkout-local probe
-proves compatibility only; a clean no-replace consumer of the exact public tag
-is a separate mandatory distribution check. OPS-03/04 remain not_run until that
-stage actually executes. PR numbers or earlier successful tags are not evidence
-for a new candidate.
+## R1: security and compatibility evidence before exposure
 
-Record base SHA, dirty source fingerprint, dependency selection, toolchain,
-commands, service versions, failures and review snapshot. Keep sensitive raw
-artifacts outside the repository and publish sanitized results. Review supported
-import closure, all intended history/refs, release assets, permissions and the
-private vulnerability reporting channel before public release. A vulnerability
-scan does not replace that review or prove application security.
+Freeze one source SHA after W0-W4, record the toolchain and run the candidate
+suite. Re-run affected host checks after behavior/schema changes. Review public
+API, defaults, error semantics, supported Go/service versions and migrations.
+Preserve immutable tags and migration history. If security defaults or supported
+behavior change incompatibly, use an explicit new pre-v1 minor line and migration
+notes rather than disguising the change as a harmless patch.
 
-## Host cutover and recovery
+Record all applicable SEC/WEB/ADM/OID/OPS outcomes, remaining findings and reviewer
+approval. Unknown is not pass. Dependency scanning, package coverage and ordinary
+host success cannot substitute for the negative state-transition/browser tests.
 
-Coordinate frontend/backend cookie and route changes; users log in again.
-Do not exchange legacy browser tokens, reset canonical production tables or
-reinterpret projection IDs. The admin journal migration is additive. Retain
-old encrypted notification handlers until existing jobs drain or expire.
-Rollback matching frontend/backend binaries together and require login again.
-Do not downgrade canonical transaction/audit invariants or make an old refresh
-secret reusable to preserve a browser session.
+Review the entire reachable history, branches, tags, PR/issue content and release
+artifacts that would become visible for secrets, internal data and redistribution
+rights. Scan plus manually inspect; retain detailed findings privately. Rotate
+compromised credentials before exposure. If history remediation is necessary,
+obtain a separate explicit decision and plan; do not rewrite existing tags as an
+incidental cleanup. Do not assume changing visibility hides earlier PR discussions.
+A license file alone is not a third-party rights review.
 
-Retain JWT read keys through access expiry, HMAC read keys through the lifetime
-of affected one-time/refresh records and AEAD read keys through queue/journal
-and backup retention. Supervise delivery, cleanup and safe blocked-event
-signals. Restore a backup only with its corresponding schema and key versions;
-explicitly revoke restored sessions when policy requires it. Use separate
-migration authority and least-privilege application credentials in deployment.
-The disposable local restore gate does not prove production DB grants.
+Accept: reviewed exposure scope, no unresolved exploitable release blocker,
+passing candidate and host checks at recorded versions, and owner approval for
+the stated preview readiness level. Without independent review, label that gap
+and restrict the release claim as specified in the verification document.
 
-## Support and vulnerability handling
+## R2: repository administration
 
-The supported-package manifest defines import support; export visibility alone
-does not. Security changes may invalidate browser state deliberately and must
-state that compatibility effect. Keep reproduction, affected/fixed versions and
-private disclosure separate from public release notes. Follow SECURITY.md;
-verify the real reporting channel before advertising public support. Neither a
-local gate nor the ZITADEL subset pilot is a certification or generic provider
-conformance claim. Deployments and physical mobile applications need their own
-acceptance outside this repository.
+The maintainer separately approves visibility changes after R1. Enable and verify
+[GitHub private vulnerability reporting](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository)
+as soon as public visibility permits it, before release announcement. Test the
+reporting path as a non-maintainer; never publish unverified contact details.
+
+Protect the default branch and release tags, require appropriate successful
+checks/review, and secure maintainer accounts. CI must run untrusted fork PRs
+without secrets or write privileges. Do not execute untrusted code through a
+privileged pull_request_target workflow. Review actions/dependency provenance
+and pin trusted workflow dependencies to reviewed immutable revisions.
+
+Runner/account/billing failures are infrastructure failures, not test outcomes.
+Do not remove gates or expose a repository just to bypass that problem. A
+reproducible local run can supply evidence, but its scope must be explicit.
+
+## R3: exact-version public distribution
+
+Create an unused tag at the candidate-tested SHA only after R1/R2. From its clean
+checkout, with accepted PR #6 tooling included, run:
+
+```sh
+make public-module-check VERSION=<new-tag>
+```
+
+Or run the corresponding existing-tag workflow. It must resolve through the
+public Go proxy/checksum service without inherited private credentials, local
+replace/workspace or reused private caches. Verify the version selected after
+the consumer builds/tests, not only the requested version string. Public module
+verification must exercise the newly promoted profile API as it evolves.
+
+Network/proxy propagation failure is blocked/failed, never success. Do not turn
+off checksums or enable authenticated fallback to obtain a green result. If a
+published version is defective, publish a new version and assess a Go retraction;
+never move the original tag. A retraction is not deletion or automatic remediation
+for existing users. Follow [Go module publication guidance](https://go.dev/doc/modules/publishing).
+
+Only then publish release notes: exact version, supported profiles and versions,
+installation/example, migration guidance, known limitations, security-reporting
+channel and actual verification evidence. Separate source-preview availability
+from recommendation for production adoption. Existing private/deployed releases
+must not be silently described as tested at the new SHA.
+
+## R4: operations needed by every supported deployment
+
+Publish runbooks for routine overlapping key rotation, emergency key compromise,
+DB restore and session invalidation, migration failure/rollback constraints,
+notification worker lag/decryption failures and retention/cleanup. Exercises use
+test data and are linked to SEC-04, SEC-16, OPS-01 and OPS-02.
+
+Document canonical revocation timing, host-cache delays, offline JWT windows and
+in-flight-request limitations. Monitor denial reasons separately from storage
+outages, refresh replay, throttling, worker backlog and blocked delivery. Keep
+labels low-cardinality; never log raw credentials or identifiers unnecessarily.
+Avoid infrastructure errors triggering client retry storms or endless refresh.
+
+A stopped worker does not mean auth commits rolled back; queue acceptance does
+not mean a user received email. Specify responsibilities and recovery actions
+for the host's sender, worker supervision, cleanup and migrations.
+
+## R5: support policy without unsustainable promises
+
+Before release, the maintainer approves and copies an achievable policy into
+SECURITY/CONTRIBUTING/release notes. Proposed default: active maintenance on the
+latest released pre-v1 minor line; older lines receive no automatic backport
+promise. State the actual policy prominently, including response availability;
+no 24/7 or response-time guarantee is implied by this plan.
+
+Every change to an auth invariant needs a linked scenario and regression test.
+Changes to exported APIs, defaults, schema, error outcomes or token policy need
+compatibility notes. Keep a versioned support/profile list and an upgrade example;
+do not make every possible host customization a supported configuration.
+
+Configure repository CI (not an external promise of background work) for PR
+checks and periodic dependency/vulnerability scans. A daily lightweight security
+scan and a weekly bounded extended/fuzz run are suggested starting policies;
+the maintainer selects cadence/runtime budgets. Pin tool versions, retain the
+fuzz corpus and report missing infrastructure instead of silently skipping.
+[Go security tooling](https://go.dev/doc/security/best-practices) complements
+manual review; zero reported reachable vulnerabilities is not proof of safety.
+
+For an incident: private intake -> reproduce and assess affected versions ->
+contain/mitigate -> minimal fix plus regression -> reviewed new release -> private
+coordination and public advisory -> upgrade/key/session guidance -> follow-up.
+State affected and fixed versions, exploit prerequisites and remaining scope.
+Never expose reporters' secrets or working attacks unnecessarily. Have a backup
+contact/reviewer only after a real person agrees; do not invent a support team.
+
+Community patches are welcome through explicit extension points. A maintainer
+reviews security-sensitive changes; neither AI-authored code nor a passing test
+suite alone supplies independent review. Feature growth follows observed consumer
+needs after the core flows are stable.
