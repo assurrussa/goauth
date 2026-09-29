@@ -47,5 +47,5 @@ type notificationMetadata struct {
 }
 
 func (r *Runtime) inNotificationTransaction(ctx context.Context, fn func(context.Context) error) error {
-	return r.authTransaction.InAuthTransaction(ctx, fn)
+	return r.inSecurityTransaction(ctx, fn)
 }

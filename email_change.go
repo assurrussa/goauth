@@ -45,10 +45,15 @@ func (r *Runtime) RequestEmailChange(ctx context.Context, subjectID SubjectID, n
 	if err != nil {
 		return err
 	}
-	now := r.now().UTC()
 	changeID := uuid.NewString()
 	var outcomeErr error
 	err = r.inNotificationTransaction(ctx, func(txCtx context.Context) error {
+		// Revalidate the pre-transaction snapshot while holding the same subject
+		// lock used by password, status, email and logout-all mutations.
+		if err := r.lockExpectedAccount(txCtx, account); err != nil {
+			return err
+		}
+		now := r.now().UTC()
 		issue, err := r.store.IssueEmailChange(txCtx, EmailChangeRecord{
 			ID:                 changeID,
 			SubjectID:          subjectID,
@@ -73,10 +78,10 @@ func (r *Runtime) RequestEmailChange(ctx context.Context, subjectID SubjectID, n
 			outcomeErr = ErrEmailChangeSameValue
 			return nil
 		case EmailChangeWait:
-			outcomeErr = ErrConfirmationResendDelay
+			outcomeErr = r.limited(ErrConfirmationResendDelay, issue.RetryAt)
 			return nil
 		default:
-			outcomeErr = ErrConfirmationRateLimited
+			outcomeErr = r.limited(ErrConfirmationRateLimited, issue.RetryAt)
 			return nil
 		}
 		if err := r.enqueueNotification(txCtx, "email_change", account, Notification{
@@ -130,10 +135,13 @@ func (r *Runtime) ConfirmEmailChange(ctx context.Context, subjectID SubjectID, c
 	if err != nil {
 		return Account{}, err
 	}
-	now := r.now().UTC()
 	var account Account
 	var outcomeErr error
 	err = r.inNotificationTransaction(ctx, func(txCtx context.Context) error {
+		if _, err := r.lockActiveAccount(txCtx, subjectID); err != nil {
+			return err
+		}
+		now := r.now().UTC()
 		result, err := r.store.VerifyEmailChange(txCtx, EmailChangeVerifyRequest{
 			SubjectID: subjectID,
 			Digests:   digests,
