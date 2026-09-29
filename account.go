@@ -185,6 +185,9 @@ func (r *Runtime) ChangePassword(ctx context.Context, request ChangePasswordRequ
 		}
 		return Account{}, fmt.Errorf("get local credential: %w", err)
 	}
+	if err := r.limitPasswordChange(ctx, request.SubjectID); err != nil {
+		return Account{}, fmt.Errorf("check password change rate limit: %w", err)
+	}
 	if err := r.hasher.VerifyPassword(record.PasswordPHC, request.CurrentPassword); err != nil {
 		if isPasswordVerificationFailure(err) {
 			return Account{}, fmt.Errorf("verify current password: %w", err)

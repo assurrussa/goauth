@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/assurrussa/goauth"
+	"github.com/assurrussa/goauth/internal/retryafter"
 )
 
 const (
@@ -375,6 +376,9 @@ func retryAfterSeconds(err error) (int, bool) {
 	}
 	if errors.Is(err, goauth.ErrPasswordHashOverloaded) {
 		return 1, true
+	}
+	if seconds, ok := retryafter.Seconds(err); ok {
+		return seconds, true
 	}
 	if errors.Is(err, goauth.ErrConfirmationResendDelay) {
 		return 60, true

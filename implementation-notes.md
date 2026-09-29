@@ -426,3 +426,77 @@ Review lens: Security Engineering + Go/Backend + Browser/Mobile boundaries.
   after the frozen review/gate. No schema, public signature, dependency or
   hosted-workflow changes. Commit/response latency, live IdP conformance, full
   38-case release-SHA acceptance and published/production adoption stay unverified.
+
+## 2026-09-29: PR #9 review follow-up
+
+- Goal: close the Runtime error, OIDC backoff test and host-evidence findings,
+  plus the formatting/lint failures on `da60bf55`, in the existing PR branch.
+- Preserve canonical subject locking, upstream-error backoff, public Go
+  signatures, schema version 3 and the historical acceptance manifests.
+- Root owns Runtime/OIDC/HTTP regression updates and final validation; one
+  bounded worker owns the evidence CLI and its scoped YAML lint allowance.
+- Evidence must include passing site/admin checks with the exact candidate
+  goauth SHA and recorded host/dependency versions. Local replacement remains
+  explicit; neither test fixtures nor old host smoke reports become evidence.
+- Runtime missing-subject and infrastructure-failure regressions, public HTTP
+  headers and verifier backoff/cooldown checks now pass with race detection.
+- Evidence CLI integration is complete, including actual subprocess tests of
+  temporary clean/dirty Git checkouts, exact-tag identity, malformed YAML and
+  read-only behavior. YAML imports remain confined to the evidence CLI.
+- Final `make release-candidate-readiness` PASS on Go 1.27.1: 14 source guards,
+  tidy/format checks, vet/lint (0 issues), race/coverage, PostgreSQL/Redis and both
+  local consumers, govulncheck, real backup/restore and Chromium/HTTPS acceptance.
+  Root coverage 84.6%, PostgreSQL 80.6%, provider 82.9%, verifier 91.6%; no reachable
+  vulnerabilities, three unreachable findings in required modules.
+- A fresh independent read-only review found no actionable P1/P2. An earlier
+  reviewer inadvertently read author notes; that pass is not used as the
+  independent sign-off. Root final diff review and source hash consistency pass.
+- Source fingerprint: `ed3236b571d5df3d24deeeb0494b4b4ec4f5979a1dc37aa454b2d8c3b57a625c`
+  over 158 non-documentation files, unchanged through review and the gate. Only
+  validation notes changed afterward. Disposable services were removed.
+- Actual site/admin acceptance at the new candidate, full 38-case release-SHA
+  evidence, anonymous tag resolution and publication remain separate.
+
+## 2026-09-29: PR #9 latest review comments
+
+- Goal: close the three P2 comments on `8be1ede5`: bind composed release
+  evidence to `VERSION`, reject findings without an explicit boolean
+  `release_blocking`, and return email quota deadlines from limiting sends.
+- Review lens: Go/Backend correctness, auth rate-limit consistency and release
+  evidence integrity. Preserve public Go signatures, schema, quota admission,
+  subject/rate locks and the inclusive rolling-window cutoff.
+- Root owns PostgreSQL/testkit deadlines, runtime/HTTP regressions and docs.
+  A bounded worker owns evidence CLI tests and Makefile wiring. Reproduce
+  before fixing; validate actual PostgreSQL behavior and finish with `make check`.
+- Standalone evidence validation keeps using the manifest tag when no selected
+  version is supplied. Composed readiness must use one explicitly selected tag.
+- Before the fixes, an evidence manifest for a different tag on the same HEAD
+  passed the CLI, and missing/non-boolean finding flags passed. The old
+  testkit returned no hourly/daily deadline; PostgreSQL returned a full new
+  hour/day when the oldest limiting event expired in one minute.
+- Corrected evidence CLI package tests pass with `-race`. Root/testkit
+  deadline regressions and targeted real PostgreSQL regressions pass with
+  `-race`, including the inclusive cutoff and no notification on denial.
+- Follow-up review covered the seven branch commits from `01b2a114` through
+  `8be1ede5` plus the current changes. Separate read-only Standards and Spec
+  passes found one additional behavior regression: the new password-change
+  limiter inserted a subject FK before resolving a missing local account.
+- A real PostgreSQL regression reproduced SQLSTATE 23503 instead of
+  `ErrCurrentPasswordInvalid`. Credential lookup now precedes rate admission;
+  admission still precedes password verification and hashing. The regression
+  also checks no rate event for a missing subject and continued throttling of
+  wrong passwords for an existing account. Review of this fix found no further
+  actionable issue.
+- The quota regression compares PostgreSQL timestamps in UTC, avoiding a
+  false failure when the driver's local time zone differs from the fixture's.
+  Formatting/lint preparation exposed repeated protocol and fixture literals;
+  named constants resolve those lint failures without changing their values.
+- Final `make check`, `make integration` and `make vulnerability-check` PASS on
+  Go 1.27.1: lint has zero issues, all unit/integration race tests and both local
+  external-consumer probes pass; coverage is root 84.6% and PostgreSQL 80.8%.
+  Govulncheck finds no reachable vulnerabilities and three unused module-level
+  findings. No dependency, migration or supported API signature changed.
+- Verification used the declared toolchain and CI-pinned formatting/lint tools
+  in ignored repo-local caches, with process-local public Go proxy settings.
+  Candidate/publication gates and fresh site/admin acceptance evidence were not
+  run or claimed by this follow-up. No commit, push or tag was created.

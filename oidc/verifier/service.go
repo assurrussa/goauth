@@ -24,6 +24,8 @@ const (
 	defaultCacheTTL                 = 5 * time.Minute
 	defaultMaxResponseBytes   int64 = 1 << 20
 	unknownKeyRefreshCooldown       = 30 * time.Second
+	failedRefreshCooldown           = time.Second
+	tokenUseAccess                  = "access"
 )
 
 var errUnknownKeyID = errors.New("oidc verifier key id was not found in jwks")
@@ -76,6 +78,8 @@ type Service struct {
 	jwksFetched      time.Time
 	refresh          *refreshFlight
 	unknownRefreshAt time.Time
+	refreshRetryAt   time.Time
+	refreshFailure   error
 }
 
 type refreshFlight struct {
@@ -200,15 +204,14 @@ func (s *Service) VerifyAccessToken(ctx context.Context, rawToken string) (Verif
 		}
 	}
 
+	// Audience is the audience actually checked, not the first entry in aud.
 	verified := VerifiedAccessToken{
 		Subject:  claims.Subject,
 		Issuer:   claims.Issuer,
+		Audience: s.audience,
 		ClientID: claims.ClientID,
 		Scopes:   scopes,
 		KeyID:    keyID,
-	}
-	if len(claims.Audience) > 0 {
-		verified.Audience = claims.Audience[0]
 	}
 	if claims.ExpiresAt != nil {
 		verified.ExpiresAt = claims.ExpiresAt.Time
@@ -224,7 +227,7 @@ func (s *Service) validateTokenProfile(claims *accessTokenClaims) error {
 	use, present := claims.raw["token_use"]
 	var tokenUse string
 	if present {
-		if err := json.Unmarshal(use, &tokenUse); err != nil || tokenUse != "access" {
+		if err := json.Unmarshal(use, &tokenUse); err != nil || tokenUse != tokenUseAccess {
 			return errors.New("token_use must be access")
 		}
 	}
@@ -351,6 +354,14 @@ func (s *Service) ensureJWKS(ctx context.Context, force bool) error {
 			return flight.err
 		}
 	}
+	// A fast upstream failure must not turn sequential requests into a fetch
+	// storm. An expired cache remains fail-closed; valid cached keys above are
+	// not disabled by an unrelated failed unknown-kid refresh.
+	if s.refreshFailure != nil && s.now().Before(s.refreshRetryAt) {
+		err := s.refreshFailure
+		s.mu.Unlock()
+		return err
+	}
 	if force && !s.unknownRefreshAt.IsZero() && s.now().Before(s.unknownRefreshAt.Add(unknownKeyRefreshCooldown)) {
 		s.mu.Unlock()
 		return nil
@@ -369,6 +380,12 @@ func (s *Service) ensureJWKS(ctx context.Context, force bool) error {
 		err := s.refreshJWKS(refreshCtx)
 		s.mu.Lock()
 		flight.err = err
+		s.refreshFailure = err
+		if err != nil {
+			s.refreshRetryAt = s.now().Add(failedRefreshCooldown)
+		} else {
+			s.refreshRetryAt = time.Time{}
+		}
 		s.refresh = nil
 		close(flight.done)
 		s.mu.Unlock()
@@ -390,19 +407,9 @@ func (s *Service) refreshJWKS(ctx context.Context) error {
 	if err := s.fetchJSON(ctx, discovery.JWKSURI, &jwks); err != nil {
 		return fmt.Errorf("fetch jwks: %w", err)
 	}
-	keys := make(map[string]*rsa.PublicKey, len(jwks.Keys))
-	for _, key := range jwks.Keys {
-		if strings.TrimSpace(key.Kid) == "" {
-			continue
-		}
-		publicKey, err := oidc.DecodeRSAPublicKeyJWK(key)
-		if err != nil {
-			return fmt.Errorf("decode jwk %q: %w", key.Kid, err)
-		}
-		keys[key.Kid] = publicKey
-	}
-	if len(keys) == 0 {
-		return errors.New("jwks contains no usable keys")
+	keys, err := verificationKeys(jwks)
+	if err != nil {
+		return err
 	}
 	s.mu.Lock()
 	s.jwks = keys

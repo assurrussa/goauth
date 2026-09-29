@@ -76,7 +76,17 @@ linters:
   settings:
     depguard:
       rules:
+        release-evidence:
+          files:
+            - "**/cmd/releaseevidence/*.go"
+          list-mode: strict
+          allow:
+            - $gostd
+            - gopkg.in/yaml.v3$
         main:
+          files:
+            - $all
+            - "!**/cmd/releaseevidence/*.go"
           # Different modes: `original`, `strict`, and `lax`. Default: "original".
           list-mode: strict
           allow:

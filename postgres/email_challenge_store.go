@@ -32,7 +32,7 @@ func (s *Store) IssueEmailChallenge(
 		return goauth.EmailChallengeIssueResult{}, fmt.Errorf("begin email challenge issue: %w", err)
 	}
 	defer rollbackWrite(tx, owned)
-	if err := lockSubject(ctx, tx, record.SubjectID); err != nil {
+	if err := lockActiveSubject(ctx, tx, record.SubjectID); err != nil {
 		return goauth.EmailChallengeIssueResult{}, err
 	}
 
@@ -43,42 +43,23 @@ func (s *Store) IssueEmailChallenge(
 	if err := validateEmailChallengeSnapshot(ctx, tx, record); err != nil {
 		return goauth.EmailChallengeIssueResult{}, err
 	}
-	var (
-		lastSend sql.NullTime
-		lastHour int
-		lastDay  int
-	)
-	if err := tx.QueryRowContext(ctx, `
-SELECT
-    max(occurred_at),
-    count(*) FILTER (WHERE occurred_at >= $4),
-    count(*) FILTER (WHERE occurred_at >= $5)
-FROM auth_rate_limit_events
-WHERE key_id = $1 AND bucket_digest = $2 AND action = $3`,
-		record.RateDigest.KeyID,
-		record.RateDigest.Digest,
-		action,
-		record.CreatedAt.Add(-time.Hour),
-		record.CreatedAt.Add(-24*time.Hour),
-	).Scan(&lastSend, &lastHour, &lastDay); err != nil {
-		return goauth.EmailChallengeIssueResult{}, fmt.Errorf("read email challenge rate limit: %w", err)
+	quota, err := readEmailQuota(ctx, tx, record.RateDigest, action, record.CreatedAt, limits)
+	if err != nil {
+		return goauth.EmailChallengeIssueResult{}, err
 	}
-	if lastSend.Valid && limits.MinResendInterval > 0 {
-		retryAt := lastSend.Time.Add(limits.MinResendInterval)
-		if record.CreatedAt.Before(retryAt) {
-			return goauth.EmailChallengeIssueResult{Status: goauth.EmailChallengeWait, RetryAt: retryAt}, nil
-		}
+	if quota.waiting {
+		return goauth.EmailChallengeIssueResult{Status: goauth.EmailChallengeWait, RetryAt: quota.retryAt}, nil
 	}
-	if lastHour >= limits.PerHour {
+	if quota.hourly {
 		return goauth.EmailChallengeIssueResult{
 			Status:  goauth.EmailChallengeHourlyLimit,
-			RetryAt: record.CreatedAt.Add(time.Hour),
+			RetryAt: quota.retryAt,
 		}, nil
 	}
-	if lastDay >= limits.PerDay {
+	if quota.daily {
 		return goauth.EmailChallengeIssueResult{
 			Status:  goauth.EmailChallengeDailyLimit,
-			RetryAt: record.CreatedAt.Add(24 * time.Hour),
+			RetryAt: quota.retryAt,
 		}, nil
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -157,12 +138,13 @@ func (s *Store) VerifyEmailChallenge(
 	ctx context.Context,
 	request goauth.EmailChallengeVerifyRequest,
 ) (goauth.EmailChallengeVerifyResult, error) {
+	started := time.Now()
 	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
 		return goauth.EmailChallengeVerifyResult{}, fmt.Errorf("begin email challenge verify: %w", err)
 	}
 	defer rollbackWrite(tx, owned)
-	if err := lockSubject(ctx, tx, request.SubjectID); err != nil {
+	if err := lockActiveSubject(ctx, tx, request.SubjectID); err != nil {
 		return goauth.EmailChallengeVerifyResult{}, err
 	}
 
@@ -215,6 +197,7 @@ FOR UPDATE`, request.SubjectID, request.Purpose).Scan(
 			Attempts: attempts,
 		}, nil
 	}
+	request.Now = securityTime(ctx, request.Now, started)
 	if !request.Now.Before(expiresAt) {
 		return goauth.EmailChallengeVerifyResult{
 			Status:   goauth.EmailChallengeExpired,

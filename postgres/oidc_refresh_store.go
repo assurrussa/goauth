@@ -73,7 +73,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
 	if err := insertOIDCRefreshToken(ctx, tx, selector, familyID, keyID, digest, token); err != nil {
 		return err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := commitAuthTransaction(tx); err != nil {
 		return fmt.Errorf("commit OIDC refresh token issue: %w", err)
 	}
 
@@ -106,7 +106,7 @@ func (s *OIDCRefreshTokenStore) Get(ctx context.Context, rawToken string) (oidc.
 		}
 		record.RevokedAt = &replayAt
 	}
-	if err := tx.Commit(); err != nil {
+	if err := commitAuthTransaction(tx); err != nil {
 		return oidc.RefreshToken{}, fmt.Errorf("commit OIDC refresh token lookup: %w", err)
 	}
 
@@ -136,7 +136,7 @@ SET revoked_at = COALESCE(revoked_at, $2)
 WHERE id = $1`, locked.familyID, revokedAt.UTC()); err != nil {
 		return fmt.Errorf("revoke OIDC refresh family: %w", err)
 	}
-	if err := tx.Commit(); err != nil {
+	if err := commitAuthTransaction(tx); err != nil {
 		return fmt.Errorf("commit OIDC refresh token revoke: %w", err)
 	}
 
@@ -180,7 +180,7 @@ func (s *OIDCRefreshTokenStore) Rotate(
 		if err := markOIDCRefreshReplay(ctx, tx, locked, rotatedAt.UTC()); err != nil {
 			return err
 		}
-		if err := tx.Commit(); err != nil {
+		if err := commitAuthTransaction(tx); err != nil {
 			return fmt.Errorf("commit OIDC refresh replay revocation: %w", err)
 		}
 		return oidc.ErrRefreshTokenReplay
@@ -219,7 +219,7 @@ WHERE selector = $1 AND consumed_at IS NULL`, selector, rotatedAt.UTC(), nextSel
 UPDATE auth_oidc_refresh_families SET expires_at = $2 WHERE id = $1`, locked.familyID, next.ExpiresAt); err != nil {
 		return fmt.Errorf("extend OIDC refresh family expiry: %w", err)
 	}
-	if err := tx.Commit(); err != nil {
+	if err := commitAuthTransaction(tx); err != nil {
 		return fmt.Errorf("commit OIDC refresh token rotation: %w", err)
 	}
 

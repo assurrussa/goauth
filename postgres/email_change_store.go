@@ -29,7 +29,7 @@ func (s *Store) IssueEmailChange(
 		return goauth.EmailChangeIssueResult{}, fmt.Errorf("begin email change issue: %w", err)
 	}
 	defer rollbackWrite(tx, owned)
-	if err := lockSubject(ctx, tx, record.SubjectID); err != nil {
+	if err := lockActiveSubject(ctx, tx, record.SubjectID); err != nil {
 		return goauth.EmailChangeIssueResult{}, err
 	}
 
@@ -52,42 +52,23 @@ FOR UPDATE`, record.SubjectID).Scan(&currentNormalized)
 	if currentNormalized == record.NewNormalizedValue {
 		return goauth.EmailChangeIssueResult{Status: goauth.EmailChangeSameValue}, nil
 	}
-	var (
-		lastSend sql.NullTime
-		lastHour int
-		lastDay  int
-	)
-	if err := tx.QueryRowContext(ctx, `
-SELECT
-    max(occurred_at),
-    count(*) FILTER (WHERE occurred_at >= $4),
-    count(*) FILTER (WHERE occurred_at >= $5)
-FROM auth_rate_limit_events
-WHERE key_id = $1 AND bucket_digest = $2 AND action = $3`,
-		record.RateDigest.KeyID,
-		record.RateDigest.Digest,
-		action,
-		record.CreatedAt.Add(-time.Hour),
-		record.CreatedAt.Add(-24*time.Hour),
-	).Scan(&lastSend, &lastHour, &lastDay); err != nil {
-		return goauth.EmailChangeIssueResult{}, fmt.Errorf("read email change rate limit: %w", err)
+	quota, err := readEmailQuota(ctx, tx, record.RateDigest, action, record.CreatedAt, limits)
+	if err != nil {
+		return goauth.EmailChangeIssueResult{}, err
 	}
-	if lastSend.Valid && limits.MinResendInterval > 0 {
-		retryAt := lastSend.Time.Add(limits.MinResendInterval)
-		if record.CreatedAt.Before(retryAt) {
-			return goauth.EmailChangeIssueResult{Status: goauth.EmailChangeWait, RetryAt: retryAt}, nil
-		}
+	if quota.waiting {
+		return goauth.EmailChangeIssueResult{Status: goauth.EmailChangeWait, RetryAt: quota.retryAt}, nil
 	}
-	if lastHour >= limits.PerHour {
+	if quota.hourly {
 		return goauth.EmailChangeIssueResult{
 			Status:  goauth.EmailChangeHourlyLimit,
-			RetryAt: record.CreatedAt.Add(time.Hour),
+			RetryAt: quota.retryAt,
 		}, nil
 	}
-	if lastDay >= limits.PerDay {
+	if quota.daily {
 		return goauth.EmailChangeIssueResult{
 			Status:  goauth.EmailChangeDailyLimit,
-			RetryAt: record.CreatedAt.Add(24 * time.Hour),
+			RetryAt: quota.retryAt,
 		}, nil
 	}
 	var occupied bool
@@ -178,12 +159,13 @@ func (s *Store) VerifyEmailChange(
 	ctx context.Context,
 	request goauth.EmailChangeVerifyRequest,
 ) (goauth.EmailChangeVerifyResult, error) {
+	started := time.Now()
 	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
 		return goauth.EmailChangeVerifyResult{}, fmt.Errorf("begin email change verification: %w", err)
 	}
 	defer rollbackWrite(tx, owned)
-	if err := lockSubject(ctx, tx, request.SubjectID); err != nil {
+	if err := lockActiveSubject(ctx, tx, request.SubjectID); err != nil {
 		return goauth.EmailChangeVerifyResult{}, err
 	}
 
@@ -226,6 +208,7 @@ FOR UPDATE`, request.SubjectID).Scan(
 			Attempts: attempts,
 		}, nil
 	}
+	request.Now = securityTime(ctx, request.Now, started)
 	if !request.Now.Before(expiresAt) {
 		return goauth.EmailChangeVerifyResult{
 			Status:   goauth.EmailChangeExpired,

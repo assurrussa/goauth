@@ -16,6 +16,7 @@ func (s *Store) CreateSession(ctx context.Context, record goauth.SessionRecord) 
 		record.RefreshSelector == "" || len(record.RefreshDigest.Digest) != 32 {
 		return errors.New("invalid session record")
 	}
+
 	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
 		return fmt.Errorf("begin session transaction: %w", err)
@@ -400,11 +401,12 @@ func revokeSubjectSecurityState(
 ) (int64, error) {
 	result, err := tx.ExecContext(ctx, `
 UPDATE auth_sessions
-SET revoked_at = COALESCE(revoked_at, $2)
-WHERE subject_id = $1`, subjectID, now)
+SET revoked_at = $2
+WHERE subject_id = $1 AND revoked_at IS NULL`, subjectID, now)
 	if err != nil {
 		return 0, fmt.Errorf("revoke subject sessions: %w", err)
 	}
+
 	revoked, err := result.RowsAffected()
 	if err != nil {
 		return 0, fmt.Errorf("read subject session revocation count: %w", err)
@@ -420,6 +422,9 @@ UPDATE auth_oidc_refresh_families
 SET revoked_at = COALESCE(revoked_at, $2)
 WHERE subject_id = $1`, subjectID, now); err != nil {
 		return 0, fmt.Errorf("revoke subject OIDC refresh families: %w", err)
+	}
+	if err := invalidateEmailSecurityState(ctx, tx, subjectID, now); err != nil {
+		return 0, err
 	}
 
 	return revoked, nil

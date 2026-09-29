@@ -9,6 +9,7 @@ import (
 	gofiber "github.com/gofiber/fiber/v3"
 
 	"github.com/assurrussa/goauth"
+	"github.com/assurrussa/goauth/internal/retryafter"
 )
 
 const (
@@ -54,6 +55,7 @@ type registerRequest struct {
 }
 
 func (a *Adapter) Register(c gofiber.Ctx) error {
+	c.Set(gofiber.HeaderCacheControl, "no-store")
 	var request registerRequest
 	if err := c.Bind().Body(&request); err != nil {
 		return WriteError(c, goauth.ErrInvalidIdentifier)
@@ -86,6 +88,7 @@ type loginRequest struct {
 }
 
 func (a *Adapter) Login(c gofiber.Ctx) error {
+	c.Set(gofiber.HeaderCacheControl, "no-store")
 	var request loginRequest
 	if err := c.Bind().Body(&request); err != nil {
 		return WriteError(c, goauth.ErrInvalidCredentials)
@@ -112,6 +115,7 @@ type refreshRequest struct {
 }
 
 func (a *Adapter) Refresh(c gofiber.Ctx) error {
+	c.Set(gofiber.HeaderCacheControl, "no-store")
 	var request refreshRequest
 	if err := c.Bind().Body(&request); err != nil {
 		return WriteError(c, goauth.ErrInvalidToken)
@@ -129,6 +133,7 @@ type requestPasswordResetRequest struct {
 }
 
 func (a *Adapter) RequestPasswordReset(c gofiber.Ctx) error {
+	c.Set(gofiber.HeaderCacheControl, "no-store")
 	var request requestPasswordResetRequest
 	if err := c.Bind().Body(&request); err != nil {
 		return c.Status(gofiber.StatusAccepted).JSON(gofiber.Map{acceptedResponseKey: true})
@@ -146,6 +151,7 @@ type resetPasswordRequest struct {
 }
 
 func (a *Adapter) ResetPassword(c gofiber.Ctx) error {
+	c.Set(gofiber.HeaderCacheControl, "no-store")
 	var request resetPasswordRequest
 	if err := c.Bind().Body(&request); err != nil {
 		return WriteError(c, goauth.ErrInvalidToken)
@@ -158,6 +164,7 @@ func (a *Adapter) ResetPassword(c gofiber.Ctx) error {
 }
 
 func (a *Adapter) SendEmailChallenge(c gofiber.Ctx) error {
+	c.Set(gofiber.HeaderCacheControl, "no-store")
 	auth, ok := AuthContext(c)
 	if !ok {
 		return WriteError(c, goauth.ErrInvalidToken)
@@ -178,6 +185,7 @@ type verifyEmailChallengeRequest struct {
 }
 
 func (a *Adapter) VerifyEmailChallenge(c gofiber.Ctx) error {
+	c.Set(gofiber.HeaderCacheControl, "no-store")
 	auth, ok := AuthContext(c)
 	if !ok {
 		return WriteError(c, goauth.ErrInvalidToken)
@@ -209,6 +217,7 @@ type RealmMiddlewareOptions struct {
 
 func (a *Adapter) RequireRealm(realm goauth.Realm, options RealmMiddlewareOptions) gofiber.Handler {
 	return func(c gofiber.Ctx) error {
+		c.Set(gofiber.HeaderCacheControl, "no-store")
 		if len(c.Request().Header.PeekAll(gofiber.HeaderAuthorization)) != 1 {
 			return WriteError(c, goauth.ErrInvalidToken)
 		}
@@ -247,6 +256,7 @@ type ErrorBody struct {
 }
 
 func WriteError(c gofiber.Ctx, err error) error {
+	c.Set(gofiber.HeaderCacheControl, "no-store")
 	status, code, message := mapError(err)
 	if retryAfter, ok := retryAfterSeconds(err); ok {
 		c.Set(gofiber.HeaderRetryAfter, strconv.Itoa(retryAfter))
@@ -308,6 +318,9 @@ func retryAfterSeconds(err error) (int, bool) {
 	}
 	if errors.Is(err, goauth.ErrPasswordHashOverloaded) {
 		return 1, true
+	}
+	if seconds, ok := retryafter.Seconds(err); ok {
+		return seconds, true
 	}
 	if errors.Is(err, goauth.ErrConfirmationResendDelay) {
 		return 60, true

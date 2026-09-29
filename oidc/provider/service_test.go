@@ -148,6 +148,7 @@ func TestProviderRejectsInvalidProtocolInputs(t *testing.T) {
 	require.NoError(t, h.codes.Save(context.Background(), oidc.AuthorizationCode{
 		Code:                "wrong-pkce",
 		SubjectID:           h.subject.Subject.ID.String(),
+		SecurityVersion:     h.subject.Subject.SecurityVersion,
 		ClientID:            h.client.ID,
 		RedirectURI:         h.client.RedirectURIs[0],
 		Scopes:              []string{oidc.ScopeOpenID},
@@ -303,6 +304,7 @@ func TestAuthorizationCodeConsumeIsAtomic(t *testing.T) {
 	require.NoError(t, h.codes.Save(context.Background(), oidc.AuthorizationCode{
 		Code:                concurrentAuthorizationCode,
 		SubjectID:           h.subject.Subject.ID.String(),
+		SecurityVersion:     h.subject.Subject.SecurityVersion,
 		ClientID:            h.client.ID,
 		RedirectURI:         h.client.RedirectURIs[0],
 		Scopes:              []string{oidc.ScopeOpenID},

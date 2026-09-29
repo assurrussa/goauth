@@ -51,6 +51,9 @@ func (s *Store) InAuthTransaction(ctx context.Context, fn func(context.Context) 
 	s.resets = working.resets
 	s.challenges = working.challenges
 	s.emailChanges = working.emailChanges
+	// TakeRateLimit rejects this scope before taking the same mutex. No
+	// independently admitted attempt can be overwritten by this snapshot.
+	// Email-issue quotas remain transactional and roll back with their writes.
 	s.rateEvents = working.rateEvents
 	return nil
 }
