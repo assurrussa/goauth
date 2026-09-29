@@ -129,8 +129,10 @@ func TestRateLimitBoundaryEmailQuotaStillRollsBack(t *testing.T) {
 	id := goauth.NewSubjectID()
 	_, err := store.CreateLocalAccount(context.Background(), goauth.LocalAccountRecord{Account: goauth.Account{
 		Subject: goauth.Subject{ID: id, Status: goauth.SubjectStatusActive, SecurityVersion: 1},
-		PrimaryEmail: goauth.Identifier{ID: "email", SubjectID: id, Scheme: goauth.IdentifierSchemeEmail,
-			DisplayValue: "old@example.test", NormalizedValue: "old@example.test"},
+		PrimaryEmail: goauth.Identifier{
+			ID: "email", SubjectID: id, Scheme: goauth.IdentifierSchemeEmail,
+			DisplayValue: "old@example.test", NormalizedValue: "old@example.test",
+		},
 	}})
 	if err != nil {
 		t.Fatal(err)
