@@ -2,6 +2,7 @@ package goauth
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -139,6 +140,9 @@ func (r *Runtime) ConfirmEmailChange(ctx context.Context, subjectID SubjectID, c
 	var outcomeErr error
 	err = r.inNotificationTransaction(ctx, func(txCtx context.Context) error {
 		if _, err := r.lockActiveAccount(txCtx, subjectID); err != nil {
+			if errors.Is(err, ErrAccountNotFound) {
+				return ErrEmailChangeNotFound
+			}
 			return err
 		}
 		now := r.now().UTC()

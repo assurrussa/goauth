@@ -2,7 +2,6 @@ package goauth_test
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -12,7 +11,7 @@ import (
 	"github.com/assurrussa/goauth/testkit"
 )
 
-const reviewPassword = "Review-Unique-Passphrase-42" //nolint:gosec // Isolated test credential.
+const reviewPassword = "Review-Unique-Passphrase-42"
 
 func reviewAccount(t *testing.T, fixture *testkit.Fixture) goauth.Account {
 	t.Helper()
@@ -71,14 +70,39 @@ func TestReviewLogoutAllInvalidatesPendingEmailChange(t *testing.T) {
 type reviewLockStore struct {
 	goauth.RuntimeStore
 	afterLock func()
+	lockError error
 }
 
 func (s *reviewLockStore) LockAccount(ctx context.Context, id goauth.SubjectID) (goauth.Account, error) {
+	if s.lockError != nil {
+		return goauth.Account{}, s.lockError
+	}
 	account, err := s.RuntimeStore.LockAccount(ctx, id)
 	if err == nil && s.afterLock != nil {
 		s.afterLock()
 	}
 	return account, err
+}
+
+func TestReviewEmailChangePreservesLockFailure(t *testing.T) {
+	var store *reviewLockStore
+	fixture, err := testkit.NewRuntime(func(config *goauth.Config) {
+		store = &reviewLockStore{RuntimeStore: config.Store}
+		config.Store = store
+	})
+	require.NoError(t, err)
+	account := reviewAccount(t, fixture)
+	require.NoError(t, fixture.Runtime.RequestEmailChange(t.Context(), account.Subject.ID, "replacement@example.test"))
+	code := reviewCode(t, fixture)
+	before := len(fixture.Events.Events())
+	store.lockError = context.DeadlineExceeded
+	confirmed, err := fixture.Runtime.ConfirmEmailChange(t.Context(), account.Subject.ID, code)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Zero(t, confirmed)
+	require.Len(t, fixture.Events.Events(), before)
+	store.lockError = nil
+	_, err = fixture.Runtime.PendingEmailChange(t.Context(), account.Subject.ID)
+	require.NoError(t, err)
 }
 
 func TestReviewEmailExpiryIsCheckedAfterSubjectLock(t *testing.T) {
@@ -98,7 +122,9 @@ func TestReviewEmailExpiryIsCheckedAfterSubjectLock(t *testing.T) {
 			if change {
 				require.NoError(t, fixture.Runtime.RequestEmailChange(t.Context(), account.Subject.ID, "replacement@example.test"))
 			} else {
-				require.NoError(t, fixture.Runtime.SendEmailChallenge(t.Context(), account.Subject.ID, goauth.EmailChallengePurposeVerification))
+				require.NoError(t, fixture.Runtime.SendEmailChallenge(
+					t.Context(), account.Subject.ID, goauth.EmailChallengePurposeVerification,
+				))
 			}
 			code := reviewCode(t, fixture)
 			store.afterLock = func() { now = now.Add(2 * time.Minute) }
@@ -123,14 +149,14 @@ func TestReviewPasswordChangeRateLimitRetainsDeadline(t *testing.T) {
 	require.NoError(t, err)
 	account := reviewAccount(t, fixture)
 	request := goauth.ChangePasswordRequest{
-		SubjectID: account.Subject.ID, CurrentPassword: "wrong-password", NewPassword: "Different-Unique-Passphrase-42",
+		SubjectID: account.Subject.ID, CurrentPassword: "incorrect-review-password", NewPassword: "Different-Unique-Passphrase-42",
 	}
 	_, err = fixture.Runtime.ChangePassword(t.Context(), request)
 	require.ErrorIs(t, err, goauth.ErrCurrentPasswordInvalid)
 	_, err = fixture.Runtime.ChangePassword(t.Context(), request)
 	require.ErrorIs(t, err, goauth.ErrAuthenticationRateLimited)
 	var retry interface{ RetryAfter() time.Duration }
-	require.True(t, errors.As(err, &retry))
+	require.ErrorAs(t, err, &retry)
 	require.Equal(t, 17*time.Second, retry.RetryAfter())
 	now = now.Add(18 * time.Second)
 	_, err = fixture.Runtime.ChangePassword(t.Context(), request)

@@ -7,6 +7,30 @@ import (
 	"strings"
 )
 
+const (
+	hostSite             = "site"
+	fieldEvidence        = "redacted_evidence"
+	fieldResolvedVersion = "resolved_goauth_version"
+	fieldResolvedSHA     = "resolved_goauth_sha"
+	fieldOutcome         = "outcome"
+	fieldCommand         = "command"
+	fieldHostSHA         = "host_sha"
+	fieldReplacement     = "replacement_present"
+	outcomeBlocked       = "blocked"
+	hostAdmin            = "admin"
+	outcomePass          = "pass"
+	outcomeExcluded      = "not_applicable"
+	fieldReviewer        = "reviewer"
+	fieldStatus          = "status"
+)
+
+var requirementPattern = regexp.MustCompile(`^AUTH-(0[1-9]|10)$`)
+
+var releaseGateNames = []string{
+	"candidate", "browser_and_hosts", "independent_review", "exposure_review", "private_reporting",
+	"branch_and_tag_protection", "anonymous_exact_tag", "operational_drills",
+}
+
 var commitPattern = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 func requiredCases() map[string]bool {
@@ -19,8 +43,16 @@ func requiredCases() map[string]bool {
 	return result
 }
 
-func object(value any) map[string]any { result, _ := value.(map[string]any); return result }
-func text(value any) string           { result, _ := value.(string); return strings.TrimSpace(result) }
+func object(value any) map[string]any {
+	result, _ := value.(map[string]any)
+	return result
+}
+
+func text(value any) string {
+	result, _ := value.(string)
+	return strings.TrimSpace(result)
+}
+
 func populatedList(value any) bool {
 	entries, ok := value.([]any)
 	if !ok || len(entries) == 0 {
@@ -34,30 +66,53 @@ func populatedList(value any) bool {
 	return true
 }
 
+type evidenceProblems []error
+
+func (p *evidenceProblems) addf(format string, args ...any) {
+	*p = append(*p, fmt.Errorf(format, args...))
+}
+
 // validate checks evidence structure and provenance, not the truth of observations.
 // The manifest belongs outside the clean checkout: a commit cannot name its own SHA.
 func validate(doc map[string]any, head string) error {
-	var problems []error
-	add := func(format string, args ...any) { problems = append(problems, fmt.Errorf(format, args...)) }
+	var problems evidenceProblems
+	addf := problems.addf
 	if !commitPattern.MatchString(head) {
 		return errors.New("HEAD must be a full commit SHA")
 	}
 	if doc["spec_version"] != 1 {
-		add("spec_version must be 1")
+		addf("spec_version must be 1")
 	}
 	candidate := object(doc["candidate"])
 	if text(candidate["sha"]) != head {
-		add("candidate.sha must match clean HEAD")
+		addf("candidate.sha must match clean HEAD")
 	}
 	if text(candidate["tag"]) == "" {
-		add("candidate.tag is required")
+		addf("candidate.tag is required")
 	}
 	if text(candidate["toolchain"]) == "" {
-		add("candidate.toolchain is required")
+		addf("candidate.toolchain is required")
 	}
+	validateScenarios(doc, head, addf)
+	validateHosts(object(doc["host_checks"]), head, addf)
+	validateGates(object(doc["release_gates"]), candidate, head, addf)
+	validateProfiles(object(doc["profiles"]), addf)
+	validateFindings(doc["findings"], addf)
+	owner := object(doc["owner_approval"])
+	for _, field := range []string{"release_claim", "approved_by", "approved_on", "support_scope"} {
+		if text(owner[field]) == "" {
+			addf("owner_approval.%s is required", field)
+		}
+	}
+	return errors.Join(problems...)
+}
+
+type addProblem func(string, ...any)
+
+func validateScenarios(doc map[string]any, head string, addf addProblem) {
 	scenarios, ok := doc["scenarios"].([]any)
 	if !ok {
-		add("scenarios must be the complete scenario list, not a historical summary")
+		addf("scenarios must be the complete scenario list, not a historical summary")
 	}
 	missing := requiredCases()
 	seen := make(map[string]bool)
@@ -67,126 +122,164 @@ func validate(doc map[string]any, head string) error {
 		scenario := object(entry)
 		id := text(scenario["id"])
 		if !requiredCases()[id] {
-			add("unknown scenario %q", id)
+			addf("unknown scenario %q", id)
 			continue
 		}
 		if seen[id] {
-			add("duplicate scenario %s", id)
+			addf("duplicate scenario %s", id)
 			continue
 		}
 		seen[id] = true
 		delete(missing, id)
-		if scenario["release_blocking"] != true {
-			add("%s must remain release-blocking", id)
-		}
-		if text(scenario["source_sha"]) != head {
-			add("%s source SHA does not match HEAD", id)
-		}
-		ids, ok := scenario["requirement_ids"].([]any)
-		if !ok {
-			add("%s requirement_ids must be a list", id)
-		}
-		for _, value := range ids {
-			req := text(value)
-			if !regexp.MustCompile(`^AUTH-(0[1-9]|10)$`).MatchString(req) {
-				add("%s has an invalid AUTH requirement", id)
-			}
+		validateScenario(scenario, id, profiles, head, addf)
+		for _, req := range scenarioRequirements(scenario, id, addf) {
 			requirements[req] = true
-		}
-		outcome := text(scenario["outcome"])
-		switch outcome {
-		case "pass":
-			for _, field := range []string{"action", "command", "redacted_evidence", "reviewer"} {
-				if text(scenario[field]) == "" {
-					add("%s requires %s", id, field)
-				}
-			}
-			for _, field := range []string{"preconditions", "durable_state_assertions", "security_event_observations"} {
-				if !populatedList(scenario[field]) {
-					add("%s requires nonempty %s", id, field)
-				}
-			}
-			observation := object(scenario["http_core_outcome"])
-			if text(observation["expected"]) == "" || text(observation["observed"]) == "" {
-				add("%s requires expected and observed outcomes", id)
-			}
-		case "not_applicable":
-			if text(scenario["not_applicable_reason"]) == "" || text(scenario["reviewer"]) == "" {
-				add("%s requires a scope reason and reviewer approval", id)
-			}
-			profile := ""
-			switch id[:3] {
-			case "WEB":
-				profile = "P2"
-			case "ADM":
-				profile = "P3"
-			case "OID":
-				profile = "P4"
-			}
-			if profile == "" || text(object(profiles[profile])["status"]) != "not_applicable" {
-				add("%s cannot hide a required or advertised profile", id)
-			}
-		default:
-			add("%s has blocking outcome %q", id, outcome)
 		}
 	}
 	for id := range missing {
-		add("missing scenario %s", id)
+		addf("missing scenario %s", id)
 	}
 	for i := 1; i <= 10; i++ {
 		id := fmt.Sprintf("AUTH-%02d", i)
 		if !requirements[id] {
-			add("unmapped requirement %s", id)
+			addf("unmapped requirement %s", id)
 		}
 	}
-	gates := object(doc["release_gates"])
-	for _, name := range []string{"candidate", "browser_and_hosts", "independent_review", "exposure_review", "private_reporting", "branch_and_tag_protection", "anonymous_exact_tag", "operational_drills"} {
+}
+
+func validateGates(gates, candidate map[string]any, head string, addf addProblem) {
+	for _, name := range releaseGateNames {
 		gate := object(gates[name])
-		if text(gate["status"]) != "pass" || text(gate["evidence"]) == "" {
-			add("release gate %s requires pass and evidence", name)
+		if text(gate[fieldStatus]) != outcomePass || text(gate["evidence"]) == "" {
+			addf("release gate %s requires pass and evidence", name)
 		}
 	}
 	gate := object(gates["candidate"])
-	if text(gate["source_sha"]) != head || text(gate["command"]) != "make release-candidate-readiness" {
-		add("candidate gate must identify the exact SHA and command")
+	if text(gate["source_sha"]) != head || text(gate[fieldCommand]) != "make release-candidate-readiness" {
+		addf("candidate gate must identify the exact SHA and command")
 	}
 	if text(object(gates["anonymous_exact_tag"])["tag"]) != text(candidate["tag"]) {
-		add("anonymous exact-tag evidence must match candidate.tag")
+		addf("anonymous exact-tag evidence must match candidate.tag")
 	}
+}
+
+func validateProfiles(profiles map[string]any, addf addProblem) {
 	for _, name := range []string{"P1", "P2", "P3", "P4"} {
 		profile := object(profiles[name])
-		switch text(profile["status"]) {
-		case "pass":
+		switch text(profile[fieldStatus]) {
+		case outcomePass:
 			if text(profile["evidence"]) == "" {
-				add("profile %s needs evidence", name)
+				addf("profile %s needs evidence", name)
 			}
-		case "not_applicable":
-			if name == "P1" || text(profile["not_applicable_reason"]) == "" || text(profile["reviewer"]) == "" {
-				add("profile %s needs a justified, approved exclusion", name)
+		case outcomeExcluded:
+			if name == "P1" || text(profile["not_applicable_reason"]) == "" || text(profile[fieldReviewer]) == "" {
+				addf("profile %s needs a justified, approved exclusion", name)
 			}
 		default:
-			add("profile %s remains unassessed", name)
+			addf("profile %s remains unassessed", name)
 		}
 	}
-	findings, ok := doc["findings"].([]any)
+}
+
+func validateFindings(value any, addf addProblem) {
+	findings, ok := value.([]any)
 	if !ok {
-		add("findings must be an explicit list")
+		addf("findings must be an explicit list")
 	}
 	for _, item := range findings {
 		finding := object(item)
 		if finding == nil {
-			add("finding must be an object")
+			addf("finding must be an object")
 			continue
 		}
-		if finding["release_blocking"] == true && text(finding["status"]) != "resolved" {
-			add("unresolved release-blocking finding")
+		blocking, _ := finding["release_blocking"].(bool)
+		if blocking && text(finding[fieldStatus]) != "resolved" {
+			addf("unresolved release-blocking finding")
 		}
 	}
-	owner := object(doc["owner_approval"])
-	for _, field := range []string{"release_claim", "approved_by", "approved_on", "support_scope"} {
-		if text(owner[field]) == "" {
-			add("owner_approval.%s is required", field)
+}
+
+func validateScenario(scenario map[string]any, id string, profiles map[string]any, head string, addf addProblem) {
+	blocking, _ := scenario["release_blocking"].(bool)
+	if !blocking {
+		addf("%s must remain release-blocking", id)
+	}
+	if text(scenario["source_sha"]) != head {
+		addf("%s source SHA does not match HEAD", id)
+	}
+	outcome := text(scenario[fieldOutcome])
+	switch outcome {
+	case outcomePass:
+		for _, field := range []string{"action", fieldCommand, fieldEvidence, fieldReviewer} {
+			if text(scenario[field]) == "" {
+				addf("%s requires %s", id, field)
+			}
+		}
+		for _, field := range []string{"preconditions", "durable_state_assertions", "security_event_observations"} {
+			if !populatedList(scenario[field]) {
+				addf("%s requires nonempty %s", id, field)
+			}
+		}
+		observation := object(scenario["http_core_outcome"])
+		if text(observation["expected"]) == "" || text(observation["observed"]) == "" {
+			addf("%s requires expected and observed outcomes", id)
+		}
+	case outcomeExcluded:
+		if text(scenario["not_applicable_reason"]) == "" || text(scenario[fieldReviewer]) == "" {
+			addf("%s requires a scope reason and reviewer approval", id)
+		}
+		profile := ""
+		switch id[:3] {
+		case "WEB":
+			profile = "P2"
+		case "ADM":
+			profile = "P3"
+		case "OID":
+			profile = "P4"
+		}
+		if profile == "" || text(object(profiles[profile])[fieldStatus]) != outcomeExcluded {
+			addf("%s cannot hide a required or advertised profile", id)
+		}
+	default:
+		addf("%s has blocking outcome %q", id, outcome)
+	}
+}
+
+func scenarioRequirements(scenario map[string]any, id string, addf addProblem) []string {
+	ids, ok := scenario["requirement_ids"].([]any)
+	if !ok {
+		addf("%s requirement_ids must be a list", id)
+	}
+	result := make([]string, 0, len(ids))
+	for _, value := range ids {
+		req := text(value)
+		if !requirementPattern.MatchString(req) {
+			addf("%s has an invalid AUTH requirement", id)
+		}
+		result = append(result, req)
+	}
+	return result
+}
+
+func validateHosts(hosts map[string]any, head string, addf addProblem) {
+	for _, name := range []string{hostSite, hostAdmin} {
+		host := object(hosts[name])
+		if text(host[fieldOutcome]) != outcomePass {
+			addf("host_checks.%s requires a pass outcome", name)
+		}
+		if !commitPattern.MatchString(text(host[fieldHostSHA])) {
+			addf("host_checks.%s requires a full host SHA", name)
+		}
+		if text(host[fieldResolvedSHA]) != head {
+			addf("host_checks.%s resolved goauth SHA must match candidate.sha", name)
+		}
+		if _, ok := host[fieldReplacement].(bool); !ok {
+			addf("host_checks.%s replacement_present must be an explicit boolean", name)
+		}
+		for _, field := range []string{fieldResolvedVersion, fieldCommand, fieldEvidence} {
+			if text(host[field]) == "" {
+				addf("host_checks.%s requires %s", name, field)
+			}
 		}
 	}
-	return errors.Join(problems...)
 }

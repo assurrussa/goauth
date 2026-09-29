@@ -1,4 +1,4 @@
-package nethttp
+package nethttp_test
 
 import (
 	"errors"
@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/assurrussa/goauth"
+	authhttp "github.com/assurrussa/goauth/nethttp"
 )
 
 type reviewRetryError struct{}
@@ -20,13 +21,13 @@ func (reviewRetryError) RetryAfter() time.Duration { return 17*time.Second + tim
 
 func TestReviewRetryAfterUsesActualDeadline(t *testing.T) {
 	recorder := httptest.NewRecorder()
-	WriteError(recorder, errors.Join(errors.New("wrapper"), reviewRetryError{}))
+	authhttp.WriteError(recorder, errors.Join(errors.New("wrapper"), reviewRetryError{}))
 	require.Equal(t, http.StatusTooManyRequests, recorder.Code)
 	require.Equal(t, "18", recorder.Header().Get("Retry-After"))
 	require.Equal(t, "no-store", recorder.Header().Get("Cache-Control"))
 
 	recorder = httptest.NewRecorder()
-	WriteError(recorder, errors.Join(goauth.ErrOperationOutcomeUnknown, reviewRetryError{}))
+	authhttp.WriteError(recorder, errors.Join(goauth.ErrOperationOutcomeUnknown, reviewRetryError{}))
 	require.Equal(t, http.StatusServiceUnavailable, recorder.Code)
 	require.Empty(t, recorder.Header().Get("Retry-After"))
 }

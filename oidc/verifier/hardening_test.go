@@ -145,6 +145,7 @@ func TestVerifierCoalescesRefreshAndRecoversAfterFailureCooldown(t *testing.T) {
 	newJWK := testJWK(t, "new", &newKey.PublicKey)
 	var discoveries, fetches atomic.Int32
 	var fail atomic.Bool
+	jwksFailure := errors.New("temporary JWKS failure")
 	fail.Store(true)
 	transport := transportFunc(func(r *http.Request) (*http.Response, error) {
 		if strings.Contains(r.URL.Path, ".well-known") {
@@ -153,7 +154,7 @@ func TestVerifierCoalescesRefreshAndRecoversAfterFailureCooldown(t *testing.T) {
 		}
 		n := fetches.Add(1)
 		if n > 1 && fail.Load() {
-			return nil, errors.New("temporary JWKS failure")
+			return nil, jwksFailure
 		}
 		keys := []oidc.JWK{oldJWK}
 		if n > 1 {
@@ -197,9 +198,15 @@ func TestVerifierCoalescesRefreshAndRecoversAfterFailureCooldown(t *testing.T) {
 	require.NoError(t, err)
 	fail.Store(false)
 	_, err = service.VerifyAccessToken(context.Background(), token)
+	// The failure backoff preserves the upstream error before the longer
+	// unknown-key cooldown applies; neither interval permits another fetch.
+	require.ErrorIs(t, err, jwksFailure)
+	require.EqualValues(t, 2, fetches.Load())
+	now = now.Add(time.Second)
+	_, err = service.VerifyAccessToken(context.Background(), token)
 	require.ErrorIs(t, err, errUnknownKeyID)
 	require.EqualValues(t, 2, fetches.Load())
-	now = now.Add(unknownKeyRefreshCooldown)
+	now = now.Add(unknownKeyRefreshCooldown - time.Second)
 	_, err = service.VerifyAccessToken(context.Background(), token)
 	require.NoError(t, err)
 	require.EqualValues(t, 3, fetches.Load())

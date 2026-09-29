@@ -1,4 +1,4 @@
-package fiber
+package fiber_test
 
 import (
 	"context"
@@ -13,9 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/assurrussa/goauth"
+	goauthfiber "github.com/assurrussa/goauth/fiber"
 )
 
-type reviewHeaderRuntime struct{ Runtime }
+type reviewHeaderRuntime struct{ goauthfiber.Runtime }
 
 func (reviewHeaderRuntime) Register(context.Context, goauth.RegisterRequest) (goauth.RegisterResult, error) {
 	return goauth.RegisterResult{}, nil
@@ -30,7 +31,7 @@ func (reviewHeaderRuntime) Refresh(context.Context, string) (goauth.TokenPair, e
 }
 
 func TestReviewTokenResponsesCannotBeCached(t *testing.T) {
-	adapter, err := New(reviewHeaderRuntime{})
+	adapter, err := goauthfiber.New(reviewHeaderRuntime{})
 	require.NoError(t, err)
 	app := gofiber.New()
 	app.Post("/register", adapter.Register)
@@ -38,7 +39,7 @@ func TestReviewTokenResponsesCannotBeCached(t *testing.T) {
 	app.Post("/refresh", adapter.Refresh)
 	for _, path := range []string{"/register", "/login", "/refresh"} {
 		for _, body := range []string{"{}", "{"} {
-			request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, path, strings.NewReader(body))
 			request.Header.Set("Content-Type", "application/json")
 			response, err := app.Test(request)
 			require.NoError(t, err)
@@ -55,9 +56,25 @@ func (reviewRetryError) Unwrap() error             { return goauth.ErrAuthentica
 func (reviewRetryError) RetryAfter() time.Duration { return 17*time.Second + time.Millisecond }
 
 func TestReviewRetryAfterUsesActualDeadline(t *testing.T) {
-	seconds, ok := retryAfterSeconds(errors.Join(errors.New("wrapper"), reviewRetryError{}))
-	require.True(t, ok)
-	require.Equal(t, 18, seconds)
-	_, ok = retryAfterSeconds(errors.Join(goauth.ErrOperationOutcomeUnknown, reviewRetryError{}))
-	require.False(t, ok)
+	for _, tc := range []struct {
+		name   string
+		err    error
+		status int
+		retry  string
+	}{
+		{"limited", errors.Join(errors.New("wrapper"), reviewRetryError{}), http.StatusTooManyRequests, "18"},
+		{"unknown", errors.Join(goauth.ErrOperationOutcomeUnknown, reviewRetryError{}), http.StatusServiceUnavailable, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app := gofiber.New()
+			app.Get("/", func(c gofiber.Ctx) error { return goauthfiber.WriteError(c, tc.err) })
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
+			response, err := app.Test(request)
+			require.NoError(t, err)
+			require.Equal(t, tc.status, response.StatusCode)
+			require.Equal(t, tc.retry, response.Header.Get("Retry-After"))
+			require.Equal(t, "no-store", response.Header.Get("Cache-Control"))
+			require.NoError(t, response.Body.Close())
+		})
+	}
 }

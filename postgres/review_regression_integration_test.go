@@ -61,7 +61,7 @@ func TestPostgresReviewOneTimeExpiryAfterLockWait(t *testing.T) {
 					ID: id, SubjectID: account.Subject.ID, IdentifierID: account.PrimaryEmail.ID,
 					ExpectedNormalizedEmail: account.PrimaryEmail.NormalizedValue,
 					ExpectedSecurityVersion: account.Subject.SecurityVersion,
-					Purpose: goauth.EmailChallengePurposeVerification, Digest: digest, RateDigest: digest,
+					Purpose:                 goauth.EmailChallengePurposeVerification, Digest: digest, RateDigest: digest,
 					MaxAttempts: 5, CreatedAt: now, ExpiresAt: expires,
 				}, goauth.EmailChallengeLimits{PerHour: 5, PerDay: 10})
 				require.NoError(t, err)
@@ -158,4 +158,6 @@ func TestPostgresReviewLogoutAllCountsNewRevocationsAndInvalidatesEmail(t *testi
 	count, err = auth.LogoutAll(t.Context(), id)
 	require.NoError(t, err)
 	require.Zero(t, count)
+	_, err = auth.ConfirmEmailChange(t.Context(), goauth.NewSubjectID(), "123456")
+	require.ErrorIs(t, err, goauth.ErrEmailChangeNotFound)
 }

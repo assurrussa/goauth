@@ -121,22 +121,46 @@ required. Findings use explicit `release_blocking` and `status: resolved` for cl
 blockers. These checks validate structure and declared source identity, not the
 truth of evidence or a reviewer's authority.
 
+The `host_checks.site` and `host_checks.admin` entries are mandatory. Each must
+record a passing outcome, its host commit, resolved goauth version and candidate
+SHA, an explicit replacement flag, the acceptance command and redacted evidence.
+Local replacement is permitted only with the same declared candidate SHA; it
+does not establish anonymous tag availability. A shared `browser_and_hosts` gate
+cannot stand in for these individual observations.
+
 Keep the final manifest outside the clean checkout or in a private release
 artifact: committing a file containing its own commit SHA is circular. Historical
 local summaries and the unfilled template intentionally fail the acceptance gate.
 No evidence status is upgraded by the presence of a test or a new source file.
 
-## Validation performed in this change session
+## Validation
 
-Isolated copies of the standard-library-only auth clock, retry conversion, and
-release-evidence validator passed `go test -race` on Go 1.23.2. The validator tests
-exercise constructed test manifests; they do not certify this candidate. They do
-not cover the YAML/Git command wrapper.
+The original implementation session verified isolated standard-library copies on
+Go 1.23.2 because its container could not obtain the declared toolchain or
+dependencies. Those historical checks were not a full candidate gate.
 
-The project-declared Go 1.27.1 toolchain and dependency downloads were unavailable
-in the execution container, whose GitHub DNS lookup failed. Full-module tests,
-format/tidy/lint, PostgreSQL/Redis integration, browser acceptance, govulncheck,
-exact-tag consumption and history/exposure review were not run in this session.
-Do not merge on the basis of the isolated checks alone. Use the declared toolchain
-to run `make prepare`, inspect any resulting changes, and then the canonical gate.
+The review follow-up passed `make release-candidate-readiness` on Go 1.27.1. This
+includes source guards, tidy/format verification, vet, lint (zero issues),
+race/coverage tests, disposable PostgreSQL/Redis integration, both local consumer
+probes, govulncheck, a real database backup/restore and Chromium/HTTPS acceptance.
+Root coverage is 84.6%, PostgreSQL 80.6%, provider 82.9% and verifier 91.6%.
+Govulncheck found no reachable vulnerabilities and three unreachable findings in
+required modules. A fresh independent review found no actionable P1/P2.
+
+The email-change missing-subject outcome is preserved; infrastructure lock errors
+still propagate without notification or state consumption. The OIDC regression
+checks both the one-second upstream-error backoff and the unknown-key cooldown,
+including old-cache validity and recovery. The evidence tests cover missing,
+failed, incomplete and stale host observations plus actual YAML/Git CLI execution
+on temporary checkouts, including proof that the CLI does not modify HEAD or
+working-tree status.
+
+The checked source fingerprint is
+`ed3236b571d5df3d24deeeb0494b4b4ec4f5979a1dc37aa454b2d8c3b57a625c`
+over 158 non-documentation files. Source stayed unchanged through the final
+review and gate; only these validation notes were updated afterward.
+
+Constructed evidence fixtures do not certify the candidate's observations.
+Actual site/admin acceptance at this candidate, the complete 38-case manifest,
+anonymous published-tag consumption and history/exposure review remain separate.
 No tag, visibility change, production deployment or completed release is claimed.

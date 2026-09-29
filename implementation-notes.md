@@ -426,3 +426,33 @@ Review lens: Security Engineering + Go/Backend + Browser/Mobile boundaries.
   after the frozen review/gate. No schema, public signature, dependency or
   hosted-workflow changes. Commit/response latency, live IdP conformance, full
   38-case release-SHA acceptance and published/production adoption stay unverified.
+
+## 2026-09-29: PR #9 review follow-up
+
+- Goal: close the Runtime error, OIDC backoff test and host-evidence findings,
+  plus the formatting/lint failures on `da60bf55`, in the existing PR branch.
+- Preserve canonical subject locking, upstream-error backoff, public Go
+  signatures, schema version 3 and the historical acceptance manifests.
+- Root owns Runtime/OIDC/HTTP regression updates and final validation; one
+  bounded worker owns the evidence CLI and its scoped YAML lint allowance.
+- Evidence must include passing site/admin checks with the exact candidate
+  goauth SHA and recorded host/dependency versions. Local replacement remains
+  explicit; neither test fixtures nor old host smoke reports become evidence.
+- Runtime missing-subject and infrastructure-failure regressions, public HTTP
+  headers and verifier backoff/cooldown checks now pass with race detection.
+- Evidence CLI integration is complete, including actual subprocess tests of
+  temporary clean/dirty Git checkouts, exact-tag identity, malformed YAML and
+  read-only behavior. YAML imports remain confined to the evidence CLI.
+- Final `make release-candidate-readiness` PASS on Go 1.27.1: 14 source guards,
+  tidy/format checks, vet/lint (0 issues), race/coverage, PostgreSQL/Redis and both
+  local consumers, govulncheck, real backup/restore and Chromium/HTTPS acceptance.
+  Root coverage 84.6%, PostgreSQL 80.6%, provider 82.9%, verifier 91.6%; no reachable
+  vulnerabilities, three unreachable findings in required modules.
+- A fresh independent read-only review found no actionable P1/P2. An earlier
+  reviewer inadvertently read author notes; that pass is not used as the
+  independent sign-off. Root final diff review and source hash consistency pass.
+- Source fingerprint: `ed3236b571d5df3d24deeeb0494b4b4ec4f5979a1dc37aa454b2d8c3b57a625c`
+  over 158 non-documentation files, unchanged through review and the gate. Only
+  validation notes changed afterward. Disposable services were removed.
+- Actual site/admin acceptance at the new candidate, full 38-case release-SHA
+  evidence, anonymous tag resolution and publication remain separate.

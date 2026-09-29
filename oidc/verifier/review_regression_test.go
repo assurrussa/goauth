@@ -1,4 +1,4 @@
-//nolint:testpackage // Exercises cache coordination and JWKS selection internals.
+//nolint:testpackage,goconst // Exercises cache internals with readable JWT protocol claim names.
 package verifier
 
 import (
@@ -16,6 +16,8 @@ import (
 
 	"github.com/assurrussa/goauth/oidc"
 )
+
+const reviewAudience = "review"
 
 func TestReviewJWKSFiltersIncompatibleKeys(t *testing.T) {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -53,7 +55,7 @@ func TestReviewDiscoveryFailuresAreBackedOff(t *testing.T) {
 	defer server.Close()
 	now := time.Now().UTC()
 	service, err := New(Options{
-		Issuer: server.URL, Audience: "review", AllowInsecureHTTP: true,
+		Issuer: server.URL, Audience: reviewAudience, AllowInsecureHTTP: true,
 		Now: func() time.Time { return now },
 	})
 	require.NoError(t, err)
@@ -74,13 +76,13 @@ func TestReviewVerifiedAudienceIsTheMatchedAudience(t *testing.T) {
 	now := time.Now().UTC()
 	service, err := New(Options{Issuer: "https://review.example.test", Audience: "our-api", Now: func() time.Time { return now }})
 	require.NoError(t, err)
-	service.jwks = map[string]*rsa.PublicKey{"review": &key.PublicKey}
+	service.jwks = map[string]*rsa.PublicKey{reviewAudience: &key.PublicKey}
 	service.jwksFetched = now
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"iss": "https://review.example.test", "sub": "review-subject", "aud": []string{"other-api", "our-api"},
 		"exp": now.Add(time.Minute).Unix(), "iat": now.Unix(), "token_use": "access",
 	})
-	token.Header["kid"] = "review"
+	token.Header["kid"] = reviewAudience
 	raw, err := token.SignedString(key)
 	require.NoError(t, err)
 	verified, err := service.VerifyAccessToken(context.Background(), raw)

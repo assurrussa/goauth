@@ -49,11 +49,18 @@ func run(path string) error {
 		return fmt.Errorf("decode release evidence: %w", err)
 	}
 	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		if err != nil {
+			return fmt.Errorf("decode trailing release evidence: %w", err)
+		}
 		return errors.New("exactly one YAML document is required")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	tag := text(object(document["candidate"])["tag"])
+	if err := validateTagName(ctx, tag); err != nil {
+		return err
+	}
 	head, err := exec.CommandContext(ctx, "git", "rev-parse", "HEAD").Output()
 	if err != nil {
 		return fmt.Errorf("resolve checkout HEAD: %w", err)
@@ -69,10 +76,31 @@ func run(path string) error {
 		return err
 	}
 	// A matching string in a document is not proof that its tag resolves to HEAD.
-	tag := text(object(document["candidate"])["tag"])
+	// The ref is a validated tag name passed as an argument, with no shell involved.
+	//nolint:gosec // G204: validateTagName verifies this exact refs/tags ref before resolution.
 	resolved, err := exec.CommandContext(ctx, "git", "rev-parse", "--verify", "refs/tags/"+tag+"^{commit}").Output()
-	if err != nil || !bytes.Equal(bytes.TrimSpace(resolved), bytes.TrimSpace(head)) {
+	if err != nil {
+		return fmt.Errorf("resolve candidate tag: %w", err)
+	}
+	if !bytes.Equal(bytes.TrimSpace(resolved), bytes.TrimSpace(head)) {
 		return errors.New("candidate tag must exist locally and resolve to HEAD")
 	}
 	return nil
+}
+
+func validateTagName(ctx context.Context, tag string) error {
+	if len(tag) < 2 || tag[0] != 'v' || tag[1] < '0' || tag[1] > '9' {
+		return errors.New("candidate.tag must begin with v and a digit")
+	}
+	// Git performs the authoritative ref-name validation; arguments never go through a shell.
+	//nolint:gosec // G204: this command validates the ref passed as a separate argument.
+	err := exec.CommandContext(ctx, "git", "check-ref-format", "refs/tags/"+tag).Run()
+	if err == nil {
+		return nil
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) && exit.ExitCode() == 1 {
+		return fmt.Errorf("invalid candidate tag name: %w", err)
+	}
+	return fmt.Errorf("validate candidate tag name: %w", err)
 }

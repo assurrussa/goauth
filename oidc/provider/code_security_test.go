@@ -19,8 +19,8 @@ func issueReviewCode(t *testing.T, h *oidcTestHarness) string {
 	t.Helper()
 	result, err := h.service.issueAuthorizationCode(t.Context(), authorizationCodeInput{
 		ClientID: h.client.ID, RedirectURI: h.client.RedirectURIs[0],
-		Scopes: []string{oidc.ScopeOpenID, oidc.ScopeOfflineAccess},
-		CodeChallenge: codeChallengeFor(reviewCodeVerifier), CodeChallengeMethod: "S256",
+		Scopes:        []string{oidc.ScopeOpenID, oidc.ScopeOfflineAccess},
+		CodeChallenge: codeChallengeFor(reviewCodeVerifier), CodeChallengeMethod: codeChallengeMethodS256,
 	}, oidc.AuthenticatedSubject{Account: h.subject, AuthenticatedAt: h.now})
 	require.NoError(t, err)
 	redirect, err := url.Parse(result.RedirectURI)
@@ -85,8 +85,8 @@ func TestReviewStaleAuthenticationCannotIssueAuthorizationCode(t *testing.T) {
 	}}
 	result, err := h.service.issueAuthorizationCode(t.Context(), authorizationCodeInput{
 		ClientID: h.client.ID, RedirectURI: h.client.RedirectURIs[0],
-		Scopes: []string{oidc.ScopeOpenID},
-		CodeChallenge: codeChallengeFor(reviewCodeVerifier), CodeChallengeMethod: "S256",
+		Scopes:        []string{oidc.ScopeOpenID},
+		CodeChallenge: codeChallengeFor(reviewCodeVerifier), CodeChallengeMethod: codeChallengeMethodS256,
 	}, oidc.AuthenticatedSubject{Account: h.subject, AuthenticatedAt: h.now})
 	requireOAuthError(t, err, "invalid_grant")
 	require.Nil(t, result)
