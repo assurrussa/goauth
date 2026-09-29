@@ -78,3 +78,25 @@ func TestReviewRetryAfterUsesActualDeadline(t *testing.T) {
 		})
 	}
 }
+
+type reducedLimitRetryError struct {
+	retryAfter time.Duration
+}
+
+func (e reducedLimitRetryError) Error() string             { return "rate limit exceeded" }
+func (e reducedLimitRetryError) Unwrap() error             { return goauth.ErrAuthenticationRateLimited }
+func (e reducedLimitRetryError) RetryAfter() time.Duration { return e.retryAfter }
+
+func TestReviewFiberRetryAfterReducedLimitWindowHeader(t *testing.T) {
+	app := gofiber.New()
+	app.Get("/", func(c gofiber.Ctx) error {
+		return goauthfiber.WriteError(c, reducedLimitRetryError{retryAfter: 4 * time.Minute})
+	})
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
+	response, err := app.Test(request)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusTooManyRequests, response.StatusCode)
+	require.Equal(t, "240", response.Header.Get("Retry-After"))
+	require.Equal(t, "no-store", response.Header.Get("Cache-Control"))
+	require.NoError(t, response.Body.Close())
+}

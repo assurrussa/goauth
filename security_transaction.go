@@ -66,7 +66,7 @@ func (r *Runtime) limitPasswordChange(ctx context.Context, id SubjectID) error {
 		return err
 	}
 	result, err := r.store.TakeRateLimit(ctx, RateLimitRequest{
-		SubjectID: id, Action: "password_change", Bucket: digest,
+		Action: "password_change", Bucket: digest,
 		Window: r.loginRateLimit.Window, Limit: r.loginRateLimit.Limit, Now: r.now().UTC(),
 	})
 	if err != nil {
