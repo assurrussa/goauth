@@ -178,6 +178,9 @@ func (r *Runtime) ChangePassword(ctx context.Context, request ChangePasswordRequ
 	if err := r.passwordPolicy.Validate(request.NewPassword); err != nil {
 		return Account{}, err
 	}
+	if err := r.limitPasswordChange(ctx, request.SubjectID); err != nil {
+		return Account{}, fmt.Errorf("check password change rate limit: %w", err)
+	}
 	record, err := r.store.GetLocalAccount(ctx, request.SubjectID)
 	if err != nil {
 		if errors.Is(err, ErrAccountNotFound) {

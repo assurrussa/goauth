@@ -110,9 +110,9 @@ func (r *Runtime) ResetPassword(ctx context.Context, rawToken, newPassword strin
 	if err != nil {
 		return fmt.Errorf("hash replacement password: %w", err)
 	}
-	now := r.now().UTC()
 	var outcomeErr error
 	err = r.inNotificationTransaction(ctx, func(txCtx context.Context) error {
+		now := r.now().UTC()
 		result, err := r.store.ConsumePasswordReset(txCtx, PasswordResetConsumeRequest{
 			Selector:    token.selector,
 			Digest:      digest,
@@ -143,7 +143,7 @@ func (r *Runtime) ResetPassword(ctx context.Context, rawToken, newPassword strin
 		return r.recordAudit(txCtx, SecurityEvent{
 			Type:      SecurityEventPasswordResetUsed,
 			SubjectID: result.Account.Subject.ID,
-			At:        now,
+			At:        r.now().UTC(),
 		})
 	})
 	if err != nil {
@@ -212,10 +212,10 @@ func (r *Runtime) SendEmailChallenge(
 		switch issue.Status {
 		case EmailChallengeIssued:
 		case EmailChallengeWait:
-			outcomeErr = ErrConfirmationResendDelay
+			outcomeErr = r.limited(ErrConfirmationResendDelay, issue.RetryAt)
 			return nil
 		default:
-			outcomeErr = ErrConfirmationRateLimited
+			outcomeErr = r.limited(ErrConfirmationRateLimited, issue.RetryAt)
 			return nil
 		}
 		if err := r.enqueueNotification(txCtx, "email_challenge", account, Notification{
@@ -276,6 +276,10 @@ func (r *Runtime) takeIdentifierRateLimit(
 	if err != nil {
 		return false, err
 	}
+	// Reset issuance deliberately preserves its enumeration-safe accepted response.
+	if !result.Allowed && action != "password_reset" {
+		return false, r.limited(ErrAuthenticationRateLimited, result.RetryAt)
+	}
 
 	return result.Allowed, nil
 }
@@ -305,9 +309,12 @@ func (r *Runtime) VerifyEmailChallenge(
 	if err != nil {
 		return Account{}, err
 	}
-	now := r.now().UTC()
 	var result EmailChallengeVerifyResult
-	err = r.authTransaction.InAuthTransaction(ctx, func(ctx context.Context) error {
+	err = r.inSecurityTransaction(ctx, func(ctx context.Context) error {
+		if _, err := r.lockActiveAccount(ctx, subjectID); err != nil {
+			return err
+		}
+		now := r.now().UTC()
 		var err error
 		result, err = r.store.VerifyEmailChallenge(ctx, EmailChallengeVerifyRequest{
 			SubjectID: subjectID,

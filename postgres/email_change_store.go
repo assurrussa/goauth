@@ -29,7 +29,7 @@ func (s *Store) IssueEmailChange(
 		return goauth.EmailChangeIssueResult{}, fmt.Errorf("begin email change issue: %w", err)
 	}
 	defer rollbackWrite(tx, owned)
-	if err := lockSubject(ctx, tx, record.SubjectID); err != nil {
+	if err := lockActiveSubject(ctx, tx, record.SubjectID); err != nil {
 		return goauth.EmailChangeIssueResult{}, err
 	}
 
@@ -178,12 +178,13 @@ func (s *Store) VerifyEmailChange(
 	ctx context.Context,
 	request goauth.EmailChangeVerifyRequest,
 ) (goauth.EmailChangeVerifyResult, error) {
+	started := time.Now()
 	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
 		return goauth.EmailChangeVerifyResult{}, fmt.Errorf("begin email change verification: %w", err)
 	}
 	defer rollbackWrite(tx, owned)
-	if err := lockSubject(ctx, tx, request.SubjectID); err != nil {
+	if err := lockActiveSubject(ctx, tx, request.SubjectID); err != nil {
 		return goauth.EmailChangeVerifyResult{}, err
 	}
 
@@ -226,6 +227,7 @@ FOR UPDATE`, request.SubjectID).Scan(
 			Attempts: attempts,
 		}, nil
 	}
+	request.Now = securityTime(ctx, request.Now, started)
 	if !request.Now.Before(expiresAt) {
 		return goauth.EmailChangeVerifyResult{
 			Status:   goauth.EmailChangeExpired,

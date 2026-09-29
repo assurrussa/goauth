@@ -16,6 +16,7 @@ func (s *Store) CreatePasswordReset(ctx context.Context, record goauth.PasswordR
 		record.ExpectedNormalizedEmail == "" || record.ExpectedSecurityVersion < 1 {
 		return errors.New("invalid password reset record")
 	}
+
 	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
 		return fmt.Errorf("begin password reset issue: %w", err)
@@ -72,9 +73,11 @@ func (s *Store) ConsumePasswordReset(
 	ctx context.Context,
 	request goauth.PasswordResetConsumeRequest,
 ) (goauth.PasswordResetConsumeResult, error) {
+	started := time.Now()
 	if request.Selector == "" || request.PasswordPHC == "" || len(request.Digest.Digest) != 32 {
 		return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetInvalid}, nil
 	}
+
 	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
 		return goauth.PasswordResetConsumeResult{}, fmt.Errorf("begin password reset consume: %w", err)
@@ -131,6 +134,8 @@ FOR UPDATE`, request.Selector).Scan(&subjectID, &keyID, &digest, &expiresAt, &co
 	if consumedAt.Valid {
 		return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetUsed}, nil
 	}
+	// The token must still be valid after both subject and reset locks were acquired.
+	request.Now = securityTime(ctx, request.Now, started)
 	if !request.Now.Before(expiresAt) {
 		return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetExpired}, nil
 	}

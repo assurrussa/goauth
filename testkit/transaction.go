@@ -40,6 +40,7 @@ func (s *Store) InAuthTransaction(ctx context.Context, fn func(context.Context) 
 	if err := fn(context.WithValue(ctx, storeScopeKey{}, storeScope{s, working})); err != nil {
 		return err
 	}
+	working.invalidateChangedEmailState(s)
 	s.audits = working.audits
 	s.accounts = working.accounts
 	s.identifiers = working.identifiers
@@ -53,6 +54,30 @@ func (s *Store) InAuthTransaction(ctx context.Context, fn func(context.Context) 
 	s.emailChanges = working.emailChanges
 	s.rateEvents = working.rateEvents
 	return nil
+}
+
+// The supported Runtime fixture publishes security-version changes and pending
+// email invalidation atomically, just like the canonical PostgreSQL transaction.
+func (s *Store) invalidateChangedEmailState(previous *Store) {
+	changed := func(id goauth.SubjectID) bool {
+		before, exists := previous.accounts[id.String()]
+		return exists && before.Subject.SecurityVersion != s.accounts[id.String()].Subject.SecurityVersion
+	}
+	for _, records := range s.emailChanges {
+		for _, record := range records {
+			if record.ConsumedAt == nil && changed(record.Record.SubjectID) {
+				now := s.accounts[record.Record.SubjectID.String()].Subject.UpdatedAt
+				record.ConsumedAt = &now
+			}
+		}
+	}
+	for _, records := range s.challenges {
+		for _, record := range records {
+			if record.VerifiedAt == nil && changed(record.Record.SubjectID) {
+				record.Attempts = record.Record.MaxAttempts
+			}
+		}
+	}
 }
 
 type fixtureTransaction struct {

@@ -32,7 +32,7 @@ func (s *Store) IssueEmailChallenge(
 		return goauth.EmailChallengeIssueResult{}, fmt.Errorf("begin email challenge issue: %w", err)
 	}
 	defer rollbackWrite(tx, owned)
-	if err := lockSubject(ctx, tx, record.SubjectID); err != nil {
+	if err := lockActiveSubject(ctx, tx, record.SubjectID); err != nil {
 		return goauth.EmailChallengeIssueResult{}, err
 	}
 
@@ -157,12 +157,13 @@ func (s *Store) VerifyEmailChallenge(
 	ctx context.Context,
 	request goauth.EmailChallengeVerifyRequest,
 ) (goauth.EmailChallengeVerifyResult, error) {
+	started := time.Now()
 	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
 		return goauth.EmailChallengeVerifyResult{}, fmt.Errorf("begin email challenge verify: %w", err)
 	}
 	defer rollbackWrite(tx, owned)
-	if err := lockSubject(ctx, tx, request.SubjectID); err != nil {
+	if err := lockActiveSubject(ctx, tx, request.SubjectID); err != nil {
 		return goauth.EmailChallengeVerifyResult{}, err
 	}
 
@@ -215,6 +216,7 @@ FOR UPDATE`, request.SubjectID, request.Purpose).Scan(
 			Attempts: attempts,
 		}, nil
 	}
+	request.Now = securityTime(ctx, request.Now, started)
 	if !request.Now.Before(expiresAt) {
 		return goauth.EmailChallengeVerifyResult{
 			Status:   goauth.EmailChallengeExpired,
