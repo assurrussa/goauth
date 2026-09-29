@@ -12,6 +12,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	evidenceVerified = "Evidence structure and source identity verified"
+	matchingVersion  = "matching selected version"
+	emptyVersion     = "empty selected version"
+)
+
 func TestReleaseEvidenceCLI(t *testing.T) {
 	binary := filepath.Join(t.TempDir(), "releaseevidence")
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
@@ -21,7 +27,11 @@ func TestReleaseEvidenceCLI(t *testing.T) {
 		t.Fatalf("build CLI: %v\n%s", err, output)
 	}
 	cases := []struct{ name, expected string }{
-		{"valid", "Evidence structure and source identity verified"},
+		{"valid", evidenceVerified},
+		{matchingVersion, evidenceVerified},
+		{"different selected version", "candidate.tag must match --version"},
+		{emptyVersion, evidenceVerified},
+		{"whitespace selected version", "candidate.tag must match --version"},
 		{"dirty", "clean checkout"},
 		{"mismatched tag", "resolve to HEAD"},
 		{"invalid tag", "invalid candidate tag name"},
@@ -40,6 +50,7 @@ func TestReleaseEvidenceCLI(t *testing.T) {
 			git("init", "--quiet")
 			git("commit", "--quiet", "--allow-empty", "-m", "fixture")
 			git("tag", fixtureTag)
+			git("tag", "v0.5.1")
 			if tc.name == "mismatched tag" {
 				git("commit", "--quiet", "--allow-empty", "-m", "new HEAD")
 			}
@@ -65,15 +76,30 @@ func TestReleaseEvidenceCLI(t *testing.T) {
 				t.Fatal(err)
 			}
 			status := git("status", "--porcelain", "--untracked-files=normal")
-			command := exec.CommandContext(ctx, binary, "--file", manifest)
+			args := append([]string{"--file", manifest}, cliVersionArgs(tc.name)...)
+			command := exec.CommandContext(ctx, binary, args...)
 			command.Dir = repo
 			output, err := command.CombinedOutput()
-			if (err == nil) != (tc.name == "valid") || !strings.Contains(string(output), tc.expected) {
+			wantPass := tc.name == "valid" || tc.name == "matching selected version" || tc.name == "empty selected version"
+			if (err == nil) != wantPass || !strings.Contains(string(output), tc.expected) {
 				t.Fatalf("CLI result %v, expected %q:\n%s", err, tc.expected, output)
 			}
 			assertCLIReadOnly(t, git, status, head)
 		})
 	}
+}
+
+func cliVersionArgs(name string) []string {
+	versions := map[string]string{
+		matchingVersion:               fixtureTag,
+		"different selected version":  "v0.5.1",
+		emptyVersion:                  "",
+		"whitespace selected version": " ",
+	}
+	if version, ok := versions[name]; ok {
+		return []string{"--version", version}
+	}
+	return nil
 }
 
 func cliEvidenceData(t *testing.T, evidence map[string]any, name string) []byte {

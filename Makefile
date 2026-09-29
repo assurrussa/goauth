@@ -46,7 +46,7 @@ public-preview-readiness: release-readiness
 
 release-evidence-check:
 	@test -n "$$EVIDENCE" || { printf 'EVIDENCE is required; select the reviewed release-SHA manifest.\n' >&2; exit 1; }
-	go run ./cmd/releaseevidence --file "$$EVIDENCE"
+	go run ./cmd/releaseevidence --file "$$EVIDENCE" --version "$$VERSION"
 
 public-module-check: release-source-check
 	$(MAKE) externalconsumer-published

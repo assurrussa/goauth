@@ -94,3 +94,30 @@ func TestEmailChallengeRateLimitIsAtomicAndBoundaryAware(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, goauth.EmailChallengeIssued, afterBoundary.Status)
 }
+
+func TestEmailChallengeQuotaDeadlineAfterReducedLimit(t *testing.T) {
+	t.Parallel()
+	store := testkit.NewStore()
+	subjectID := goauth.NewSubjectID()
+	base := time.Date(2026, 9, 29, 0, 0, 0, 0, time.UTC)
+	limits := goauth.EmailChallengeLimits{MinResendInterval: time.Minute, PerHour: 5, PerDay: 10}
+	issue := func(index int, at time.Time) goauth.EmailChallengeIssueResult {
+		t.Helper()
+		result, err := store.IssueEmailChallenge(t.Context(), goauth.EmailChallengeRecord{
+			ID: time.Duration(index).String(), SubjectID: subjectID,
+			IdentifierID: testChallengeIdentifier, Purpose: goauth.EmailChallengePurposeVerification,
+			Digest:      goauth.SecretDigest{KeyID: testChallengeKey, Digest: make([]byte, 32)},
+			RateDigest:  goauth.SecretDigest{KeyID: testChallengeRateKey, Digest: make([]byte, 32)},
+			MaxAttempts: 5, CreatedAt: at, ExpiresAt: at.Add(time.Hour),
+		}, limits)
+		require.NoError(t, err)
+		return result
+	}
+	for index := range 5 {
+		require.Equal(t, goauth.EmailChallengeIssued, issue(index, base.Add(time.Duration(index)*time.Minute)).Status)
+	}
+	limits.PerHour = 2
+	denied := issue(5, base.Add(5*time.Minute))
+	require.Equal(t, goauth.EmailChallengeHourlyLimit, denied.Status)
+	require.Equal(t, base.Add(time.Hour+3*time.Minute), denied.RetryAt)
+}

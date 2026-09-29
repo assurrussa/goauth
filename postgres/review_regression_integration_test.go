@@ -161,3 +161,36 @@ func TestPostgresReviewLogoutAllCountsNewRevocationsAndInvalidatesEmail(t *testi
 	_, err = auth.ConfirmEmailChange(t.Context(), goauth.NewSubjectID(), "123456")
 	require.ErrorIs(t, err, goauth.ErrEmailChangeNotFound)
 }
+
+func TestPostgresReviewPasswordChangeMissingSubject(t *testing.T) {
+	db := integrationDB(t)
+	resetSchema(t, db)
+	require.NoError(t, postgres.Migrate(t.Context(), db))
+	config := runtimeConfig(t)
+	config.LoginRateLimit = goauth.RateLimitPolicy{Window: time.Minute, Limit: 1}
+	auth, err := postgres.NewRuntime(postgres.Config{
+		DB: db, Runtime: config, NotificationSender: integrationNotificationSender(),
+	})
+	require.NoError(t, err)
+	request := goauth.ChangePasswordRequest{
+		SubjectID: goauth.NewSubjectID(), CurrentPassword: "incorrect-review-password",
+		NewPassword: "Different-Unique-Passphrase-42",
+	}
+	_, err = auth.ChangePassword(t.Context(), request)
+	require.ErrorIs(t, err, goauth.ErrCurrentPasswordInvalid)
+	var events int
+	require.NoError(t, db.QueryRowContext(t.Context(),
+		`SELECT count(*) FROM auth_rate_limit_events WHERE action = 'password_change'`).Scan(&events))
+	require.Zero(t, events)
+
+	// Existing credentials still consume the subject bucket before verification.
+	account, err := auth.ProvisionTrustedLocalAccount(t.Context(), goauth.RegisterRequest{
+		Email: "password.limit@example.test", Password: "Review-Unique-Passphrase-42",
+	})
+	require.NoError(t, err)
+	request.SubjectID = account.Subject.ID
+	_, err = auth.ChangePassword(t.Context(), request)
+	require.ErrorIs(t, err, goauth.ErrCurrentPasswordInvalid)
+	_, err = auth.ChangePassword(t.Context(), request)
+	require.ErrorIs(t, err, goauth.ErrAuthenticationRateLimited)
+}

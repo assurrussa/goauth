@@ -607,27 +607,15 @@ func (s *Store) IssueEmailChallenge(
 	key := challengeKey(record.SubjectID, record.Purpose)
 	rateKey := rateBucketKey(record.RateDigest, "email_challenge:"+string(record.Purpose))
 	events := s.rateEvents[rateKey]
-	if len(events) > 0 && limits.MinResendInterval > 0 {
-		last := events[len(events)-1]
-		retryAt := last.Add(limits.MinResendInterval)
-		if record.CreatedAt.Before(retryAt) {
-			return goauth.EmailChallengeIssueResult{Status: goauth.EmailChallengeWait, RetryAt: retryAt}, nil
-		}
+	quota := evaluateEmailQuota(events, record.CreatedAt, limits)
+	if quota.waiting {
+		return goauth.EmailChallengeIssueResult{Status: goauth.EmailChallengeWait, RetryAt: quota.retryAt}, nil
 	}
-	var hourly, daily int
-	for _, occurredAt := range events {
-		if !occurredAt.Before(record.CreatedAt.Add(-time.Hour)) {
-			hourly++
-		}
-		if !occurredAt.Before(record.CreatedAt.Add(-24 * time.Hour)) {
-			daily++
-		}
+	if quota.hourly {
+		return goauth.EmailChallengeIssueResult{Status: goauth.EmailChallengeHourlyLimit, RetryAt: quota.retryAt}, nil
 	}
-	if hourly >= limits.PerHour {
-		return goauth.EmailChallengeIssueResult{Status: goauth.EmailChallengeHourlyLimit}, nil
-	}
-	if daily >= limits.PerDay {
-		return goauth.EmailChallengeIssueResult{Status: goauth.EmailChallengeDailyLimit}, nil
+	if quota.daily {
+		return goauth.EmailChallengeIssueResult{Status: goauth.EmailChallengeDailyLimit, RetryAt: quota.retryAt}, nil
 	}
 	s.rateEvents[rateKey] = append(events, record.CreatedAt)
 	s.challenges[key] = append(s.challenges[key], &emailChallenge{Record: cloneChallengeRecord(record)})
@@ -744,27 +732,15 @@ func (s *Store) IssueEmailChange(
 	}
 	rateKey := rateBucketKey(record.RateDigest, "email_change")
 	events := s.rateEvents[rateKey]
-	if len(events) > 0 && limits.MinResendInterval > 0 {
-		last := events[len(events)-1]
-		retryAt := last.Add(limits.MinResendInterval)
-		if record.CreatedAt.Before(retryAt) {
-			return goauth.EmailChangeIssueResult{Status: goauth.EmailChangeWait, RetryAt: retryAt}, nil
-		}
+	quota := evaluateEmailQuota(events, record.CreatedAt, limits)
+	if quota.waiting {
+		return goauth.EmailChangeIssueResult{Status: goauth.EmailChangeWait, RetryAt: quota.retryAt}, nil
 	}
-	var hourly, daily int
-	for _, occurredAt := range events {
-		if !occurredAt.Before(record.CreatedAt.Add(-time.Hour)) {
-			hourly++
-		}
-		if !occurredAt.Before(record.CreatedAt.Add(-24 * time.Hour)) {
-			daily++
-		}
+	if quota.hourly {
+		return goauth.EmailChangeIssueResult{Status: goauth.EmailChangeHourlyLimit, RetryAt: quota.retryAt}, nil
 	}
-	if hourly >= limits.PerHour {
-		return goauth.EmailChangeIssueResult{Status: goauth.EmailChangeHourlyLimit}, nil
-	}
-	if daily >= limits.PerDay {
-		return goauth.EmailChangeIssueResult{Status: goauth.EmailChangeDailyLimit}, nil
+	if quota.daily {
+		return goauth.EmailChangeIssueResult{Status: goauth.EmailChangeDailyLimit, RetryAt: quota.retryAt}, nil
 	}
 	now := record.CreatedAt
 	for _, existing := range s.emailChanges[record.SubjectID.String()] {

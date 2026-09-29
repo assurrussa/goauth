@@ -32,6 +32,8 @@ only newly revoked sessions; it still advances the subject security version.
 
 Password changes have a separate subject-keyed attempt bucket, using the Runtime's
 configured login window and limit. Admission is checked before password hashing.
+The Runtime first resolves local credentials so an unknown subject retains
+`ErrCurrentPasswordInvalid` without attempting an invalid rate-event foreign key.
 This is separate from the hash-concurrency budget. Trusted hosts must not expose
 subject-ID-only Runtime methods as unauthenticated public APIs.
 
@@ -41,9 +43,12 @@ Fiber auth handlers, errors and protected middleware set `Cache-Control: no-stor
 Net/http retains its existing no-store JSON responses. Rate-limit errors retain
 `errors.Is` compatibility and expose `RetryAfter() time.Duration`; both adapters
 round this delay upward instead of replacing it with the default login window.
-The store supplies the retry deadline. New activity may change subsequent
-admission, and plain third-party sentinel errors retain the documented fallback
-hints. An uncertain operation outcome always suppresses an automatic retry hint.
+The store supplies the retry deadline. Email challenge and email-change quotas
+use the limiting event in each active rolling window; when resend and quota
+limits overlap, the latest deadline is returned. New activity may change
+subsequent admission, and plain third-party sentinel errors retain the
+documented fallback hints. An uncertain operation outcome always suppresses an
+automatic retry hint.
 Password-reset request denials retain their enumeration-safe accepted response.
 
 ## OIDC corrections
@@ -108,8 +113,14 @@ make public-preview-readiness VERSION=<new-tag> EVIDENCE=/absolute/private/relea
 For evidence validation alone, after those gates have actually passed:
 
 ```sh
-make release-evidence-check EVIDENCE=/absolute/private/release-evidence.yaml
+make release-evidence-check VERSION=<new-tag> EVIDENCE=/absolute/private/release-evidence.yaml
 ```
+
+The composed `public-preview-readiness` gate passes its selected `VERSION` to
+the evidence CLI. `candidate.tag` must match that version even when another tag
+points at the same commit. Standalone `release-evidence-check` may omit
+`VERSION`; then it checks the manifest's own tag and does not bind a selected
+published-version gate.
 
 Use `public-preview/release-evidence.example.yaml` as the structure, copy the
 per-case detail fields into every scenario, and record actual observations.
@@ -117,9 +128,9 @@ The manifest must identify clean HEAD, a tag resolving to HEAD, all 38 scenario
 IDs, the AUTH requirement coverage, passing gates and owner approval. An excluded
 optional profile needs its own `not_applicable_reason` and `reviewer`; a case
 cannot silently exclude an advertised profile. Core and operational cases remain
-required. Findings use explicit `release_blocking` and `status: resolved` for closed
-blockers. These checks validate structure and declared source identity, not the
-truth of evidence or a reviewer's authority.
+required. Every finding must use a YAML boolean `release_blocking`; a true
+blocking finding must have `status: resolved`. These checks validate structure and
+declared source identity, not the truth of evidence or a reviewer's authority.
 
 The `host_checks.site` and `host_checks.admin` entries are mandatory. Each must
 record a passing outcome, its host commit, resolved goauth version and candidate
@@ -133,7 +144,7 @@ artifact: committing a file containing its own commit SHA is circular. Historica
 local summaries and the unfilled template intentionally fail the acceptance gate.
 No evidence status is upgraded by the presence of a test or a new source file.
 
-## Validation
+## Earlier validation
 
 The original implementation session verified isolated standard-library copies on
 Go 1.23.2 because its container could not obtain the declared toolchain or
@@ -164,3 +175,22 @@ Constructed evidence fixtures do not certify the candidate's observations.
 Actual site/admin acceptance at this candidate, the complete 38-case manifest,
 anonymous published-tag consumption and history/exposure review remain separate.
 No tag, visibility change, production deployment or completed release is claimed.
+
+## Latest review validation
+
+The follow-up on `8be1ede5` covers the selected-version evidence binding,
+strict finding booleans, event-based email retry deadlines, and the additional
+missing-subject password-change regression. The latter was reproduced against
+PostgreSQL before the fix. Separate Standards and Spec reviews found no further
+actionable issue after correction.
+
+On Go 1.27.1, `make check`, `make integration` and `make vulnerability-check`
+passed. This includes lint with zero issues, race/coverage tests, real disposable
+PostgreSQL/Redis and both local external-consumer probes. Root coverage is 84.6%
+and PostgreSQL coverage is 80.8%. Govulncheck reports no reachable vulnerabilities;
+three findings are confined to unused code in required modules.
+
+The email tests cover hourly/daily windows for verification and email change,
+overlapping resend limits, reduced quotas, exact cutoff behavior and HTTP retry
+headers. Candidate/publication gates and new host acceptance evidence were not
+part of this follow-up verification.

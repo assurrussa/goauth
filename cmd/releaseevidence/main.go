@@ -18,15 +18,16 @@ import (
 
 func main() {
 	file := flag.String("file", "", "external YAML evidence manifest for the clean checkout")
+	version := flag.String("version", "", "selected release tag; when nonempty, candidate.tag must match")
 	flag.Parse()
-	if err := run(*file); err != nil {
+	if err := run(*file, *version); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 	_, _ = fmt.Fprintln(os.Stdout, "Evidence structure and source identity verified; observations require human review.")
 }
 
-func run(path string) error {
+func run(path, version string) error {
 	if strings.TrimSpace(path) == "" {
 		return errors.New("--file is required; no historical evidence is selected automatically")
 	}
@@ -58,6 +59,9 @@ func run(path string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	tag := text(object(document["candidate"])["tag"])
+	if version != "" && tag != version {
+		return errors.New("candidate.tag must match --version")
+	}
 	if err := validateTagName(ctx, tag); err != nil {
 		return err
 	}

@@ -25,6 +25,7 @@ const (
 	defaultMaxResponseBytes   int64 = 1 << 20
 	unknownKeyRefreshCooldown       = 30 * time.Second
 	failedRefreshCooldown           = time.Second
+	tokenUseAccess                  = "access"
 )
 
 var errUnknownKeyID = errors.New("oidc verifier key id was not found in jwks")
@@ -226,7 +227,7 @@ func (s *Service) validateTokenProfile(claims *accessTokenClaims) error {
 	use, present := claims.raw["token_use"]
 	var tokenUse string
 	if present {
-		if err := json.Unmarshal(use, &tokenUse); err != nil || tokenUse != "access" {
+		if err := json.Unmarshal(use, &tokenUse); err != nil || tokenUse != tokenUseAccess {
 			return errors.New("token_use must be access")
 		}
 	}

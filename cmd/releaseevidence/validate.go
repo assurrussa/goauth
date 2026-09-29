@@ -22,6 +22,8 @@ const (
 	outcomeExcluded      = "not_applicable"
 	fieldReviewer        = "reviewer"
 	fieldStatus          = "status"
+	fieldReleaseBlocking = "release_blocking"
+	findingResolved      = "resolved"
 )
 
 var requirementPattern = regexp.MustCompile(`^AUTH-(0[1-9]|10)$`)
@@ -192,7 +194,11 @@ func validateFindings(value any, addf addProblem) {
 			addf("finding must be an object")
 			continue
 		}
-		blocking, _ := finding["release_blocking"].(bool)
+		blocking, ok := finding[fieldReleaseBlocking].(bool)
+		if !ok {
+			addf("finding release_blocking must be an explicit boolean")
+			continue
+		}
 		if blocking && text(finding[fieldStatus]) != "resolved" {
 			addf("unresolved release-blocking finding")
 		}
@@ -200,7 +206,7 @@ func validateFindings(value any, addf addProblem) {
 }
 
 func validateScenario(scenario map[string]any, id string, profiles map[string]any, head string, addf addProblem) {
-	blocking, _ := scenario["release_blocking"].(bool)
+	blocking, _ := scenario[fieldReleaseBlocking].(bool)
 	if !blocking {
 		addf("%s must remain release-blocking", id)
 	}
