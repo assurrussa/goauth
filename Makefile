@@ -1,11 +1,13 @@
 .DEFAULT_GOAL := full
 
-.PHONY: full prepare check tidy-check tidy generate fmt fmt-check lint lint-fix vet test test-full test-race bench-all cover-html coverage-unit-check coverage-integration-check coverage-aggregate integration integration-up integration-down integration-local vulnerability-check externalconsumer-local externalconsumer-postgres-local externalconsumer-published release-candidate-readiness release-readiness release-tooling-test release-source-check public-module-check browser-acceptance backup-restore-check
+.PHONY: full prepare check tidy-check tidy generate fmt fmt-check lint lint-fix vet test test-full test-race bench-all cover-html coverage-unit-check coverage-integration-check coverage-aggregate integration integration-up integration-down integration-local vulnerability-check externalconsumer-local externalconsumer-postgres-local externalconsumer-published release-candidate-readiness release-readiness release-tooling-test release-source-check public-module-check browser-acceptance backup-restore-check release-evidence-check public-preview-readiness
 
 GO_MODULE := $(shell awk '$$1 == "module" { print $$2; exit }' go.mod)
 GO_FILES := $(shell find . -type f -name '*.go' -not -path './.cache/*' -not -path './.go-cache/*' -not -path './tmp/*' -not -path './vendor/*')
 # Published checks must not silently verify a stale default version.
 VERSION ?=
+# Keep SHA-bound evidence outside the clean checkout; no stale default manifest.
+EVIDENCE ?=
 GOCACHE ?= $(CURDIR)/.go-cache/gocache
 GOMODCACHE ?= $(CURDIR)/.go-cache/gomodcache
 GOPATH ?= $(CURDIR)/.go-cache/gopath
@@ -16,6 +18,7 @@ COVERAGE_UNIT ?= coverage.unit.out
 COVERAGE_INTEGRATION ?= coverage.integration.out
 COVERAGE_AGGREGATE ?= coverage.out
 export VERSION
+export EVIDENCE
 export GOCACHE
 export GOMODCACHE
 export GOPATH
@@ -35,6 +38,15 @@ release-candidate-readiness: check integration vulnerability-check coverage-aggr
 release-readiness: release-source-check
 	$(MAKE) release-candidate-readiness
 	$(MAKE) externalconsumer-published
+
+# The executable gates do not prove all 38 security/host/operational observations.
+# Full public-preview acceptance additionally requires their reviewed manifest.
+public-preview-readiness: release-readiness
+	$(MAKE) release-evidence-check
+
+release-evidence-check:
+	@test -n "$$EVIDENCE" || { printf 'EVIDENCE is required; select the reviewed release-SHA manifest.\n' >&2; exit 1; }
+	go run ./cmd/releaseevidence --file "$$EVIDENCE"
 
 public-module-check: release-source-check
 	$(MAKE) externalconsumer-published

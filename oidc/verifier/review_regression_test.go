@@ -51,14 +51,18 @@ func TestReviewDiscoveryFailuresAreBackedOff(t *testing.T) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	defer server.Close()
-	service, err := New(Options{Issuer: server.URL, Audience: "review", AllowInsecureHTTP: true})
+	now := time.Now().UTC()
+	service, err := New(Options{
+		Issuer: server.URL, Audience: "review", AllowInsecureHTTP: true,
+		Now: func() time.Time { return now },
+	})
 	require.NoError(t, err)
 	for range 10 {
 		require.Error(t, service.ensureJWKS(t.Context(), false))
 	}
 	require.EqualValues(t, 1, requests.Load())
 	service.mu.Lock()
-	service.refreshRetryAt = time.Now().Add(-time.Second)
+	service.refreshRetryAt = now.Add(-time.Second)
 	service.mu.Unlock()
 	require.Error(t, service.ensureJWKS(t.Context(), false))
 	require.EqualValues(t, 2, requests.Load())
