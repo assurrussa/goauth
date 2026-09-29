@@ -7,74 +7,90 @@ make prepare
 make check
 ```
 
-`make check` is non-mutating and runs one canonical race/coverage pass. Use
-`make test-race` only for deliberate stress reruns and `make cover-html` only
-when an HTML artifact is needed.
+`make prepare` modifies files. Review and commit its diff before recording a
+candidate SHA. `make check` is non-mutating and runs one canonical race/coverage
+pass, static checks, public API tests, a local consumer and source-guard tests.
+Use `make test-race` only for deliberate stress reruns and `make cover-html`
+only when an HTML artifact is needed.
 
-The security integration suite requires PostgreSQL and Redis. The local target
-starts and stops those services:
+The security integration suite requires disposable PostgreSQL and Redis:
 
 ```sh
 make integration-local
 ```
 
-The integration suite executes the v0.2 migration, Down/Up, v0.1 refusal,
-atomic refresh/reset/challenge behavior, case-insensitive identifier uniqueness,
-SSO policy, status revocation, secret-at-rest assertions, native notification
-queue delivery and retry, and Redis GETDEL concurrency.
-It also runs the PostgreSQL external consumer probe against
-`GOAUTH_TEST_POSTGRES_DSN`. The probe constructs `postgres.NewRuntime`, starts
-and stops `RunNotifications`, checks an email challenge was delivered and
-acknowledged, verifies the code, then exercises authenticated login, an
-introspected Fiber route, PostgreSQL RBAC, logout, password reset, and cleanup.
-It requires a reachable, disposable integration database and fails if the DSN
-is missing or the database is down.
+It checks migrations/upgrade/rollback, legacy-schema refusal, atomic refresh,
+reset and challenge behavior, identifier uniqueness, SSO policy, revocation,
+secret-at-rest assertions, notification delivery/retry and Redis concurrency.
+It also executes the PostgreSQL consumer: Runtime assembly, notification
+worker startup/shutdown, delivery/acknowledgement, email verification, login,
+an introspected Fiber route, RBAC, logout, reset and cleanup. That path must
+fail when `GOAUTH_TEST_POSTGRES_DSN` is absent or its database is unreachable.
+Never run it against production data.
 
 ## Coverage and vulnerabilities
 
 `make check` and `make integration` enforce at least 80% statement coverage for
-the security-critical root, PostgreSQL, Redis, OIDC-provider, and RBAC packages.
-After both gates, `make coverage-aggregate` merges their atomic profiles for
-inspection. `make vulnerability-check` runs the version pinned in `go.mod` via
-`go tool govulncheck ./...`. A finding must be upgraded away or documented with
-reachability evidence before release; a database-only result is not silently
-treated as clean.
+the configured security-critical root, PostgreSQL, Redis, OIDC-provider and
+RBAC packages. `make coverage-aggregate` merges their atomic profiles.
+`make vulnerability-check` runs the pinned tool with `go tool govulncheck ./...`.
+A finding needs remediation or reviewed reachability evidence, not a silent
+waiver. Coverage alone does not prove the auth invariants.
 
-## Clean consumers
+## Candidate and local consumers
 
 ```sh
 make externalconsumer-local
+make externalconsumer-postgres-local
 ```
 
-`make check` includes only this database-free probe. To run the real PostgreSQL
-consumer path alone, set `GOAUTH_TEST_POSTGRES_DSN` and run
-`make externalconsumer-postgres-local`; the Makefile's default DSN targets the
-database in `compose.integration.yml`.
+These use a local `replace` and may reuse the developer module cache. Both
+force `GOWORK=off`; the PostgreSQL path deliberately receives the configured
+disposable database. They prove checkout integration, not public availability.
+For the combined candidate gate, start integration services, run
+`make release-candidate-readiness`, then stop the services even on failure.
 
-For the full unpublished candidate gate, start the integration services:
+## Public, exact-version consumer
+
+After publication, from a clean checkout of the chosen tag:
 
 ```sh
-make integration-up
-make release-candidate-readiness
-make integration-down
+make public-module-check VERSION=<tag>
 ```
 
-After a new tag is published, run:
+This requires an explicit version and verifies HEAD/clean-tree/tag agreement
+before starting the published probe. `make release-readiness VERSION=<tag>`
+also runs the candidate gate and therefore requires integration services.
+The manual `Public module verification` workflow performs the same public
+check for an existing tag; it cannot change visibility or create a release.
 
-```sh
-make externalconsumer-published VERSION=v0.4.0
-make release-readiness VERSION=v0.4.0
-```
+`make externalconsumer-published VERSION=<tag>` may be used as a lower-level
+compatibility diagnostic from a different checkout, but does not prove that
+that checkout matches the release tag.
 
-The published probe creates a temporary module without a local replacement,
-builds a Runtime, mounts Fiber, initializes optional OIDC/Redis and RBAC, and
-runs the example test. A local replace proves only checkout compatibility.
-Confirm the public release resolves without private module tokens or
-`GOPRIVATE`/`GONOSUMDB` settings. A release tag remains unpublished until its
-tag and published probe actually exist and pass.
+Published mode creates fresh HOME, Go module/build caches and temporary state.
+It sets `GOENV=off`, `GOWORK=off`, `GOAUTH=off`, uses only the public Go proxy
+and checksum database, and disables direct VCS downloads. It does not inherit
+private patterns, auth helpers, caller proxy credentials, database secrets,
+user configuration or build flags. The helper itself is built from the trusted
+checkout before these isolated child Go processes run.
+
+The initial `go list -m -json module@version` and the selected-module check after
+`go test` must both report the exact requested path/version and no replacement.
+Aliases such as `latest` and branches cannot stand in for an exact version.
+Published mode rejects local-path, shared-cache and PostgreSQL-integration
+flags. Use local mode for the database probe.
+
+A cold download gets a 10-minute per-command timeout through the Makefile;
+`--timeout` controls each subprocess, not total runtime. On failure,
+`--keep-workdir` preserves the consumer and fresh caches for inspection. It
+does not relax isolation. The Go executable and system trust store remain
+trusted; this is an environment-isolation check, not an OS security sandbox.
 
 ## Evidence boundary
 
-Keep local verification, tag publication, consumer adoption, and production
-deployment as distinct claims. Record the exact version/commit for every gate;
-manual production smoke remains outstanding until it is actually performed.
+Keep implementation, local verification, tag creation, anonymous publication,
+independent security review, consumer adoption and production deployment as
+separate facts. Record the exact SHA/version and commands for every gate.
+File-scoped tests on another Go version, static review, an unavailable runner
+or a failed network lookup must not be reported as a full passing gate.
