@@ -162,7 +162,7 @@ func (r *Runtime) LoginExternal(ctx context.Context, request ExternalLoginReques
 		if err := write(ctx); err != nil {
 			return err
 		}
-		return r.store.CreateSession(ctx, prepared.record)
+		return r.createPreparedSession(ctx, prepared)
 	}); err != nil {
 		return LoginResult{}, err
 	}

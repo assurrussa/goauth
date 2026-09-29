@@ -319,7 +319,8 @@ func mapError(err error) (status int, code, message string) {
 		return http.StatusServiceUnavailable, "operation_outcome_unknown", "operation outcome unknown"
 	case errors.Is(err, goauth.ErrPasswordHashOverloaded):
 		return http.StatusServiceUnavailable, "password_hash_overloaded", "authentication temporarily unavailable"
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+	case errors.Is(err, goauth.ErrPasswordVerificationUnavailable),
+		errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return http.StatusServiceUnavailable, "authentication_unavailable", "authentication temporarily unavailable"
 	case errors.Is(err, goauth.ErrAuthenticationRateLimited):
 		return http.StatusTooManyRequests, "authentication_rate_limited", "too many authentication attempts"

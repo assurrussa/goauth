@@ -16,7 +16,11 @@ import (
 	"github.com/assurrussa/goauth/testkit"
 )
 
-const customHasherLoginOperation = "login"
+const (
+	customHasherLoginOperation               = "login"
+	customHasherCurrentPasswordOperation     = "current password"
+	customHasherReplacementPasswordOperation = "replacement password"
+)
 
 type legacyBcryptHasher struct {
 	wrap            func(error) error
@@ -112,12 +116,12 @@ func TestCustomPasswordHasherOperationalFailures(t *testing.T) {
 		err    error
 		status int
 	}{
-		{name: "marked", err: goauth.ErrPasswordVerificationUnavailable, status: http.StatusInternalServerError},
+		{name: "marked", err: goauth.ErrPasswordVerificationUnavailable, status: http.StatusServiceUnavailable},
 		{
 			name: "wrapped", err: fmt.Errorf("verifier: %w: %w", goauth.ErrPasswordVerificationUnavailable, fault),
-			status: http.StatusInternalServerError,
+			status: http.StatusServiceUnavailable,
 		},
-		{name: "joined", err: errors.Join(goauth.ErrPasswordVerificationUnavailable, fault), status: http.StatusInternalServerError},
+		{name: "joined", err: errors.Join(goauth.ErrPasswordVerificationUnavailable, fault), status: http.StatusServiceUnavailable},
 		{name: "overload", err: fmt.Errorf("verifier: %w", goauth.ErrPasswordHashOverloaded), status: http.StatusServiceUnavailable},
 		{name: "cancellation", err: fmt.Errorf("verifier: %w", context.Canceled), status: http.StatusServiceUnavailable},
 		{name: "deadline", err: fmt.Errorf("verifier: %w", context.DeadlineExceeded), status: http.StatusServiceUnavailable},
@@ -125,7 +129,8 @@ func TestCustomPasswordHasherOperationalFailures(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			for _, operation := range []string{
-				customHasherLoginOperation, "verify credential", "current password", "replacement password",
+				customHasherLoginOperation, "verify credential",
+				customHasherCurrentPasswordOperation, customHasherReplacementPasswordOperation,
 			} {
 				t.Run(operation, func(t *testing.T) {
 					hasher := &legacyBcryptHasher{}
@@ -135,7 +140,7 @@ func TestCustomPasswordHasherOperationalFailures(t *testing.T) {
 					registered := registerAccount(t, fixture, email)
 					hasher.failure = tc.err
 					const replacement = "Replacement-Legacy-Passphrase-2"
-					if operation == "replacement password" {
+					if operation == customHasherReplacementPasswordOperation {
 						hasher.failurePassword = replacement
 					}
 					switch operation {

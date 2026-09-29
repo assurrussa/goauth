@@ -334,6 +334,9 @@ func (s *Service) ensureDiscovery(ctx context.Context) (oidc.DiscoveryMetadata, 
 }
 
 func (s *Service) ensureJWKS(ctx context.Context, force bool) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	if !force && len(s.jwks) > 0 && !cacheExpired(s.jwksFetched, s.cacheTTL, s.now) {
 		s.mu.Unlock()
@@ -358,13 +361,24 @@ func (s *Service) ensureJWKS(ctx context.Context, force bool) error {
 		s.unknownRefreshAt = s.now()
 	}
 	s.mu.Unlock()
-	err := s.refreshJWKS(ctx)
-	s.mu.Lock()
-	flight.err = err
-	s.refresh = nil
-	close(flight.done)
-	s.mu.Unlock()
-	return err
+	// A caller can stop waiting without canceling the refresh shared by other callers.
+	// Bound the whole flight as well as the individual HTTP fetches.
+	refreshCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.httpTimeout)
+	go func() {
+		defer cancel()
+		err := s.refreshJWKS(refreshCtx)
+		s.mu.Lock()
+		flight.err = err
+		s.refresh = nil
+		close(flight.done)
+		s.mu.Unlock()
+	}()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-flight.done:
+		return flight.err
+	}
 }
 
 func (s *Service) refreshJWKS(ctx context.Context) error {

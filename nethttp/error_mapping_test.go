@@ -20,8 +20,9 @@ import (
 )
 
 const (
-	invalidRealmCode      = "invalid_realm"
-	unregisteredRealmCode = "realm_not_registered"
+	authenticationUnavailableCode = "authentication_unavailable"
+	invalidRealmCode              = "invalid_realm"
+	unregisteredRealmCode         = "realm_not_registered"
 )
 
 func TestWriteErrorOutcomePrecedence(t *testing.T) {
@@ -32,12 +33,21 @@ func TestWriteErrorOutcomePrecedence(t *testing.T) {
 		status      int
 		code, retry string
 	}
-	tests := make([]errorCase, 0, 29)
+	tests := make([]errorCase, 0, 36)
 	tests = append(tests, []errorCase{
 		{"unknown", goauth.ErrOperationOutcomeUnknown, 503, outcomeCode, ""},
 		{"wrapped_unknown", fmt.Errorf("secret database details: %w", goauth.ErrOperationOutcomeUnknown), 503, outcomeCode, ""},
-		{"canceled", context.Canceled, 503, "authentication_unavailable", ""},
-		{"deadline", context.DeadlineExceeded, 503, "authentication_unavailable", ""},
+		{"canceled", context.Canceled, 503, authenticationUnavailableCode, ""},
+		{"deadline", context.DeadlineExceeded, 503, authenticationUnavailableCode, ""},
+		{"verifier_outage", goauth.ErrPasswordVerificationUnavailable, 503, authenticationUnavailableCode, ""},
+		{
+			"wrapped_verifier_outage", fmt.Errorf("secret database details: %w", goauth.ErrPasswordVerificationUnavailable),
+			503, authenticationUnavailableCode, "",
+		},
+		{
+			"joined_verifier_outage", errors.Join(errors.New("secret database details"), goauth.ErrPasswordVerificationUnavailable),
+			503, authenticationUnavailableCode, "",
+		},
 		{"hash_overload", goauth.ErrPasswordHashOverloaded, 503, "password_hash_overloaded", "1"},
 		{"rate_limit", goauth.ErrAuthenticationRateLimited, 429, "authentication_rate_limited", "900"},
 		{"internal", errors.New("secret database details"), 500, "internal_error", ""},
@@ -59,6 +69,7 @@ func TestWriteErrorOutcomePrecedence(t *testing.T) {
 		{"deadline", context.DeadlineExceeded},
 		{"hash_overload", goauth.ErrPasswordHashOverloaded},
 		{"rate_limit", goauth.ErrAuthenticationRateLimited},
+		{"verifier_outage", goauth.ErrPasswordVerificationUnavailable},
 	} {
 		for _, unknownFirst := range []bool{true, false} {
 			joined := errors.Join(goauth.ErrOperationOutcomeUnknown, cause.err)

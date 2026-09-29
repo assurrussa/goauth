@@ -332,7 +332,7 @@ func (r *Runtime) Register(ctx context.Context, request RegisterRequest) (Regist
 		if _, err := r.store.CreateLocalAccount(ctx, record); err != nil {
 			return err
 		}
-		return r.store.CreateSession(ctx, prepared.record)
+		return r.createPreparedSession(ctx, prepared)
 	})
 	if err != nil {
 		return RegisterResult{}, err
@@ -590,12 +590,26 @@ func (r *Runtime) issueSession(ctx context.Context, account Account, realm Realm
 		return TokenPair{}, err
 	}
 	err = r.authTransaction.InAuthTransaction(ctx, func(ctx context.Context) error {
-		return r.store.CreateSession(ctx, prepared.record)
+		return r.createPreparedSession(ctx, prepared)
 	})
 	if err != nil {
 		return TokenPair{}, err
 	}
 	return prepared.tokens, nil
+}
+
+// createPreparedSession must run inside an auth transaction, so an expired pair
+// rolls back the session and any account or identity created in the same scope.
+func (r *Runtime) createPreparedSession(ctx context.Context, prepared preparedSession) error {
+	if err := r.store.CreateSession(ctx, prepared.record); err != nil {
+		return err
+	}
+	now := r.now().UTC()
+	if now.Unix() >= prepared.tokens.AccessExpiresAt.Unix() ||
+		!now.Before(prepared.record.RefreshExpiresAt) || !prepared.record.Session.Active(now) {
+		return ErrExpiredToken
+	}
+	return nil
 }
 
 func (r *Runtime) prepareSession(ctx context.Context, account Account, realm Realm, scope SessionScope) (preparedSession, error) {

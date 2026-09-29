@@ -382,3 +382,47 @@ Review lens: Security Engineering + Go/Backend + Browser/Mobile boundaries.
   signatures are retained; the new error marker is documented and compile-checked.
   Real commit/network-latency injection, full release-SHA scenario acceptance,
   anonymous published-tag resolution and production deployment remain separate.
+
+## 2026-09-29: PR #8 self-review and verifier-outage follow-up
+
+- Goal: review the PR implementation and fix confirmed defects plus the new
+  password-verifier outage discussion. Start: clean `3e427e3` on the PR branch.
+- Review lens: Security Engineering + Go/Backend + transactional consistency.
+  Root reviews Runtime/account/recovery and PostgreSQL auth transactions; an
+  independent read-only reviewer checks OIDC verifier/provider and identity.
+- Reproduce HTTP marker classification through both adapters and real auth
+  handlers. Preserve unknown-commit precedence, redaction, canonical state and
+  existing session validity. Investigate prepared-session expiry before writes.
+- Validation: focused regressions before/after fixes, real PostgreSQL rollback
+  checks for transaction changes, then one complete candidate gate with the
+  documented installed browser engines. Public release acceptance stays separate.
+- Confirmed own finding: delayed claims or session writes returned expired
+  access/refresh pairs as successful registration, login or SSO login. A final
+  validity check now runs after session storage in the same auth transaction,
+  rolling back the session and any newly provisioned account/identity link.
+- Independent OIDC review reproduced canceled unknown-key requests consuming
+  the global refresh cooldown without a fetch. The verifier now rejects an
+  already-canceled context before admission; shared fetches survive individual
+  cancellation under a total HTTP timeout. Coalescing and failure backoff remain.
+- HTTP marker cases and all 15 in-memory expiry cases reproduced failures on
+  the original implementation. The focused root/HTTP follow-up now passes;
+  native hasher mismatch behavior and refresh replay regressions remain green.
+- Real PostgreSQL regressions reproduced all nine preparation failures and an
+  actual delayed INSERT on the original head in a temporary source copy. The
+  corrected cases pass with race detection, asserting durable rollback of
+  accounts, credentials, identifiers, profiles, identity links and token state,
+  followed by a successful same-identifier retry. Shared-flight cancellation,
+  rotation and abandoned-fetch timeout regressions also pass with `-race`.
+- Final independent read-only review found no actionable issues in the frozen
+  14-file combined diff; its focused root/HTTP/verifier race tests passed and
+  all file hashes matched before/after review. Root final diff review passed.
+- Final `make release-candidate-readiness` PASS in one aggregate run: 14 source
+  guards, formatting/tidy verification, vet/lint (0 issues), race/coverage,
+  PostgreSQL/Redis, clean local consumers, govulncheck, aggregate coverage,
+  actual dump/restore and Chromium/HTTPS acceptance. Browser engine selection
+  used documented environment overrides; no tooling/dependency change needed.
+- Source fingerprint: `71c1be9e53f1f72ac1f139c17520af51aea8b081aa8f94d19bcafe5e154ed62c`
+  over 137 non-documentation files. Only these final evidence lines were added
+  after the frozen review/gate. No schema, public signature, dependency or
+  hosted-workflow changes. Commit/response latency, live IdP conformance, full
+  38-case release-SHA acceptance and published/production adoption stay unverified.

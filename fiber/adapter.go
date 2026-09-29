@@ -262,7 +262,8 @@ func mapError(err error) (status int, code, message string) {
 		return gofiber.StatusServiceUnavailable, "operation_outcome_unknown", "operation outcome is unknown; authenticate again"
 	case errors.Is(err, goauth.ErrPasswordHashOverloaded):
 		return gofiber.StatusServiceUnavailable, "password_hash_overloaded", "authentication temporarily unavailable"
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+	case errors.Is(err, goauth.ErrPasswordVerificationUnavailable),
+		errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return gofiber.StatusServiceUnavailable, "authentication_unavailable", "authentication temporarily unavailable"
 	case errors.Is(err, goauth.ErrAuthenticationRateLimited):
 		return gofiber.StatusTooManyRequests, "authentication_rate_limited", "too many authentication attempts"
