@@ -196,6 +196,7 @@ func newHandler(runtime authhttp.Runtime, secure bool) (http.Handler, error) {
 	}
 	mux := http.NewServeMux()
 	h := host{secure: secure}
+	mux.HandleFunc("POST /browser/forget-session", h.forgetSession)
 	routes := []struct {
 		path                    string
 		handler                 http.HandlerFunc

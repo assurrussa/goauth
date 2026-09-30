@@ -47,7 +47,7 @@ func TestSSOOnlyAccountHasNoLocalPassword(t *testing.T) {
 	fixture := newFixture(t)
 	created, err := fixture.Runtime.ResolveExternalIdentity(context.Background(), goauth.ExternalIdentity{
 		Issuer:        testOIDCIssuer + "/",
-		Subject:       "sso-only",
+		Subject:       ssoOnlySubject,
 		Email:         ssoOnlyEmail,
 		EmailVerified: true,
 		Profile:       goauth.BasicProfile{DisplayName: "SSO Only"},
@@ -62,7 +62,7 @@ func TestSSOOnlyAccountHasNoLocalPassword(t *testing.T) {
 	require.ErrorIs(t, err, goauth.ErrAccountNotFound)
 	resolved, err := fixture.Runtime.ResolveExternalIdentity(context.Background(), goauth.ExternalIdentity{
 		Issuer:        testOIDCIssuer,
-		Subject:       "sso-only",
+		Subject:       ssoOnlySubject,
 		Email:         ssoOnlyEmail,
 		EmailVerified: true,
 	})

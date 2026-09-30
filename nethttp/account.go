@@ -1,6 +1,7 @@
 package nethttp
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/assurrussa/goauth"
@@ -58,6 +59,13 @@ func (a *Adapter) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, accountResponseFrom(account))
 }
 
+// PasswordEmailChangeRuntime is an optional capability required only by the
+// email-change handler. Older Runtime implementations remain source compatible,
+// but this handler fails closed instead of calling the trusted subject-only API.
+type PasswordEmailChangeRuntime interface {
+	RequestEmailChangeWithPassword(ctx context.Context, request goauth.PasswordEmailChangeRequest) error
+}
+
 func (a *Adapter) RequestEmailChange(w http.ResponseWriter, r *http.Request) {
 	auth, ok := AuthContext(r.Context())
 	if !ok {
@@ -65,13 +73,31 @@ func (a *Adapter) RequestEmailChange(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request struct {
-		Email string `json:"email"`
+		Email           string `json:"email"`
+		CurrentPassword string `json:"currentPassword"`
 	}
 	if err := decode(w, r, &request); err != nil {
 		WriteError(w, goauth.ErrInvalidIdentifier)
 		return
 	}
-	if err := a.runtime.RequestEmailChange(r.Context(), auth.SubjectID, request.Email); err != nil {
+	if auth.Scope != goauth.SessionScopeAuthenticated {
+		WriteError(w, goauth.ErrEmailVerificationRequired)
+		return
+	}
+	if request.CurrentPassword == "" {
+		WriteError(w, goauth.ErrCurrentPasswordInvalid)
+		return
+	}
+	runtime, ok := a.runtime.(PasswordEmailChangeRuntime)
+	if !ok {
+		WriteError(w, goauth.ErrPasswordVerificationUnavailable)
+		return
+	}
+	if err := runtime.RequestEmailChangeWithPassword(r.Context(), goauth.PasswordEmailChangeRequest{
+		SubjectID:       auth.SubjectID,
+		CurrentPassword: request.CurrentPassword,
+		NewEmail:        request.Email,
+	}); err != nil {
 		WriteError(w, err)
 		return
 	}

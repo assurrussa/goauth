@@ -61,6 +61,9 @@ func NewRuntime(config Config) (*Runtime, error) {
 		return nil, errors.New("PostgreSQL notification transactions require a managed NotificationSender; " +
 			"use direct root Runtime assembly for custom transaction wiring")
 	}
+	if err := validateRuntimeIdentifierSchemes(config.Runtime.IdentifierResolvers); err != nil {
+		return nil, err
+	}
 	worker, err := config.NotificationWorker.withDefaults()
 	if err != nil {
 		return nil, err

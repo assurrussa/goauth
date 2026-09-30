@@ -12,7 +12,19 @@ import (
 
 const emailChangeSecretPurpose = "email-change"
 
+// RequestEmailChange is a trusted host API. The host must authorize the actor
+// and require fresh authentication before calling it. Local-password HTTP flows
+// should use RequestEmailChangeWithPassword instead.
 func (r *Runtime) RequestEmailChange(ctx context.Context, subjectID SubjectID, newEmail string) error {
+	return r.requestEmailChange(ctx, subjectID, newEmail, nil)
+}
+
+func (r *Runtime) requestEmailChange(
+	ctx context.Context,
+	subjectID SubjectID,
+	newEmail string,
+	expected *Account,
+) error {
 	if subjectID.IsZero() {
 		return ErrAccountNotFound
 	}
@@ -24,9 +36,16 @@ func (r *Runtime) RequestEmailChange(ctx context.Context, subjectID SubjectID, n
 	if err != nil {
 		return err
 	}
-	account, err := r.store.GetAccount(ctx, subjectID)
-	if err != nil {
-		return fmt.Errorf("get email change account: %w", err)
+	var account Account
+	if expected != nil {
+		// Keep the credential-verified snapshot. Reloading it here would let a
+		// concurrent password/security change silently upgrade stale proof.
+		account = *expected
+	} else {
+		account, err = r.store.GetAccount(ctx, subjectID)
+		if err != nil {
+			return fmt.Errorf("get email change account: %w", err)
+		}
 	}
 	if account.Subject.Status != SubjectStatusActive {
 		return ErrAccountUnavailable
@@ -139,7 +158,8 @@ func (r *Runtime) ConfirmEmailChange(ctx context.Context, subjectID SubjectID, c
 	var account Account
 	var outcomeErr error
 	err = r.inNotificationTransaction(ctx, func(txCtx context.Context) error {
-		if _, err := r.lockActiveAccount(txCtx, subjectID); err != nil {
+		previous, err := r.lockActiveAccount(txCtx, subjectID)
+		if err != nil {
 			if errors.Is(err, ErrAccountNotFound) {
 				return ErrEmailChangeNotFound
 			}
@@ -174,7 +194,9 @@ func (r *Runtime) ConfirmEmailChange(ctx context.Context, subjectID SubjectID, c
 		}
 		if err := r.enqueueNotification(txCtx, "email_changed", result.Account, Notification{
 			Template: "email_changed",
-			To:       result.Account.PrimaryEmail.DisplayValue,
+			// The previous mailbox must learn about a recovery-address change.
+			// It receives no confirmation code or other credential.
+			To: previous.PrimaryEmail.DisplayValue,
 		}); err != nil {
 			return err
 		}

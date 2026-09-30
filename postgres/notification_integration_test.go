@@ -211,15 +211,19 @@ func TestManagedNotificationResetInvalidatedByEmailChange(t *testing.T) {
 			return nil
 		},
 	))
-	registered := register(t, runtime, "reset.old-address@example.test")
+	const (
+		oldEmail = "reset.old-address@example.test"
+		newEmail = "reset.new-address@example.test"
+	)
+	registered := register(t, runtime, oldEmail)
 	subjectID := registered.Account.Subject.ID
-	require.NoError(t, runtime.RequestPasswordReset(context.Background(), "reset.old-address@example.test"))
+	require.NoError(t, runtime.RequestPasswordReset(context.Background(), oldEmail))
 	resetID, reset := queuedNotification(t, db, subjectID, "password_reset")
 	resetURL, err := url.Parse(reset.Data["reset_url"])
 	require.NoError(t, err)
 	resetToken := resetURL.Query().Get("token")
 	require.NotEmpty(t, resetToken)
-	require.NoError(t, runtime.RequestEmailChange(context.Background(), subjectID, "reset.new-address@example.test"))
+	require.NoError(t, runtime.RequestEmailChange(context.Background(), subjectID, newEmail))
 	changeID, change := queuedNotification(t, db, subjectID, "email_change")
 	_, err = runtime.ConfirmEmailChange(context.Background(), subjectID, change.Data["code"])
 	require.NoError(t, err)
@@ -239,7 +243,7 @@ WHERE subject_id = $1 AND event_type = 'email_changed'`, subjectID).Scan(&change
 	select {
 	case delivery := <-deliveries:
 		require.Equal(t, changedID, delivery.ID)
-		require.Equal(t, "reset.new-address@example.test", delivery.Notification.To)
+		require.Equal(t, oldEmail, delivery.Notification.To)
 	default:
 		t.Fatal("email change confirmation was not delivered")
 	}

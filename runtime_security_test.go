@@ -20,12 +20,14 @@ const (
 	employeeIdentifierScheme = goauth.IdentifierScheme("employee")
 	supportRealm             = goauth.Realm("support")
 	ssoOnlyEmail             = "sso.only@example.test"
+	ssoOnlySubject           = "sso-only"
 	testAudience             = "test"
 	testEmail                = "Security.User@Example.Test"
 	invalidTestEmail         = "not-an-email"
 	testNotificationTemplate = "test"
 	testOIDCIssuer           = "https://idp.example.test"
 	testPassword             = "Unique-Test-Passphrase-1"
+	wrongTestPassword        = "wrong-password"
 )
 
 func TestRefreshRotationAllowsExactlyOneConcurrentIssuance(t *testing.T) {
@@ -263,7 +265,7 @@ func TestLoginRateLimitUsesNormalizedIdentifier(t *testing.T) {
 	for range 10 {
 		_, err := fixture.Runtime.Login(
 			context.Background(),
-			loginRequest(" security.user@example.test ", "wrong-password", goauth.RealmUser),
+			loginRequest(" security.user@example.test ", wrongTestPassword, goauth.RealmUser),
 		)
 		require.ErrorIs(t, err, goauth.ErrInvalidCredentials)
 	}

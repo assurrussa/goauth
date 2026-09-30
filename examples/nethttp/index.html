@@ -3,9 +3,10 @@
 <form id="auth"><label>Email <input name="email" type="email" required autocomplete="username"></label><label>Password <input name="password" type="password" required autocomplete="current-password"></label><button name="action" value="register">Sign up</button><button name="action" value="login">Log in</button></form>
 <form id="code"><label>Email verification code <input name="code" required></label><button>Verify email</button></form><button id="email-send">Send verification</button>
 <button id="me">Protected account</button><button id="refresh">Refresh</button><button id="logout">Log out</button><button id="logout-all">Log out all sessions</button>
+<p><button id="forget-session">Forget this browser</button> Clears cookies only; server sessions are NOT revoked.</p>
 <form id="reset-request"><label>Reset email <input name="email" type="email" required></label><button>Request reset</button></form>
 <form id="reset"><label>Reset token <input name="token" required></label><label>New password <input name="newPassword" type="password" required autocomplete="new-password"></label><button>Reset password</button></form>
 <form id="password"><label>Current password <input name="currentPassword" type="password" required autocomplete="current-password"></label><label>New password <input name="newPassword" type="password" required autocomplete="new-password"></label><button>Change password</button></form>
-<form id="email-change"><label>New email <input name="email" type="email" required></label><button>Request email change</button></form>
+<form id="email-change"><label>Current password <input name="currentPassword" type="password" required autocomplete="current-password"></label><label>New email <input name="email" type="email" required></label><button>Request email change</button></form>
 <form id="email-confirm"><label>Email change code <input name="code" required></label><button>Confirm email change</button></form>
 <pre id="result" role="status"></pre><script src="/app.js"></script></body></html>
