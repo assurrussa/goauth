@@ -38,7 +38,9 @@ SQL writes on one database handle. The host obtains a context-scoped
 `SQLExecutor`; only the outer owner commits. Join concurrent operations before
 returning from its callback and do not retain its context or executor afterward.
 RBAC callback registration is synchronized, with hooks executed after unlocking
-and only after commit (or fail-closed cache handling on an unknown outcome).
+and only after commit. Failed invalidation bypasses cache reads to authoritative
+PostgreSQL until successful invalidation. An unknown outcome keeps cache reads
+bypassed for the wrapper lifetime; database failures still fail closed.
 
 A transaction uses one SQL connection. Consume and close result sets before
 starting another operation on it; serialize mixed Query/Exec work. This callback

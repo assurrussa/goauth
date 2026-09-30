@@ -6,9 +6,8 @@ The docs-only change introducing this pack must not modify cryptography,
 migrations, dependencies, supported imports, tags or visibility.
 
 The v0.5 implementation decisions are recorded in
-[candidate assembly](candidate-assembly.md). The dated
-[local evidence](release-evidence.local.yaml) records completed narrow checks
-and open catalog acceptance; W0-W5 criteria below remain the required work.
+[candidate assembly](candidate-assembly.md). Keep private local observations
+outside published sources; W0-W5 criteria below remain the required work.
 
 ## W0: establish a reproducible baseline and local host handoff
 

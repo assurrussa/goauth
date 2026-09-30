@@ -180,6 +180,8 @@ strings.NewReader("{\"email\":\"http-probe@example.test\",\"password\":\"Probe-P
 	}
 
 	_ = oidc.ScopeOpenID
+	var _ oidc.ClientSecretVerifier = oidc.ClientSecretVerifierFunc(nil)
+	_ = provider.Options{ClientSecretVerifier: oidc.ClientSecretVerifierFunc(nil)}
 	sender := goauth.NotificationSenderFunc(func(_ context.Context, delivery goauth.NotificationDelivery) error {
 		if delivery.ID != "probe" || delivery.Notification.Template != "probe" {
 			t.Fatal("managed notification delivery lost its identity or template")

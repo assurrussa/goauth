@@ -10,3 +10,6 @@ cover.html
 coverage.out
 coverage.unit.out
 coverage.integration.out
+
+# Private, SHA-bound acceptance observations stay outside published sources.
+docs/public-preview/release-evidence.local.yaml

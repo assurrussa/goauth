@@ -145,12 +145,15 @@ func (s *Store) notificationCurrent(ctx context.Context, event goauth.EncryptedE
 
 // reserveNotificationSend counts a possible external call before it begins.
 // A lease takeover or exhausted budget cannot reserve another call.
-func (s *Store) reserveNotificationSend(ctx context.Context, claim notificationClaim, maxAttempts int) (bool, error) {
+func (s *Store) reserveNotificationSend(
+	ctx context.Context, claim notificationClaim, maxAttempts int, now time.Time, lease time.Duration,
+) (bool, error) {
 	result, err := s.db.ExecContext(ctx, `
 UPDATE auth_notification_deliveries
-SET attempts = attempts + 1
-WHERE id = $1 AND lease_token = $2 AND state = 'leased' AND attempts < $3`,
-		claim.event.ID, claim.leaseToken, maxAttempts)
+SET attempts = attempts + 1, leased_until = $5
+WHERE id = $1 AND lease_token = $2 AND state = 'leased' AND attempts < $3
+  AND leased_until > $4 AND valid_until > $4 AND delete_after > $4`,
+		claim.event.ID, claim.leaseToken, maxAttempts, now, now.Add(lease))
 	if err != nil {
 		return false, fmt.Errorf("reserve managed notification send: %w", err)
 	}

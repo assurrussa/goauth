@@ -34,6 +34,24 @@ The supported imports are intentionally small:
 of truth. Earlier v0.1 releases remain available at their immutable tags; the
 retired implementation is absent from this repository.
 
+## HTTP adapter capabilities
+
+| Capability | net/http | Fiber |
+| --- | --- | --- |
+| Register, login, refresh | Built in | Built in |
+| Password reset and email verification | Built in | Built in |
+| Logout, logout-all, password change, email change | Built in | Host handlers call the root Runtime |
+| Realm middleware with current-session checks | Default | Default |
+| Offline JWT verification | Explicit opt-in | Explicit opt-in |
+| Request body cap | 1 MiB | 1 MiB in auth handlers |
+
+Fiber hosts should also configure `fiber.Config.BodyLimit` to bound request
+buffering before handlers run. Each adapter returns HTTP 501 with
+`notification_delivery_disabled` for `ErrNotificationDeliveryDisabled`; hosts
+may choose to omit recovery/email routes in disabled delivery mode.
+See [OIDC provider policy](docs/oidc-provider-policy.md) for client authentication,
+optional PKCE and persistent secret verification.
+
 ## Runnable browser and JSON API example
 
 [examples/nethttp](examples/nethttp/README.md) runs one PostgreSQL-backed Runtime
@@ -249,14 +267,20 @@ exposes only SQL execution/query methods, never transaction ownership. Participa
 adapters must share `Runtime.Database()` exactly; a separate handle is rejected.
 RBAC reads join the transaction and bypass caches. Supplied caches must implement
 `rbac.CacheInvalidator`; invalidation follows successful outer commit, never rollback.
-An uncertain commit returns `ErrOperationOutcomeUnknown` and disables cached grants.
+Failed cache invalidation bypasses the cache and reads authoritative PostgreSQL
+permissions; successful invalidation restores normal cached reads. An uncertain
+commit returns `ErrOperationOutcomeUnknown` and keeps this cache wrapper bypassed
+for its lifetime. Database read failures still deny authorization.
 
 Managed `NotificationDelivery.EncryptedEvent` contains the original sealed envelope
 for hosts that forward delivery into durable transports. The native queue remains
 the initiating auth transaction owner; downstream transports persist ciphertext
 only and deduplicate by delivery ID. `Notification` plaintext is ephemeral; never
 persist its reset URLs or codes. Acceptance is at least once, so SMTP or downstream
-transport acceptance may repeat after an uncertain acknowledgement.
+transport acceptance may repeat after an uncertain acknowledgement. The worker
+renews its owned unexpired lease while reserving the attempt before sending;
+reservation and send share a bounded deadline. Senders must honor cancellation
+and should deduplicate by delivery ID.
 
 Privileged hosts can use `Runtime.RequestPasswordResetWithReceipt` to bind a
 `PasswordResetReceipt` (subject ID and public selector only) within the same

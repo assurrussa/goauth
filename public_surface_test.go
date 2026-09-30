@@ -134,6 +134,9 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = goauthfiber.RealmMiddlewareOptions{}
 
 	_ = oidc.ScopeOpenID
+	var _ oidc.ClientSecretVerifier = oidc.ClientSecretVerifierFunc(nil)
+	_ = oidc.ClientSecretVerifierFunc.VerifyClientSecret
+	_ = provider.Options{ClientSecretVerifier: oidc.ClientSecretVerifierFunc(nil)}
 	_ = oidc.AuthorizationRequest{}
 	_ = oidc.ErrRefreshTokenReplay
 	_ = provider.New

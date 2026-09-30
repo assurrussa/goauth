@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -32,6 +33,7 @@ const (
 
 type Options struct {
 	Clients                  oidc.ClientStore
+	ClientSecretVerifier     oidc.ClientSecretVerifier
 	Requests                 oidc.AuthorizationRequestStore
 	Codes                    oidc.AuthorizationCodeStore
 	RefreshTokens            oidc.RefreshTokenStore
@@ -51,6 +53,7 @@ type Options struct {
 type Service struct {
 	enabled                  bool
 	clients                  oidc.ClientStore
+	clientSecretVerifier     oidc.ClientSecretVerifier
 	requests                 oidc.AuthorizationRequestStore
 	codes                    oidc.AuthorizationCodeStore
 	refreshTokens            oidc.RefreshTokenStore
@@ -155,11 +158,22 @@ func New(opts Options) (*Service, error) {
 	if refreshTTL <= 0 {
 		refreshTTL = 30 * 24 * time.Hour
 	}
+	if opts.TokenEndpointAuthMethods != nil {
+		if len(opts.TokenEndpointAuthMethods) == 0 {
+			return nil, errors.New("token endpoint auth methods must not be empty")
+		}
+		for _, method := range opts.TokenEndpointAuthMethods {
+			if !supportedClientAuthMethod(method) {
+				return nil, errors.New("unsupported token endpoint auth method")
+			}
+		}
+	}
 	tokenEndpointAuthMethods := oidc.SupportedTokenEndpointAuthMethods(opts.TokenEndpointAuthMethods)
 
 	return &Service{
 		enabled:                  true,
 		clients:                  opts.Clients,
+		clientSecretVerifier:     opts.ClientSecretVerifier,
 		requests:                 opts.Requests,
 		codes:                    opts.Codes,
 		refreshTokens:            opts.RefreshTokens,
@@ -453,7 +467,8 @@ func (s *Service) exchangeAuthorizationCode(ctx context.Context, req oidc.TokenR
 	if code.ClientID != client.ID || code.RedirectURI != strings.TrimSpace(req.RedirectURI) {
 		return nil, s.oauthError("invalid_grant", "authorization code is not valid for this client", http.StatusBadRequest)
 	}
-	if !verifyCodeVerifier(req.CodeVerifier, code.CodeChallenge) {
+	if !validPKCEMetadata(client.RequirePKCE, code.CodeChallenge, code.CodeChallengeMethod) ||
+		(code.CodeChallenge != "" && !verifyCodeVerifier(req.CodeVerifier, code.CodeChallenge)) {
 		return nil, s.oauthError("invalid_grant", "pkce verification failed", http.StatusBadRequest)
 	}
 
@@ -636,12 +651,19 @@ func (s *Service) authenticateClient(ctx context.Context, clientID, clientSecret
 
 	expectedAuthMethod := oidc.ClientTokenEndpointAuthMethod(client)
 	actualAuthMethod := oidc.NormalizeTokenEndpointAuthMethod(authMethod, "")
-	if expectedAuthMethod != actualAuthMethod {
+	if !supportedClientAuthMethod(expectedAuthMethod) || expectedAuthMethod != actualAuthMethod ||
+		!slices.Contains(s.tokenEndpointAuthMethods, expectedAuthMethod) {
 		return oidc.Client{}, s.oauthError("invalid_client", "invalid client authentication method", http.StatusUnauthorized)
 	}
 
 	if expectedAuthMethod == oidc.TokenEndpointAuthMethodNone {
 		return client, nil
+	}
+	if s.clientSecretVerifier != nil {
+		if err := s.clientSecretVerifier.VerifyClientSecret(ctx, client.ID, clientSecret); err == nil {
+			return client, nil
+		}
+		return oidc.Client{}, s.oauthError("invalid_client", "invalid client credentials", http.StatusUnauthorized)
 	}
 	if subtleStringCompare(client.Secret, strings.TrimSpace(clientSecret)) {
 		return client, nil
@@ -674,11 +696,28 @@ func (s *Service) validateAuthorizeRequest(client oidc.Client, req oidc.Authoriz
 	if client.RequirePKCE && strings.TrimSpace(req.CodeChallenge) == "" {
 		return nil, s.oauthError("invalid_request", "code_challenge is required", http.StatusBadRequest)
 	}
-	if client.RequirePKCE && strings.TrimSpace(req.CodeChallengeMethod) != codeChallengeMethodS256 {
+	if !validPKCEMetadata(client.RequirePKCE, strings.TrimSpace(req.CodeChallenge), strings.TrimSpace(req.CodeChallengeMethod)) {
 		return nil, s.oauthError("invalid_request", "code_challenge_method must be S256", http.StatusBadRequest)
 	}
 
 	return scopes, nil
+}
+
+func validPKCEMetadata(required bool, challenge, method string) bool {
+	if challenge == "" {
+		return !required && method == ""
+	}
+	return method == codeChallengeMethodS256
+}
+
+func supportedClientAuthMethod(method string) bool {
+	switch method {
+	case oidc.TokenEndpointAuthMethodNone, oidc.TokenEndpointAuthMethodClientSecretBasic,
+		oidc.TokenEndpointAuthMethodClientSecretPost:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Service) redirectAllowed(client oidc.Client, redirectURI string) bool {

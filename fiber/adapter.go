@@ -15,13 +15,15 @@ import (
 const (
 	authContextLocalKey = "goauth.v2.auth_context"
 	acceptedResponseKey = "accepted"
+	maxRequestBodyBytes = 1 << 20
 )
 
 type Runtime interface {
 	Register(ctx context.Context, request goauth.RegisterRequest) (goauth.RegisterResult, error)
 	Login(ctx context.Context, request goauth.LoginRequest) (goauth.LoginResult, error)
 	Refresh(ctx context.Context, refreshToken string) (goauth.TokenPair, error)
-	VerifyAccessToken(ctx context.Context, accessToken string, introspect bool) (goauth.AuthContext, error)
+	AuthenticateSession(ctx context.Context, accessToken string) (goauth.AuthContext, error)
+	VerifyJWT(ctx context.Context, accessToken string) (goauth.AuthContext, error)
 	RequestPasswordReset(ctx context.Context, email string) error
 	ResetPassword(ctx context.Context, token, newPassword string) error
 	SendEmailChallenge(ctx context.Context, subjectID goauth.SubjectID, purpose goauth.EmailChallengePurpose) error
@@ -56,6 +58,9 @@ type registerRequest struct {
 
 func (a *Adapter) Register(c gofiber.Ctx) error {
 	c.Set(gofiber.HeaderCacheControl, "no-store")
+	if len(c.Body()) > maxRequestBodyBytes {
+		return writeRequestTooLarge(c)
+	}
 	var request registerRequest
 	if err := c.Bind().Body(&request); err != nil {
 		return WriteError(c, goauth.ErrInvalidIdentifier)
@@ -89,6 +94,9 @@ type loginRequest struct {
 
 func (a *Adapter) Login(c gofiber.Ctx) error {
 	c.Set(gofiber.HeaderCacheControl, "no-store")
+	if len(c.Body()) > maxRequestBodyBytes {
+		return writeRequestTooLarge(c)
+	}
 	var request loginRequest
 	if err := c.Bind().Body(&request); err != nil {
 		return WriteError(c, goauth.ErrInvalidCredentials)
@@ -116,6 +124,9 @@ type refreshRequest struct {
 
 func (a *Adapter) Refresh(c gofiber.Ctx) error {
 	c.Set(gofiber.HeaderCacheControl, "no-store")
+	if len(c.Body()) > maxRequestBodyBytes {
+		return writeRequestTooLarge(c)
+	}
 	var request refreshRequest
 	if err := c.Bind().Body(&request); err != nil {
 		return WriteError(c, goauth.ErrInvalidToken)
@@ -134,6 +145,9 @@ type requestPasswordResetRequest struct {
 
 func (a *Adapter) RequestPasswordReset(c gofiber.Ctx) error {
 	c.Set(gofiber.HeaderCacheControl, "no-store")
+	if len(c.Body()) > maxRequestBodyBytes {
+		return writeRequestTooLarge(c)
+	}
 	var request requestPasswordResetRequest
 	if err := c.Bind().Body(&request); err != nil {
 		return c.Status(gofiber.StatusAccepted).JSON(gofiber.Map{acceptedResponseKey: true})
@@ -152,6 +166,9 @@ type resetPasswordRequest struct {
 
 func (a *Adapter) ResetPassword(c gofiber.Ctx) error {
 	c.Set(gofiber.HeaderCacheControl, "no-store")
+	if len(c.Body()) > maxRequestBodyBytes {
+		return writeRequestTooLarge(c)
+	}
 	var request resetPasswordRequest
 	if err := c.Bind().Body(&request); err != nil {
 		return WriteError(c, goauth.ErrInvalidToken)
@@ -165,6 +182,9 @@ func (a *Adapter) ResetPassword(c gofiber.Ctx) error {
 
 func (a *Adapter) SendEmailChallenge(c gofiber.Ctx) error {
 	c.Set(gofiber.HeaderCacheControl, "no-store")
+	if len(c.Body()) > maxRequestBodyBytes {
+		return writeRequestTooLarge(c)
+	}
 	auth, ok := AuthContext(c)
 	if !ok {
 		return WriteError(c, goauth.ErrInvalidToken)
@@ -186,6 +206,9 @@ type verifyEmailChallengeRequest struct {
 
 func (a *Adapter) VerifyEmailChallenge(c gofiber.Ctx) error {
 	c.Set(gofiber.HeaderCacheControl, "no-store")
+	if len(c.Body()) > maxRequestBodyBytes {
+		return writeRequestTooLarge(c)
+	}
 	auth, ok := AuthContext(c)
 	if !ok {
 		return WriteError(c, goauth.ErrInvalidToken)
@@ -225,7 +248,13 @@ func (a *Adapter) RequireRealm(realm goauth.Realm, options RealmMiddlewareOption
 		if !ok {
 			return WriteError(c, goauth.ErrInvalidToken)
 		}
-		auth, err := a.runtime.VerifyAccessToken(c.Context(), token, !options.OfflineJWT)
+		var auth goauth.AuthContext
+		var err error
+		if options.OfflineJWT {
+			auth, err = a.runtime.VerifyJWT(c.Context(), token)
+		} else {
+			auth, err = a.runtime.AuthenticateSession(c.Context(), token)
+		}
 		if err != nil {
 			return WriteError(c, err)
 		}
@@ -255,6 +284,12 @@ type ErrorBody struct {
 	Message string `json:"message"`
 }
 
+func writeRequestTooLarge(c gofiber.Ctx) error {
+	return c.Status(gofiber.StatusRequestEntityTooLarge).JSON(ErrorResponse{
+		Error: ErrorBody{Code: "request_too_large", Message: "request body is too large"},
+	})
+}
+
 func WriteError(c gofiber.Ctx, err error) error {
 	c.Set(gofiber.HeaderCacheControl, "no-store")
 	status, code, message := mapError(err)
@@ -270,6 +305,8 @@ func mapError(err error) (status int, code, message string) {
 	case errors.Is(err, goauth.ErrOperationOutcomeUnknown):
 		// A canceled commit may have persisted; its cause must not imply safe retry.
 		return gofiber.StatusServiceUnavailable, "operation_outcome_unknown", "operation outcome is unknown; authenticate again"
+	case errors.Is(err, goauth.ErrNotificationDeliveryDisabled):
+		return gofiber.StatusNotImplemented, "notification_delivery_disabled", "notification delivery is disabled"
 	case errors.Is(err, goauth.ErrPasswordHashOverloaded):
 		return gofiber.StatusServiceUnavailable, "password_hash_overloaded", "authentication temporarily unavailable"
 	case errors.Is(err, goauth.ErrPasswordVerificationUnavailable),

@@ -114,12 +114,16 @@ func (s *Service) parseAccessToken(ctx context.Context, token string) (*accessTo
 		}
 
 		return key.PublicKey, nil
-	}, jwt.WithIssuer(s.issuer))
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()}),
+		jwt.WithIssuer(s.issuer), jwt.WithExpirationRequired(), jwt.WithIssuedAt(), jwt.WithTimeFunc(s.now))
 	if err != nil {
 		return nil, err
 	}
 	if !parsed.Valid {
 		return nil, errors.New("token is invalid")
+	}
+	if claims.IssuedAt == nil {
+		return nil, errors.New("token issued at is required")
 	}
 
 	return claims, nil

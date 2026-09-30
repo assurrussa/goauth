@@ -894,3 +894,55 @@ func awaitManagedDelivery(t *testing.T, deliveries <-chan goauth.NotificationDel
 		return goauth.NotificationDelivery{}
 	}
 }
+
+func TestManagedNotificationRenewsLeaseBeforeSending(t *testing.T) {
+	for _, claimAge := range []time.Duration{1500 * time.Millisecond, 3 * time.Second} {
+		t.Run(claimAge.String(), func(t *testing.T) {
+			db := integrationDB(t)
+			resetSchema(t, db)
+			require.NoError(t, postgres.Migrate(t.Context(), db))
+			remaining := make(chan time.Duration, 1)
+			config := runtimeConfig(t)
+			config.EventSink = nil
+			var armed, aged atomic.Bool
+			config.Now = func() time.Time {
+				now := time.Now()
+				if armed.Load() && aged.CompareAndSwap(false, true) {
+					return now.Add(-claimAge)
+				}
+				return now
+			}
+			runtime, err := postgres.NewRuntime(postgres.Config{
+				DB: db, Runtime: config,
+				NotificationWorker: postgres.NotificationWorkerConfig{
+					PollInterval: 10 * time.Millisecond,
+					SendTimeout:  time.Second, LeaseDuration: 2 * time.Second,
+				},
+				NotificationSender: goauth.NotificationSenderFunc(func(ctx context.Context, delivery goauth.NotificationDelivery) error {
+					var leaseUntil time.Time
+					if err := db.QueryRowContext(ctx, `SELECT leased_until FROM auth_notification_deliveries WHERE id = $1`, delivery.ID).Scan(&leaseUntil); err != nil {
+						return err
+					}
+					remaining <- time.Until(leaseUntil)
+					return nil
+				}),
+			})
+			require.NoError(t, err)
+			registered := register(t, runtime, "renew.lease@example.test")
+			require.NoError(t, runtime.SendEmailChallenge(t.Context(), registered.Account.Subject.ID, goauth.EmailChallengePurposeVerification))
+			id := managedNotificationID(t, db, registered.Account.Subject.ID)
+			armed.Store(true)
+			startManagedNotificationWorker(t, runtime)
+			select {
+			case leaseRemaining := <-remaining:
+				require.Greater(t, leaseRemaining, time.Second, "claim preparation must not consume the sender's lease budget")
+			case <-time.After(5 * time.Second):
+				t.Fatal("notification was not delivered")
+			}
+			waitManagedNotificationState(t, db, id, "delivered")
+			var attempts int
+			require.NoError(t, db.QueryRowContext(t.Context(), `SELECT attempts FROM auth_notification_deliveries WHERE id = $1`, id).Scan(&attempts))
+			require.Equal(t, 1, attempts, "expired claims must be reclaimed before reserving a send")
+		})
+	}
+}

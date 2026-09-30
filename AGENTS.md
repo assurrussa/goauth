@@ -100,11 +100,12 @@ Important invariants:
 - Local clean-consumer probe: `make externalconsumer-local`
 - Published clean-consumer diagnostic: `make externalconsumer-published VERSION=<tag>`
 
-The Makefile uses shared Go build/module/toolchain/lint caches outside the
-checkout, rooted at `$(HOME)/dev/projects/.cache/go`. Override
-`GO_SHARED_CACHE_ROOT` or individual cache variables for a specific check.
-Existing GOPATH and toolchain settings are preserved. Sandbox restrictions
-require permitted shared-cache access; do not create per-checkout cache copies.
+The Makefile uses standard Go cache paths unless the host sets
+`GO_SHARED_CACHE_ROOT` or individual cache variables. Local hosts may require
+a shared cache root outside checkout through their parent instructions; honor
+that override. Existing GOPATH and toolchain settings are preserved. Sandbox
+restrictions require permitted shared-cache access; do not create per-checkout
+cache copies.
 
 During implementation, run package-scoped `go test` commands. Run `make check`
 once after a coherent batch; do not stack it with `make test`,

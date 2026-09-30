@@ -178,18 +178,23 @@ func (r *Runtime) deliverNotification(ctx context.Context, claim notificationCla
 		}
 		return nil
 	}
-	reserved, err := r.store.reserveNotificationSend(ctx, claim, r.notificationWorker.MaxAttempts)
+	deadline := time.Now().Add(r.notificationWorker.SendTimeout)
+	if claim.event.ValidUntil.Before(deadline) {
+		deadline = claim.event.ValidUntil
+	}
+	sendCtx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+	reserved, err := r.store.reserveNotificationSend(sendCtx, claim, r.notificationWorker.MaxAttempts,
+		r.notificationNow().UTC(), r.notificationWorker.LeaseDuration)
 	if err != nil {
 		return err
 	}
 	if !reserved {
 		return nil // The lease was lost before the sender call.
 	}
-	deadline := time.Now().Add(r.notificationWorker.SendTimeout)
-	if claim.event.ValidUntil.Before(deadline) {
-		deadline = claim.event.ValidUntil
+	if err := sendCtx.Err(); err != nil {
+		return err
 	}
-	sendCtx, cancel := context.WithDeadline(ctx, deadline)
 	err = r.notificationSender.SendNotification(sendCtx, goauth.NotificationDelivery{
 		ID: claim.event.ID, Notification: notification, ValidUntil: claim.event.ValidUntil, EncryptedEvent: claim.event,
 	})

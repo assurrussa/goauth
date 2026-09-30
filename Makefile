@@ -1,9 +1,15 @@
-GO_SHARED_CACHE_ROOT ?= $(HOME)/dev/projects/.cache/go
+# Hosts may opt into a shared cache root; otherwise use standard Go paths.
+ifneq ($(strip $(GO_SHARED_CACHE_ROOT)),)
 GOCACHE ?= $(GO_SHARED_CACHE_ROOT)/build
 GOMODCACHE ?= $(GO_SHARED_CACHE_ROOT)/mod
 GOLANGCI_LINT_CACHE ?= $(GO_SHARED_CACHE_ROOT)/lint
+export GOLANGCI_LINT_CACHE
+else
+GOCACHE ?= $(shell GOTOOLCHAIN=local go env GOCACHE)
+GOMODCACHE ?= $(shell GOTOOLCHAIN=local go env GOMODCACHE)
+endif
 GOPATH ?= $(shell GOTOOLCHAIN=local go env GOPATH)
-export GOCACHE GOMODCACHE GOLANGCI_LINT_CACHE
+export GOCACHE GOMODCACHE
 
 .DEFAULT_GOAL := full
 
@@ -25,7 +31,6 @@ export EVIDENCE
 export GOCACHE
 export GOMODCACHE
 export GOPATH
-export GOLANGCI_LINT_CACHE
 export GOAUTH_TEST_POSTGRES_DSN
 export GOAUTH_TEST_REDIS_ADDRESS
 
