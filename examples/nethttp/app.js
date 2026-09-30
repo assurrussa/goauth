@@ -12,8 +12,14 @@ function accessCurrent(margin = 0) {
   return Date.parse(localStorage.getItem(expiryKey) || '') > Date.now() + margin;
 }
 
-// Only call this while holding the session lock, except for read-only requests.
+// Only call these while holding the session lock, except for read-only requests.
 async function sendRequest(action, data = {}, method = 'POST') {
+  return (await sendRequestResult(action, data, method)).response;
+}
+
+// Retain only the parsed error code for policy decisions. Read the body once,
+// under the same deadline, without cloning a stream or consulting rendered UI.
+async function sendRequestResult(action, data = {}, method = 'POST') {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), requestTimeoutMS);
   try {
@@ -40,7 +46,7 @@ async function sendRequest(action, data = {}, method = 'POST') {
       localStorage.setItem(blockedKey, '1');
     }
     output.textContent = response.status + '\n' + JSON.stringify(value, null, 2);
-    return response;
+    return {response, errorCode: typeof value?.error?.code === 'string' ? value.error.code : ''};
   } catch (error) {
     if (sessionIssuers.has(action) || sessionInvalidators.has(action)) {
       // Cancellation cannot prove that the server rolled back. Retain expiry so
@@ -99,14 +105,34 @@ async function logout(action = 'logout') {
   return withSessionLock(async () => {
     // A refresh-only block must not prevent explicit revocation using live access.
     // Unlike background refresh, logout has no 30-second proactive refresh margin.
-    if (!accessCurrent() && !await refreshLocked(0)) {
+    const needsRefresh = !accessCurrent();
+    if (needsRefresh && !await refreshLocked(0)) {
       output.textContent = 'Server revocation is not confirmed. Refresh cannot be retried safely; log in again or use Forget this browser.';
       return null;
     }
-    const response = await sendRequest(action);
-    if (!response.ok) localStorage.setItem(blockedKey, '1');
-    return response;
+    let result = await sendRequestResult(action);
+    if (isInvalidAccess(result)) {
+      // The server overrides the local scheduling hint (for example, a cookie
+      // may expire first). A known access denial did not submit our refresh.
+      localStorage.removeItem(expiryKey);
+      if (!needsRefresh && !localStorage.getItem(blockedKey)) {
+        // One recovery only, inside this same lock. Never clear a prior block
+        // or recurse through logout/refresh and reacquire the lock.
+        if (!await refreshLocked(0)) return null;
+        result = await sendRequestResult(action);
+      }
+    }
+    if (!result.response.ok) {
+      localStorage.setItem(blockedKey, '1');
+      if (isInvalidAccess(result)) localStorage.removeItem(expiryKey);
+    }
+    return result.response;
   });
+}
+
+function isInvalidAccess(result) {
+  // Match the adapter's typed access rejection, not every 401 or any 5xx.
+  return result.response.status === 401 && result.errorCode === 'invalid_token';
 }
 
 // All POSTs share the same lock, including login/register and credential removal.

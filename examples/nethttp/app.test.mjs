@@ -346,3 +346,153 @@ for (const phase of ['headers', 'body']) {
     assert.deepEqual(page.calls, ['refresh'], 'no retry of an uncertain refresh after cancellation');
   });
 }
+
+const invalidAccess = () => Response.json({error: {code: 'invalid_token'}}, {status: 401});
+
+for (const action of ['logout', 'logout-all']) {
+  test(`review: ${action} recovers a rejected access hint once inside the same lock`, async () => {
+    let logoutAttempts = 0, acquisitions = 0;
+    const delegate = serializedLocks();
+    const locks = {request(...args) { acquisitions++; return delegate.request(...args); }};
+    const storage = currentStorage();
+    const page = browser({storage, locks, respond: requestAction => {
+      if (requestAction === 'refresh') {
+        assert(!storage.has(expiryKey), 'server rejection invalidates the stale hint before rotation');
+        assert.equal(storage.get(blockedKey), '1', 'persist the replay fence before submission');
+        return tokens();
+      }
+      assert.equal(requestAction, action);
+      return ++logoutAttempts === 1 ? invalidAccess() : new Response(null, {status: 204});
+    }});
+    assert.equal((await page.context.logout(action))?.status, 204);
+    assert.equal(acquisitions, 1, 'recovery must not recursively acquire the exclusive lock');
+    assert.deepEqual(page.calls, [action, 'refresh', action]);
+    assert(!storage.has(expiryKey));
+    assert.equal(storage.get(blockedKey), '1');
+    await page.context.logout(action);
+    await page.context.refresh();
+    assert.deepEqual(page.calls, [action, 'refresh', action], 'a completed logout cannot restart rotation');
+  });
+
+  test(`${action}: a prior replay fence survives a known invalid-access response`, async () => {
+    const storage = currentStorage();
+    storage.set(blockedKey, '1');
+    const page = browser({storage, respond: invalidAccess});
+    assert.equal((await page.context.logout(action))?.status, 401);
+    assert(!storage.has(expiryKey), 'do not keep trusting a rejected access hint');
+    assert.equal(storage.get(blockedKey), '1');
+    await page.context.logout(action);
+    await page.context.refresh();
+    assert.deepEqual(page.calls, [action], 'access rejection cannot authorize replay of an uncertain refresh');
+  });
+
+  test(`${action}: repeated invalid access after recovery cannot rotate a second time`, async () => {
+    const page = browser({storage: currentStorage(), respond: requestAction =>
+      requestAction === 'refresh' ? tokens() : invalidAccess()});
+    assert.equal((await page.context.logout(action))?.status, 401);
+    assert.deepEqual(page.calls, [action, 'refresh', action]);
+    assert(!page.storage.has(expiryKey));
+    assert.equal(page.storage.get(blockedKey), '1');
+    await page.context.logout(action);
+    await page.context.refresh();
+    assert.deepEqual(page.calls, [action, 'refresh', action]);
+  });
+
+  test(`${action}: rotation before the first logout consumes the entire recovery budget`, async () => {
+    const page = browser({respond: requestAction => requestAction === 'refresh' ? tokens() : invalidAccess()});
+    assert.equal((await page.context.logout(action))?.status, 401);
+    await page.context.logout(action);
+    await page.context.refresh();
+    assert.deepEqual(page.calls, ['refresh', action]);
+    assert(!page.storage.has(expiryKey));
+  });
+}
+
+for (const failure of ['network', 'unknown-outcome', 'replay', 'malformed-success']) {
+  test(`recovery refresh ${failure} is never resubmitted or followed by a second logout`, async () => {
+    const page = browser({storage: currentStorage(), respond: action => {
+      if (action !== 'refresh') return invalidAccess();
+      if (failure === 'network') throw new Error('refresh response lost');
+      if (failure === 'unknown-outcome') return Response.json({error: {code: 'operation_outcome_unknown'}}, {status: 503});
+      if (failure === 'replay') return Response.json({error: {code: 'refresh_replay'}}, {status: 401});
+      return Response.json({});
+    }});
+    assert.equal(await page.context.logout(), null);
+    assert.equal(page.storage.get(blockedKey), '1');
+    await page.context.logout();
+    await page.context.refresh();
+    assert.deepEqual(page.calls, ['logout', 'refresh']);
+  });
+}
+
+for (const [status, body] of [
+  [401, '{"error":{"code":"refresh_replay"}}'],
+  [401, '{"error":{"code":"operation_outcome_unknown"}}'],
+  [401, '{"error":{"code":"invalid_credentials"}}'],
+  [401, '{"error":{"code":["invalid_token"]}}'],
+  [401, 'not JSON'],
+  [401, 'null'],
+  [403, '{"error":{"code":"invalid_token"}}'],
+  [500, '{"error":{"code":"invalid_token"}}'],
+  [503, '{"error":{"code":"operation_outcome_unknown"}}'],
+]) {
+  test(`logout cannot infer safe recovery from ${status} ${body}`, async () => {
+    const page = browser({storage: currentStorage(), respond: () => new Response(body, {status})});
+    assert.equal((await page.context.logout())?.status, status);
+    await page.context.refresh();
+    assert.deepEqual(page.calls, ['logout']);
+    assert.equal(page.storage.get(blockedKey), '1');
+  });
+}
+
+test('recovery holds the lock through both logout responses before a queued tab refresh', async () => {
+  const storage = currentStorage(), locks = serializedLocks(), rejected = deferred();
+  let attempts = 0;
+  const first = browser({storage, locks, respond: action => {
+    if (action === 'refresh') return tokens();
+    return ++attempts === 1 ? rejected.promise : new Response(null, {status: 204});
+  }});
+  const second = browser({storage, locks});
+  const logout = first.context.logout();
+  await nextTurn();
+  const waiting = second.context.refresh();
+  await nextTurn();
+  try { assert.deepEqual(second.calls, []); }
+  finally { rejected.resolve(invalidAccess()); }
+  assert.equal((await logout)?.status, 204);
+  await waiting;
+  assert.deepEqual(first.calls, ['logout', 'refresh', 'logout']);
+  assert.deepEqual(second.calls, []);
+});
+
+test('unreadable 401 body is uncertain, not permission for recovery', async () => {
+  let reads = 0;
+  const page = browser({storage: currentStorage(), respond: (action, options) => ({
+    ok: false, status: 401,
+    text() { reads++; return waitForAbort(options.signal); },
+  })});
+  const logout = page.context.logout();
+  await nextTurn();
+  page.clock.fire(10000);
+  assert.equal(await logout, null);
+  assert.equal(reads, 1);
+  assert.equal(page.storage.get(blockedKey), '1');
+  await page.context.refresh();
+  assert.deepEqual(page.calls, ['logout']);
+});
+
+test('lost recovery logout response keeps the new refresh fenced', async () => {
+  let attempts = 0;
+  const page = browser({storage: currentStorage(), respond: action => {
+    if (action === 'refresh') return tokens();
+    if (++attempts === 1) return invalidAccess();
+    if (attempts === 2) throw new Error('logout response lost');
+    return new Response(null, {status: 204});
+  }});
+  assert.equal(await page.context.logout(), null);
+  assert.equal(page.storage.get(blockedKey), '1');
+  await page.context.refresh();
+  assert.deepEqual(page.calls, ['logout', 'refresh', 'logout']);
+  assert.equal((await page.context.logout())?.status, 204, 'explicit retry may still revoke with live access');
+  assert.deepEqual(page.calls, ['logout', 'refresh', 'logout', 'logout']);
+});

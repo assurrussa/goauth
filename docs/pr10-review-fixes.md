@@ -51,7 +51,7 @@ retry, queued logout behind a delayed genuine login response, and local cookie
 removal with the canonical session demonstrably still valid. This is acceptance
 code, not a claim that Chromium/PostgreSQL ran in this session.
 
-## Verification of this follow-up
+## Earlier verification (10990d19)
 
 - The four archived review reproductions failed on the unchanged base `app.js`.
   Its Git blob matched `379a6f9f95efc7ac672eea0f9d59e5905c97164e`.
@@ -68,3 +68,37 @@ code, not a claim that Chromium/PostgreSQL ran in this session.
 On the declared toolchain and documented disposable services, run
 `make release-candidate-readiness`. No production deployment, schema migration,
 public tag, visibility change or historical evidence upgrade is included.
+
+## Known access rejection correction
+
+Reviewed base: `10990d1989cb1e46d9a1b5234a755ba4032cacf7`.
+
+A future client expiry does not guarantee that the browser still sends an access
+cookie. Logout and logout-all now recognize exactly HTTP 401 plus the adapter's
+`invalid_token` error code. They discard the rejected hint and, only with no
+pre-existing refresh block and no rotation in this operation, perform one refresh
+and one logout retry in the already-held Web Lock. No other status/error or
+unreadable response authorizes this recovery. An existing replay block is never
+cleared by an access denial. A second denial removes the new hint and stops;
+failed, canceled or uncertain refresh cannot be resubmitted by a later click.
+
+The response body is decoded once within its existing deadline. `sendRequest`
+retains its Response-returning contract; an internal result also exposes the
+parsed error code. There is no response cloning, UI-text parsing, recursive lock
+acquisition, new state store, dependency or Go/API/schema change.
+
+Both archived failure cases reproduced against the unchanged base and now pass,
+as do their two controls. The main Node suite passes 52/52 tests on Node 22.16.0,
+including the previous two real loopback HTTP/native-fetch cancellation cases.
+New tests cover both logout actions, shared locking, prior replay blocks, the
+one-rotation bound, typed versus generic failures, unreadable 401 bodies and
+lost responses during recovery. These are not Chromium/PostgreSQL results.
+The existing real-browser acceptance script additionally removes only the access
+cookie while retaining a real refresh cookie and future expiry, then verifies
+one recovery rotation and logout for each action. That script was syntax-checked,
+not executed in this correction session.
+
+The Go 1.27.1 download attempt still fails at public-proxy DNS resolution in the
+implementation environment (Go 1.23.2 installed). No Go files or dependency
+versions were changed; full Go tests, lint, integration, Chromium, govulncheck and
+`make release-candidate-readiness` remain unverified for the final branch.

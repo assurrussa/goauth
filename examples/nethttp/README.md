@@ -104,13 +104,22 @@ opt-out accepting stale authorization until JWT expiry; this host does not use
 it. Auth context is read with `nethttp.AuthContext(request.Context())`.
 `operation_outcome_unknown` returns 503. Refresh is single-use: do not retry the
 same refresh token after an uncertain network/commit result; require login to
-recover. The UI performs no automatic retries.
+recover. The UI does not blindly retry failed or uncertain mutations.
 
 Logout uses a still-valid access cookie immediately, even in the last 30 seconds
 or after a previous refresh/logout failure. A refresh-only block does not suppress
 an explicit logout retry. If access has expired, logout may rotate once under the
 same lock, but never reuses a refresh whose outcome is uncertain. Local expiry
 metadata is only a scheduling hint, never authorization.
+
+If that hint is still current but the server returns exactly HTTP 401 with
+`error.code: "invalid_token"`, logout discards the hint and may recover once:
+`logout -> refresh -> logout` (the same applies to logout-all). This remains in
+one Web Lock. Recovery is allowed only when no earlier refresh block exists and
+this logout operation has not already rotated. The parsed error code comes from
+the same bounded body read, not from UI text. Other errors and unreadable responses
+do not authorize recovery. A second rejection or failed/uncertain refresh stops
+recovery and preserves the replay block; it never loops through token rotation.
 
 **Forget this browser** calls the browser-only `POST /browser/forget-session`
 with `{}` and the same CSRF/origin protection. It clears the host's cookies even

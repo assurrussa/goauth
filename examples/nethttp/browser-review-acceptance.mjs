@@ -17,6 +17,29 @@ export async function reviewBrowserRecovery({context, page, second, origin, raw,
     assert.equal((await raw('/fixture/stats')).data.submitted, before, 'live-access logout must not depend on refresh');
   } finally { await page.unroute('**/browser/logout'); }
 
+  // Remove only the access cookie while retaining the original refresh cookie
+  // and future local expiry. The real middleware, not a mocked response, must
+  // reject the first logout; the same operation gets one recovery rotation.
+  for (const action of ['logout', 'logout-all']) {
+    assert.equal((await call('login', {scheme: 'email', identifier: email, password, realm: 'user'})).status, 200);
+    const original = await context.cookies(origin);
+    const refreshCookie = original.find(cookie => cookie.name === '__Host-UUIDR');
+    assert(refreshCookie, 'login must install the refresh credential');
+    await context.clearCookies({name: '__Host-SSID'});
+    const remaining = await context.cookies(origin);
+    assert(!remaining.some(cookie => cookie.name === '__Host-SSID'));
+    assert.equal(remaining.find(cookie => cookie.name === '__Host-UUIDR')?.value, refreshCookie.value);
+    assert(await page.evaluate(() => Date.parse(localStorage.getItem('goauth-access-expiry')) > Date.now()));
+    const before = (await raw('/fixture/stats')).data.submitted;
+    assert.equal((await call(action)).status, 204);
+    await second.evaluate(() => refresh());
+    assert.equal((await raw('/fixture/stats')).data.submitted - before, 1,
+      'known access rejection must recover once; a queued tab cannot revive the session');
+    assert(!(await context.cookies(origin)).some(cookie => ['__Host-SSID', '__Host-UUIDR'].includes(cookie.name)));
+    assert.equal((await raw('/browser/me', 'GET', undefined,
+      {Cookie: original.map(cookie => cookie.name + '=' + cookie.value).join('; ')})).status, 401);
+  }
+
   // Delay a genuine login response. Observe the actual queued Web Lock rather
   // than assuming that a short sleep placed logout behind the login.
   let releaseLogin, loginArrived, routeError;
