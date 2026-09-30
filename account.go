@@ -227,11 +227,13 @@ func (r *Runtime) ChangePassword(ctx context.Context, request ChangePasswordRequ
 			outcomeErr = ErrPasswordChangeConflict
 			return nil
 		}
-		if err := r.enqueueNotification(txCtx, "password_changed", result.Account, Notification{
-			Template: "password_changed",
-			To:       result.Account.PrimaryEmail.DisplayValue,
-		}); err != nil {
-			return err
+		if r.notificationDelivery == NotificationDeliveryRequired {
+			if err := r.enqueueNotification(txCtx, "password_changed", result.Account, Notification{
+				Template: "password_changed",
+				To:       result.Account.PrimaryEmail.DisplayValue,
+			}); err != nil {
+				return err
+			}
 		}
 		if err := r.recordAudit(txCtx, SecurityEvent{
 			Type:      SecurityEventPasswordChanged,

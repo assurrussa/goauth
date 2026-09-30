@@ -25,3 +25,14 @@ When adding or changing public API:
 Only manifest packages are supported. The retired v0.1 implementation is absent
 from the current source tree; its immutable tags remain available for consumers
 that have not migrated. Importability alone does not make a package supported.
+
+The runnable consumer exercises optional delivery policy rather than only naming
+its exported symbols. The database-free path proves explicit disabled mode keeps
+password login/change usable, blocks email/reset commands before account changes
+or enqueue, and still rejects missing transactional audit. The PostgreSQL path
+uses the supported runtime's SQL executor for host projections: commit/rollback
+includes canonical auth, audit and RBAC, nested calls do not commit early, and a
+different database handle cannot join. It also proves opaque credential proof
+revalidation fails after a security-version change and reset receipt callbacks
+commit or roll back reset, encrypted enqueue, audit and host correlation together.
+No internal imports or additional supported packages are needed.

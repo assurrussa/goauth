@@ -31,6 +31,21 @@ advanced integration path through direct root Runtime assembly. The PostgreSQL
 constructor rejects custom event sinks so auth state, mandatory audit and native
 enqueue share its database transaction.
 
+## Managed PostgreSQL transactions
+
+`postgres.Runtime.InAuthTransaction` coordinates canonical, audit, RBAC and host
+SQL writes on one database handle. The host obtains a context-scoped
+`SQLExecutor`; only the outer owner commits. Join concurrent operations before
+returning from its callback and do not retain its context or executor afterward.
+RBAC callback registration is synchronized, with hooks executed after unlocking
+and only after commit (or fail-closed cache handling on an unknown outcome).
+
+A transaction uses one SQL connection. Consume and close result sets before
+starting another operation on it; serialize mixed Query/Exec work. This callback
+synchronization does not provide a general concurrent SQL query scheduler.
+Idempotent role assignment uses one Exec without changing the assignment's
+`created_at`; repeated assignments can create an additional PostgreSQL row version.
+
 ## Schema lifecycle
 
 The v0.2 baseline is authoritative for a fresh database. Detection of a v0.1

@@ -40,26 +40,8 @@ type Runtime struct {
 }
 
 func NewRuntime(config Config) (*Runtime, error) {
-	if config.Runtime.AuditSink != nil {
-		return nil, errors.New("PostgreSQL requires its local audit store; " +
-			"use direct root Runtime for custom transactional audit wiring")
-	}
-	if config.Runtime.AuthTransaction != nil {
-		return nil, errors.New("PostgreSQL assembles AuthTransaction; use direct root Runtime for custom transaction wiring")
-	}
-	if config.Runtime.EventSink != nil {
-		return nil, errors.New("PostgreSQL requires its local encrypted notification queue; " +
-			"use direct root Runtime for custom transactional event wiring")
-	}
-	if config.NotificationSender != nil && (config.Runtime.EventSink != nil ||
-		config.Runtime.NotificationRenderer != nil || config.Runtime.AuditSink != nil ||
-		config.Runtime.NotificationTransaction != nil || config.Runtime.ManagedNotificationDelivery) {
-		return nil, errors.New("managed NotificationSender cannot be combined with custom event, renderer, audit, or transaction hooks")
-	}
-	if config.NotificationSender == nil && (config.Runtime.NotificationTransaction != nil ||
-		config.Runtime.ManagedNotificationDelivery) {
-		return nil, errors.New("PostgreSQL notification transactions require a managed NotificationSender; " +
-			"use direct root Runtime assembly for custom transaction wiring")
+	if err := validateRuntimeHooks(config); err != nil {
+		return nil, err
 	}
 	if err := validateRuntimeIdentifierSchemes(config.Runtime.IdentifierResolvers); err != nil {
 		return nil, err
@@ -175,4 +157,32 @@ func (r *Runtime) Close() error {
 	}
 
 	return r.db.Close()
+}
+
+func validateRuntimeHooks(config Config) error {
+	if config.Runtime.NotificationDelivery == goauth.NotificationDeliveryDisabled && config.NotificationSender != nil {
+		return errors.New("disabled notification delivery cannot configure NotificationSender")
+	}
+	if config.Runtime.AuditSink != nil {
+		return errors.New("PostgreSQL requires its local audit store; " +
+			"use direct root Runtime for custom transactional audit wiring")
+	}
+	if config.Runtime.AuthTransaction != nil {
+		return errors.New("PostgreSQL assembles AuthTransaction; use direct root Runtime for custom transaction wiring")
+	}
+	if config.Runtime.EventSink != nil {
+		return errors.New("PostgreSQL requires its local encrypted notification queue; " +
+			"use direct root Runtime for custom transactional event wiring")
+	}
+	if config.NotificationSender != nil && (config.Runtime.EventSink != nil ||
+		config.Runtime.NotificationRenderer != nil || config.Runtime.AuditSink != nil ||
+		config.Runtime.NotificationTransaction != nil || config.Runtime.ManagedNotificationDelivery) {
+		return errors.New("managed NotificationSender cannot be combined with custom event, renderer, audit, or transaction hooks")
+	}
+	if config.NotificationSender == nil && (config.Runtime.NotificationTransaction != nil ||
+		config.Runtime.ManagedNotificationDelivery) {
+		return errors.New("PostgreSQL notification transactions require a managed NotificationSender; " +
+			"use direct root Runtime assembly for custom transaction wiring")
+	}
+	return nil
 }

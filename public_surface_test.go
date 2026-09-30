@@ -30,6 +30,10 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = authTransaction
 	_ = (*goauth.Runtime).VerifyJWT
 	_ = (*goauth.Runtime).AuthenticateSession
+	_ = (*postgres.Runtime).PrepareCredential
+	_ = (*postgres.Runtime).RevalidateCredential
+	_ = (*goauth.Runtime).RequestPasswordResetWithReceipt
+	_ = goauth.PasswordResetReceipt{}
 	_ = goauth.ErrOperationOutcomeUnknown
 	_ = goauth.ErrRateLimitTransactionUnsupported
 	_ = goauth.ErrPasswordHashOverloaded
@@ -46,6 +50,12 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = verifier.Options{AccessTokenProfile: verifier.AccessTokenProfileZITADEL}
 	_ = verifier.AccessTokenProfileGoAuth
 	_ = verifier.AccessTokenProfile("")
+	_ = goauth.NotificationDeliveryDisabled
+	_ = goauth.ErrNotificationDeliveryDisabled
+	_ = goauth.Config{NotificationDelivery: goauth.NotificationDeliveryDisabled}
+	_ = (*postgres.Runtime).SQLExecutor
+	_ = (*postgres.Runtime).InAuthTransaction
+	_ = (*postgres.Runtime).Database
 	_ = goauth.NewRuntime
 	_ = goauth.NewKeyRing
 	_ = goauth.NewArgon2idHasher
@@ -70,7 +80,7 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = goauth.EmailChallengeRecord{ExpectedNormalizedEmail: "", ExpectedSecurityVersion: 1}
 	_ = goauth.ErrPasswordChangeConflict
 	_ = goauth.ErrEmailChangeNotFound
-	_ = goauth.NotificationDelivery{}
+	_ = goauth.NotificationDelivery{EncryptedEvent: goauth.EncryptedEvent{}}
 	_ = goauth.NotificationSenderFunc(nil)
 	var sender goauth.NotificationSender = goauth.NotificationSenderFunc(nil)
 	_ = sender

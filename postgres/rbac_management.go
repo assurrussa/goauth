@@ -64,7 +64,6 @@ func scanPermission(row rowScanner) (rbac.Permission, error) {
 	return permission, err
 }
 
-//nolint:gosec // every dynamic fragment is selected locally; values always use placeholders.
 func (s *rbacStore) ListRoles(ctx context.Context, filter rbac.RoleFilter) ([]rbac.Role, error) {
 	query := `SELECT ` + roleColumns + ` FROM auth_roles`
 	conditions := make([]string, 0, 4)
@@ -94,7 +93,7 @@ func (s *rbacStore) ListRoles(ctx context.Context, filter rbac.RoleFilter) ([]rb
 		query += fmt.Sprintf(` OFFSET $%d`, len(args))
 	}
 
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.executor(ctx).QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list RBAC roles: %w", err)
 	}
@@ -115,7 +114,7 @@ func (s *rbacStore) ListRoles(ctx context.Context, filter rbac.RoleFilter) ([]rb
 }
 
 func (s *rbacStore) GetRole(ctx context.Context, roleID int64) (rbac.Role, error) {
-	role, err := scanRole(s.db.QueryRowContext(
+	role, err := scanRole(s.executor(ctx).QueryRowContext(
 		ctx,
 		`SELECT `+roleColumns+` FROM auth_roles WHERE id = $1`,
 		roleID,
@@ -135,11 +134,11 @@ func (s *rbacStore) CreateRole(
 	role rbac.Role,
 	keys []rbac.PermissionKey,
 ) (rbac.Role, error) {
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, owned, err := (&Store{db: s.db}).beginWrite(ctx)
 	if err != nil {
 		return rbac.Role{}, fmt.Errorf("begin create RBAC role: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackWrite(tx, owned)
 	role.PublicID = uuid.NewString()
 	role, err = scanRole(tx.QueryRowContext(ctx, `
 INSERT INTO auth_roles (public_id, slug, name, description, is_system)
@@ -157,10 +156,11 @@ RETURNING `+roleColumns,
 	if err := replaceRolePermissionsTx(ctx, tx, role.ID, keys); err != nil {
 		return rbac.Role{}, err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := s.finishWrite(tx, owned); err != nil {
 		return rbac.Role{}, fmt.Errorf("commit create RBAC role: %w", err)
 	}
 
+	s.invalidateAfterCommit(ctx)
 	return role, nil
 }
 
@@ -169,11 +169,11 @@ func (s *rbacStore) UpdateRole(
 	role rbac.Role,
 	keys *[]rbac.PermissionKey,
 ) (rbac.Role, error) {
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, owned, err := (&Store{db: s.db}).beginWrite(ctx)
 	if err != nil {
 		return rbac.Role{}, fmt.Errorf("begin update RBAC role: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackWrite(tx, owned)
 	current, err := scanRole(tx.QueryRowContext(
 		ctx,
 		`SELECT `+roleColumns+` FROM auth_roles WHERE id = $1 FOR UPDATE`,
@@ -207,19 +207,20 @@ RETURNING `+roleColumns,
 			return rbac.Role{}, err
 		}
 	}
-	if err := tx.Commit(); err != nil {
+	if err := s.finishWrite(tx, owned); err != nil {
 		return rbac.Role{}, fmt.Errorf("commit update RBAC role: %w", err)
 	}
 
+	s.invalidateAfterCommit(ctx)
 	return role, nil
 }
 
 func (s *rbacStore) DeleteRole(ctx context.Context, roleID int64) error {
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, owned, err := (&Store{db: s.db}).beginWrite(ctx)
 	if err != nil {
 		return fmt.Errorf("begin delete RBAC role: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackWrite(tx, owned)
 	var system bool
 	if err := tx.QueryRowContext(
 		ctx,
@@ -236,14 +237,14 @@ func (s *rbacStore) DeleteRole(ctx context.Context, roleID int64) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM auth_roles WHERE id = $1`, roleID); err != nil {
 		return fmt.Errorf("delete RBAC role: %w", err)
 	}
-	if err := tx.Commit(); err != nil {
+	if err := s.finishWrite(tx, owned); err != nil {
 		return fmt.Errorf("commit delete RBAC role: %w", err)
 	}
 
+	s.invalidateAfterCommit(ctx)
 	return nil
 }
 
-//nolint:gosec // every dynamic fragment is selected locally; values always use placeholders.
 func (s *rbacStore) ListPermissions(
 	ctx context.Context,
 	filter rbac.PermissionFilter,
@@ -271,7 +272,7 @@ func (s *rbacStore) ListPermissions(
 		query += ` WHERE ` + strings.Join(conditions, ` AND `)
 	}
 	query += ` ORDER BY permission_key, id`
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.executor(ctx).QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list RBAC permissions: %w", err)
 	}
@@ -292,7 +293,7 @@ func (s *rbacStore) ListPermissions(
 }
 
 func (s *rbacStore) ListRolePermissions(ctx context.Context, roleID int64) ([]rbac.Permission, error) {
-	rows, err := s.db.QueryContext(ctx, rolePermissionListQuery, roleID)
+	rows, err := s.executor(ctx).QueryContext(ctx, rolePermissionListQuery, roleID)
 	if err != nil {
 		return nil, fmt.Errorf("list role permissions: %w", err)
 	}
@@ -310,7 +311,7 @@ func (s *rbacStore) ListRolePermissions(ctx context.Context, roleID int64) ([]rb
 	}
 	if len(permissions) == 0 {
 		var exists bool
-		if err := s.db.QueryRowContext(
+		if err := s.executor(ctx).QueryRowContext(
 			ctx,
 			`SELECT EXISTS (SELECT 1 FROM auth_roles WHERE id = $1)`,
 			roleID,
@@ -330,11 +331,11 @@ func (s *rbacStore) ReplaceRolePermissions(
 	roleID int64,
 	keys []rbac.PermissionKey,
 ) error {
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, owned, err := (&Store{db: s.db}).beginWrite(ctx)
 	if err != nil {
 		return fmt.Errorf("begin replace RBAC permissions: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackWrite(tx, owned)
 	if err := tx.QueryRowContext(
 		ctx,
 		`SELECT id FROM auth_roles WHERE id = $1 FOR UPDATE`,
@@ -347,10 +348,11 @@ func (s *rbacStore) ReplaceRolePermissions(
 	if err := replaceRolePermissionsTx(ctx, tx, roleID, keys); err != nil {
 		return err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := s.finishWrite(tx, owned); err != nil {
 		return fmt.Errorf("commit replace RBAC permissions: %w", err)
 	}
 
+	s.invalidateAfterCommit(ctx)
 	return nil
 }
 
@@ -387,11 +389,11 @@ func (s *rbacStore) ReplaceSubjectRoles(
 	subjectID goauth.SubjectID,
 	roleIDs []int64,
 ) error {
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, owned, err := (&Store{db: s.db}).beginWrite(ctx)
 	if err != nil {
 		return fmt.Errorf("begin replace subject roles: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackWrite(tx, owned)
 	var locked goauth.SubjectID
 	if err := tx.QueryRowContext(
 		ctx,
@@ -420,10 +422,11 @@ SELECT $1, id FROM auth_roles WHERE id = $2`, subjectID, roleID)
 			return fmt.Errorf("%w: %d", rbac.ErrRoleNotFound, roleID)
 		}
 	}
-	if err := tx.Commit(); err != nil {
+	if err := s.finishWrite(tx, owned); err != nil {
 		return fmt.Errorf("commit replace subject roles: %w", err)
 	}
 
+	s.invalidateAfterCommit(ctx)
 	return nil
 }
 
@@ -431,7 +434,7 @@ func (s *rbacStore) ListSubjectRoles(
 	ctx context.Context,
 	subjectID goauth.SubjectID,
 ) ([]rbac.Role, error) {
-	rows, err := s.db.QueryContext(ctx, subjectRoleListQuery, subjectID)
+	rows, err := s.executor(ctx).QueryContext(ctx, subjectRoleListQuery, subjectID)
 	if err != nil {
 		return nil, fmt.Errorf("list subject roles: %w", err)
 	}
@@ -452,11 +455,15 @@ func (s *rbacStore) ListSubjectRoles(
 }
 
 func (s *rbacStore) Snapshot(ctx context.Context) (rbac.Snapshot, error) {
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	tx, err := (&Store{db: s.db}).notificationTx(ctx)
+	owned := tx == nil
+	if err == nil && owned {
+		tx, err = s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	}
 	if err != nil {
 		return rbac.Snapshot{}, fmt.Errorf("begin RBAC snapshot: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
+	defer rollbackWrite(tx, owned)
 	var snapshot rbac.Snapshot
 	snapshot.Roles, err = snapshotRoles(ctx, tx)
 	if err != nil {
@@ -474,7 +481,7 @@ func (s *rbacStore) Snapshot(ctx context.Context) (rbac.Snapshot, error) {
 	if err != nil {
 		return rbac.Snapshot{}, err
 	}
-	if err := tx.Commit(); err != nil {
+	if err := s.finishWrite(tx, owned); err != nil {
 		return rbac.Snapshot{}, fmt.Errorf("commit RBAC snapshot: %w", err)
 	}
 

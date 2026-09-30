@@ -191,7 +191,7 @@ func (r *Runtime) deliverNotification(ctx context.Context, claim notificationCla
 	}
 	sendCtx, cancel := context.WithDeadline(ctx, deadline)
 	err = r.notificationSender.SendNotification(sendCtx, goauth.NotificationDelivery{
-		ID: claim.event.ID, Notification: notification, ValidUntil: claim.event.ValidUntil,
+		ID: claim.event.ID, Notification: notification, ValidUntil: claim.event.ValidUntil, EncryptedEvent: claim.event,
 	})
 	cancel()
 	if ctx.Err() != nil {

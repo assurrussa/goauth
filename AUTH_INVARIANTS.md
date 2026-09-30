@@ -34,8 +34,14 @@
 - Hooks, hashing and JWT preparation precede session writes and refresh rotation.
   A refresh snapshot authenticates without consumption; the final transaction
   locks the canonical subject and revalidates state before consuming the token.
-- Auth writes, mandatory audit and encrypted enqueue commit together. Callback
-  errors roll back; business denials that update attempt/replay protection commit.
+- Auth writes, mandatory audit and encrypted enqueue commit together. Explicit
+  disabled delivery prohibits email/recovery commands before writes; password
+  changes retain mandatory audit without enqueue. Managed PostgreSQL host and
+  RBAC writes share the outer transaction; cache invalidation follows commit.
+  Concurrent RBAC operations register their commit/unknown hooks atomically;
+  hooks execute outside the registration lock. Hosts must join all operations
+  using a managed context before its callback returns. Callback errors roll back;
+  business denials that update attempt/replay protection commit.
 - Refresh replay revokes its family and session and emits a security event.
   Replay processing bypasses token preparation. There is no grace interval.
 - Security writes lock the canonical subject before dependent state. Logout-all

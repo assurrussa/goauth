@@ -281,6 +281,16 @@ func mapError(err error) (status int, code, message string) {
 		return gofiber.StatusBadRequest, "invalid_realm", "invalid realm"
 	case errors.Is(err, goauth.ErrRealmNotRegistered):
 		return gofiber.StatusBadRequest, "realm_not_registered", "realm is not registered"
+	case errors.Is(err, goauth.ErrCurrentPasswordInvalid):
+		return gofiber.StatusUnprocessableEntity, "current_password_invalid", "current password is invalid"
+	case errors.Is(err, goauth.ErrPasswordUnchanged):
+		return gofiber.StatusUnprocessableEntity, "password_unchanged", "new password matches current password"
+	case errors.Is(err, goauth.ErrPasswordChangeConflict):
+		return gofiber.StatusConflict, "password_change_conflict", "password changed concurrently"
+	case errors.Is(err, goauth.ErrEmailChangeSameValue):
+		return gofiber.StatusUnprocessableEntity, "email_change_same_value", "new email matches current email"
+	case errors.Is(err, goauth.ErrEmailChangeNotFound):
+		return gofiber.StatusNotFound, "email_change_not_found", "pending email change not found"
 	case errors.Is(err, goauth.ErrInvalidCredentials):
 		return gofiber.StatusUnauthorized, "invalid_credentials", "invalid credentials"
 	case errors.Is(err, goauth.ErrInvalidToken), errors.Is(err, goauth.ErrExpiredToken),

@@ -44,6 +44,15 @@ make externalconsumer-local
 make externalconsumer-postgres-local
 ```
 
+The database-free consumer also executes explicit disabled notification delivery:
+email/reset commands must not mutate account state or enqueue, while password
+change/login remain available and transactional audit stays mandatory. The PG
+consumer additionally executes managed host transaction commit/rollback with
+canonical auth, audit and RBAC, nested joining, foreign-handle rejection, valid
+and stale credential proofs, and reset receipt callback commit/rollback. Its
+projection tables and subjects are unique probe-owned resources and are cleaned
+up; it never resets the database schema. Use only a disposable fixture.
+
 These use a local `replace` and may reuse the developer module cache. Both
 force `GOWORK=off`; the PostgreSQL path deliberately receives the configured
 disposable database. They prove checkout integration, not public availability.

@@ -1,3 +1,10 @@
+GO_SHARED_CACHE_ROOT ?= $(HOME)/dev/projects/.cache/go
+GOCACHE ?= $(GO_SHARED_CACHE_ROOT)/build
+GOMODCACHE ?= $(GO_SHARED_CACHE_ROOT)/mod
+GOLANGCI_LINT_CACHE ?= $(GO_SHARED_CACHE_ROOT)/lint
+GOPATH ?= $(shell GOTOOLCHAIN=local go env GOPATH)
+export GOCACHE GOMODCACHE GOLANGCI_LINT_CACHE
+
 .DEFAULT_GOAL := full
 
 .PHONY: full prepare check tidy-check tidy generate fmt fmt-check lint lint-fix vet test test-full test-race bench-all cover-html coverage-unit-check coverage-integration-check coverage-aggregate integration integration-up integration-down integration-local vulnerability-check externalconsumer-local externalconsumer-postgres-local externalconsumer-published release-candidate-readiness release-readiness release-tooling-test release-source-check public-module-check browser-acceptance backup-restore-check release-evidence-check public-preview-readiness
@@ -8,10 +15,6 @@ GO_FILES := $(shell find . -type f -name '*.go' -not -path './.cache/*' -not -pa
 VERSION ?=
 # Keep SHA-bound evidence outside the clean checkout; no stale default manifest.
 EVIDENCE ?=
-GOCACHE ?= $(CURDIR)/.go-cache/gocache
-GOMODCACHE ?= $(CURDIR)/.go-cache/gomodcache
-GOPATH ?= $(CURDIR)/.go-cache/gopath
-GOLANGCI_LINT_CACHE ?= $(CURDIR)/.go-cache/golangci-lint
 GOAUTH_TEST_POSTGRES_DSN ?= postgres://goauth:goauth@127.0.0.1:55432/goauth_integration?sslmode=disable
 GOAUTH_TEST_REDIS_ADDRESS ?= 127.0.0.1:56379
 COVERAGE_UNIT ?= coverage.unit.out

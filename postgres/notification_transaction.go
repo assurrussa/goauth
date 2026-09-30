@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -14,10 +15,45 @@ import (
 type (
 	notificationTxContextKey struct{}
 	notificationTxScope      struct {
-		db *sql.DB
-		tx *sql.Tx
+		db        *sql.DB
+		tx        *sql.Tx
+		callbacks *authTransactionCallbacks
 	}
 )
+
+// All operations sharing the transaction context share this callback owner.
+// Keep each pair together and execute hooks outside the registration lock.
+type authTransactionCallbacks struct {
+	mu      sync.Mutex
+	entries []authTransactionCallback
+}
+
+type authTransactionCallback struct {
+	afterCommit  func()
+	afterUnknown func()
+}
+
+func (c *authTransactionCallbacks) add(afterCommit, afterUnknown func()) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.entries = append(c.entries, authTransactionCallback{afterCommit: afterCommit, afterUnknown: afterUnknown})
+}
+
+func (c *authTransactionCallbacks) run(committed bool) {
+	c.mu.Lock()
+	entries := c.entries
+	c.entries = nil
+	c.mu.Unlock()
+	for _, entry := range entries {
+		callback := entry.afterUnknown
+		if committed {
+			callback = entry.afterCommit
+		}
+		if callback != nil {
+			callback()
+		}
+	}
+}
 
 var errForeignNotificationTransaction = errors.New("notification transaction belongs to a different database handle")
 
@@ -41,12 +77,17 @@ func (s *Store) InAuthTransaction(ctx context.Context, fn func(context.Context) 
 		return fmt.Errorf("begin notification transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := fn(context.WithValue(ctx, notificationTxContextKey{}, notificationTxScope{db: s.db, tx: tx})); err != nil {
+	scope := notificationTxScope{db: s.db, tx: tx, callbacks: &authTransactionCallbacks{}}
+	if err := fn(context.WithValue(ctx, notificationTxContextKey{}, scope)); err != nil {
 		return err
 	}
 	if err := commitAuthTransaction(tx); err != nil {
+		if errors.Is(err, goauth.ErrOperationOutcomeUnknown) {
+			scope.callbacks.run(false)
+		}
 		return fmt.Errorf("commit auth transaction: %w", err)
 	}
+	scope.callbacks.run(true)
 	return nil
 }
 

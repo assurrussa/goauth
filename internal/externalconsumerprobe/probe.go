@@ -63,7 +63,7 @@ func (c Config) BuildProbeTest() (string, error) {
 		return "", err
 	}
 
-	content := strings.ReplaceAll(runnableProbeTest, "GOAUTH_MODULE", cfg.ModulePath)
+	content := strings.ReplaceAll(runnableProbeTest+disabledDeliveryProbeTest, "GOAUTH_MODULE", cfg.ModulePath)
 	for _, pkg := range externalconsumer.SupportedPackages {
 		resolved := strings.Replace(pkg, DefaultModulePath, cfg.ModulePath, 1)
 		if !strings.Contains(content, strconv.Quote(resolved)) {
@@ -80,13 +80,14 @@ func (c Config) BuildPostgresProbeTest() (string, error) {
 		return "", err
 	}
 
-	return strings.ReplaceAll(postgresProbeTest, "GOAUTH_MODULE", cfg.ModulePath), nil
+	return strings.ReplaceAll(postgresProbeTest+managedHostProbeTest, "GOAUTH_MODULE", cfg.ModulePath), nil
 }
 
 const runnableProbeTest = `package probe
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -211,6 +212,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"

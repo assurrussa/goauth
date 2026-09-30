@@ -232,3 +232,45 @@ checks the exact selected version after the test as well as before it.
 Database-backed acceptance runs through the separate local PostgreSQL consumer.
 Candidate checks do not establish publication; the public probe does not
 establish a security audit or production deployment.
+
+### Delivery-free operator administration
+
+`Config.NotificationDelivery = NotificationDeliveryDisabled` explicitly disables
+password-reset issuance/consumption, email challenge issuance/verification, and
+email-change commands. Commands return `ErrNotificationDeliveryDisabled` before
+attempt bookkeeping or storage writes. Password login, profile updates, and
+password changes remain available; password changes still commit mandatory audit
+and security-state revocation. No sender, URL builder, or outbox AEAD keys are
+required in this mode. The zero policy retains required encrypted delivery.
+
+PostgreSQL hosts can use `Runtime.InAuthTransaction` and `Runtime.SQLExecutor(ctx)`
+to commit host projections with canonical writes, audit, and RBAC. The executor
+exposes only SQL execution/query methods, never transaction ownership. Participating
+adapters must share `Runtime.Database()` exactly; a separate handle is rejected.
+RBAC reads join the transaction and bypass caches. Supplied caches must implement
+`rbac.CacheInvalidator`; invalidation follows successful outer commit, never rollback.
+An uncertain commit returns `ErrOperationOutcomeUnknown` and disables cached grants.
+
+Managed `NotificationDelivery.EncryptedEvent` contains the original sealed envelope
+for hosts that forward delivery into durable transports. The native queue remains
+the initiating auth transaction owner; downstream transports persist ciphertext
+only and deduplicate by delivery ID. `Notification` plaintext is ephemeral; never
+persist its reset URLs or codes. Acceptance is at least once, so SMTP or downstream
+transport acceptance may repeat after an uncertain acknowledgement.
+
+Privileged hosts can use `Runtime.RequestPasswordResetWithReceipt` to bind a
+`PasswordResetReceipt` (subject ID and public selector only) within the same
+transaction as the reset record, encrypted enqueue and mandatory audit. A callback
+failure rolls back those writes; no callback runs when issuance is suppressed.
+Use the PostgreSQL runtime's context SQL executor in the callback. Keep receipt
+presence private from unauthenticated clients. On `ErrOperationOutcomeUnknown`,
+preserve the host claim and reconcile durable state before attempting issuance
+again; never clear a cooldown and resend blindly.
+
+PostgreSQL trusted bootstrap flows can call `PrepareCredential` before the host
+transaction. Its opaque, runtime-bound proof expires after five minutes. Inside
+`InAuthTransaction`, call `RevalidateCredential` before granting membership: it
+holds the canonical subject row lock through outer commit and checks active
+status, security version and normalized primary email. It creates no session and
+does not bypass durable rate admission. Fresh trusted provisioning can remain
+inside the transaction.

@@ -103,6 +103,12 @@ type Cache interface {
 	) (allowed bool, found bool, err error)
 }
 
+// CacheInvalidator clears cached authorization after committed management writes.
+// PostgreSQL requires this capability when a cache is supplied.
+type CacheInvalidator interface {
+	Invalidate(ctx context.Context) error
+}
+
 type Service struct {
 	store      Store
 	management ManagementStore

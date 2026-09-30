@@ -500,3 +500,78 @@ Review lens: Security Engineering + Go/Backend + Browser/Mobile boundaries.
   in ignored repo-local caches, with process-local public Go proxy settings.
   Candidate/publication gates and fresh site/admin acceptance evidence were not
   run or claimed by this follow-up. No commit, push or tag was created.
+
+## Embedded admin prerequisites (2026-09-30)
+
+- Scope: explicit disabled delivery and a supported PostgreSQL host transaction
+  executor. Keep default encrypted delivery and mandatory transactional audit;
+  preserve migration history and dependency versions. No release publication.
+- APIs: `Config.NotificationDelivery`, `NotificationDeliveryDisabled`,
+  `ErrNotificationDeliveryDisabled`, and PostgreSQL Runtime `Database`,
+  `InAuthTransaction`, `SQLExecutor`. The executor intentionally lacks transaction
+  ownership and rejects a managed context from a different database handle.
+- RBAC uses the shared context, bypasses cached reads during transactions and
+  invalidates only after successful outer commit. Optional caches require
+  `rbac.CacheInvalidator`; failed invalidation or uncertain commit blocks cached
+  grants. Standalone snapshot retains repeatable-read consistency.
+- Verified: `go test -race . ./postgres ./rbac`, package-scoped `go vet`, and
+  live disposable PostgreSQL regressions `TestDisabledDeliverySharedHostTransaction`
+  and `TestManagedNotificationDeliveryRetainsReceiptAndWrongCodeAttempt`.
+- Additive `NotificationDelivery.EncryptedEvent` transports the exact original
+  sealed envelope. Native enqueue remains transactional; downstream queues persist
+  ciphertext only and deduplicate by delivery ID. Plaintext Notification is ephemeral.
+- Rate-admitted password commands run outside host outer transactions; the shared
+  transaction test uses canonical provisioning/profile/logout audit/RBAC/projection
+  and tests standalone disabled-mode password change after commit.
+- Sibling gopls runs in the host workspace and reported stale declarations;
+  repository compiler/test results are authoritative for this uncommitted batch.
+
+The reset issuance receipt callback binds privileged host projection state inside
+the initiating auth transaction after independent rate admission. It returns only
+subject ID/public selector; callback failure rolls back reset+encrypted queue+audit.
+Concurrent ordinary resets and clocks do not choose host association. Unknown
+commit preserves host claim/cooldown for reconciliation before retry.
+
+## 2026-09-30: modular API review corrections
+
+- Goal: close the RBAC callback race and exercise the new public capabilities in
+  the runnable clean consumer. Base: `4aed960` on `optional-module`; initially
+  clean. Public signatures, supported package manifest and schemas stay intact.
+- Reproduced the race through parallel public AssignRole calls: only 41 of 64
+  invalidations ran after commit and the race detector failed. Protect callback
+  registration with one shared mutex; paired commit/unknown hooks are detached
+  under the lock and invoked after unlocking. Hosts join concurrent operations
+  before returning from the managed transaction callback.
+- Regression cases cover successful commit, rollback, rejected/unknown commit,
+  and cache-invalidation failure. Unknown outcomes and invalidation failures
+  fail closed; rolled-back writes do not invalidate the cache.
+- The real PostgreSQL regression additionally reproduced a pgx result-reader
+  panic when duplicate AssignRole checks overlapped another Exec on the shared
+  connection. AssignRole now uses one idempotent Exec: an existing role binding
+  counts as success, missing roles still fail, and created_at is preserved.
+  Repeated bindings may create a new MVCC row version; no general parallel SQL
+  scheduler or public executor signature was introduced. Result-set SQL work
+  on one managed connection must be serialized.
+- The consumer extension uses supported imports and checks disabled delivery,
+  shared host SQL commit/rollback, opaque credential proofs and reset receipts.
+- Verified `make check`: formatting, tidy diff, vet, lint (zero issues), full unit
+  race/coverage gates and the runnable clean local consumer passed. Verified
+  `make integration` against an owned disposable PostgreSQL/Redis fixture:
+  integration race tests, coverage gates (PostgreSQL 81.1%, Redis 100%) and the
+  runnable PostgreSQL clean consumer passed. The native PostgreSQL regression
+  verifies all 64 callbacks, rollback isolation and preserved assignment time.
+- Final callback and consumer contract review found no actionable P1/P2 issues.
+  The SQL correction review also participated in diagnosing the driver panic.
+  gopls remains attached to the host workspace and reports stale host/cache
+  overlays; package compiler, vet, lint and executed tests are the verified gates.
+- No public signatures, supported packages, schemas or dependency versions were
+  changed. These are local checkout checks; no release candidate gate, tags,
+  published-consumer verification or publication was performed.
+
+## 2026-09-30: Shared Go cache defaults
+
+Ordinary local Go build/test/lint commands reuse shared caches outside checkout
+and worktree. `GO_SHARED_CACHE_ROOT` and individual cache overrides remain
+configurable; intentional disposable consumer/release caches retain isolation.
+Verified cache defaults, alternate root and explicit build-cache override with
+Make/Task environment probes; YAML graphs, shell syntax and diff checks passed.
