@@ -456,14 +456,17 @@ func (s *rbacStore) ListSubjectRoles(
 
 func (s *rbacStore) Snapshot(ctx context.Context) (rbac.Snapshot, error) {
 	tx, err := (&Store{db: s.db}).notificationTx(ctx)
-	owned := tx == nil
-	if err == nil && owned {
-		tx, err = s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
-	}
 	if err != nil {
 		return rbac.Snapshot{}, fmt.Errorf("begin RBAC snapshot: %w", err)
 	}
-	defer rollbackWrite(tx, owned)
+	if tx != nil {
+		return rbac.Snapshot{}, rbac.ErrSnapshotTransactionUnsupported
+	}
+	tx, err = s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return rbac.Snapshot{}, fmt.Errorf("begin RBAC snapshot: %w", err)
+	}
+	defer rollbackWrite(tx, true)
 	var snapshot rbac.Snapshot
 	snapshot.Roles, err = snapshotRoles(ctx, tx)
 	if err != nil {
@@ -481,7 +484,7 @@ func (s *rbacStore) Snapshot(ctx context.Context) (rbac.Snapshot, error) {
 	if err != nil {
 		return rbac.Snapshot{}, err
 	}
-	if err := s.finishWrite(tx, owned); err != nil {
+	if err := s.finishWrite(tx, true); err != nil {
 		return rbac.Snapshot{}, fmt.Errorf("commit RBAC snapshot: %w", err)
 	}
 

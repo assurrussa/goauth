@@ -5,10 +5,13 @@ import (
 	"database/sql"
 	"errors"
 	"sync"
+	"time"
 
 	"github.com/assurrussa/goauth"
 	"github.com/assurrussa/goauth/rbac"
 )
+
+const cacheInvalidationTimeout = 2 * time.Second
 
 type transactionCache struct {
 	db          *sql.DB
@@ -62,15 +65,57 @@ func (c *transactionCache) invalidate(ctx context.Context) {
 	// even when a cache backend hangs; late cached reads are discarded.
 	c.mu.Lock()
 	c.generation++
+	generation := c.generation
 	c.pending++
 	c.mu.Unlock()
 	// Serialize callbacks separately so their results cannot clear a newer
 	// failure. The state lock is never held while calling the cache backend.
-	c.delegateMu.Lock()
+	if err := c.lockInvalidation(ctx); err != nil {
+		c.finishInvalidation(generation, err)
+		return
+	}
 	defer c.delegateMu.Unlock()
+
 	err := c.invalidator.Invalidate(ctx)
+	if err == nil {
+		err = ctx.Err()
+	}
+	c.finishInvalidation(generation, err)
+}
+
+func (c *transactionCache) lockInvalidation(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if c.delegateMu.TryLock() {
+		return nil
+	}
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			if c.delegateMu.TryLock() {
+				return nil
+			}
+		}
+	}
+}
+
+func (c *transactionCache) finishInvalidation(generation uint64, err error) {
 	c.mu.Lock()
-	c.failed = err != nil
+	// An older success cannot clear a newer timeout while it waited for the
+	// delegate lock. A later completed invalidation can safely restore reads.
+	if err != nil {
+		c.failed = true
+	} else if generation == c.generation {
+		c.failed = false
+	}
 	c.pending--
 	c.mu.Unlock()
 }
@@ -88,7 +133,9 @@ func (s *rbacStore) invalidateAfterCommit(ctx context.Context) {
 	}
 	callback := func() {
 		// Commit is already durable; cancellation must not skip cache invalidation.
-		s.cache.invalidate(context.WithoutCancel(ctx))
+		invalidationCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheInvalidationTimeout)
+		defer cancel()
+		s.cache.invalidate(invalidationCtx)
 	}
 	scope, managed := ctx.Value(notificationTxContextKey{}).(notificationTxScope)
 	if managed && scope.db == s.db {

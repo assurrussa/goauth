@@ -29,6 +29,9 @@ type ClientSecretVerifier interface {
 type ClientSecretVerifierFunc func(ctx context.Context, clientID, secret string) error
 
 func (f ClientSecretVerifierFunc) VerifyClientSecret(ctx context.Context, clientID, secret string) error {
+	if f == nil {
+		return errors.New("client secret verifier is not configured")
+	}
 	return f(ctx, clientID, secret)
 }
 

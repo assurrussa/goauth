@@ -180,6 +180,8 @@ strings.NewReader("{\"email\":\"http-probe@example.test\",\"password\":\"Probe-P
 	}
 
 	_ = oidc.ScopeOpenID
+	_ = oidc.ValidateRSAPublicKey
+	_ = rbac.ErrSnapshotTransactionUnsupported
 	var _ oidc.ClientSecretVerifier = oidc.ClientSecretVerifierFunc(nil)
 	_ = provider.Options{ClientSecretVerifier: oidc.ClientSecretVerifierFunc(nil)}
 	sender := goauth.NotificationSenderFunc(func(_ context.Context, delivery goauth.NotificationDelivery) error {

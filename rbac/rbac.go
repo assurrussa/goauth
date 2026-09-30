@@ -18,6 +18,9 @@ var (
 	ErrPermissionNotFound    = errors.New("permission not found")
 	ErrSystemRoleProtected   = errors.New("system role is protected")
 	ErrManagementUnavailable = errors.New("RBAC management store is unavailable")
+	// ErrSnapshotTransactionUnsupported rejects snapshots inside a managed auth
+	// transaction, whose isolation cannot guarantee a consistent cache rebuild.
+	ErrSnapshotTransactionUnsupported = errors.New("RBAC snapshot requires a standalone repeatable-read transaction")
 )
 
 type PermissionKey string
@@ -105,6 +108,8 @@ type Cache interface {
 
 // CacheInvalidator clears cached authorization after committed management writes.
 // PostgreSQL requires this capability when a cache is supplied.
+// Implementations must honor context cancellation and deadlines, and return
+// only after invalidation has completed; failures leave the cache bypassed.
 type CacheInvalidator interface {
 	Invalidate(ctx context.Context) error
 }

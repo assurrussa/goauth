@@ -92,7 +92,11 @@ func TestPKCEPolicyAuthorizationAndExchange(t *testing.T) {
 			t.Parallel()
 			h := newOIDCTestHarness(t)
 			h.client.RequirePKCE = tc.required
+			h.client.Secret = testStoredClientSecret
 			updatePolicyClient(t, h)
+			service, err := New(providerOptions(h))
+			require.NoError(t, err)
+			h.service = service
 			if tc.authorizeError {
 				result, err := h.service.Authorize(context.Background(), oidc.AuthorizeRequest{
 					ClientID: h.client.ID, RedirectURI: h.client.RedirectURIs[0], ResponseType: responseTypeCode,
@@ -110,6 +114,7 @@ func TestPKCEPolicyAuthorizationAndExchange(t *testing.T) {
 			response, err := h.service.ExchangeToken(context.Background(), oidc.TokenRequest{
 				GrantType: grantTypeAuthorizationCode, Code: code, ClientID: h.client.ID,
 				RedirectURI: h.client.RedirectURIs[0], CodeVerifier: tc.verifier,
+				ClientSecret: testStoredClientSecret, ClientAuthMethod: oidc.TokenEndpointAuthMethodClientSecretBasic,
 			})
 			if tc.exchangeError {
 				requireOAuthError(t, err, "invalid_grant")

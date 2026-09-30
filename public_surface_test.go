@@ -134,6 +134,8 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = goauthfiber.RealmMiddlewareOptions{}
 
 	_ = oidc.ScopeOpenID
+	_ = oidc.ValidateRSAPublicKey
+	_ = rbac.ErrSnapshotTransactionUnsupported
 	var _ oidc.ClientSecretVerifier = oidc.ClientSecretVerifierFunc(nil)
 	_ = oidc.ClientSecretVerifierFunc.VerifyClientSecret
 	_ = provider.Options{ClientSecretVerifier: oidc.ClientSecretVerifierFunc(nil)}

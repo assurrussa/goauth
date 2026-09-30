@@ -227,6 +227,11 @@ func (s *Service) JWKS(ctx context.Context) (oidc.JWKS, error) {
 	if err != nil {
 		return oidc.JWKS{}, fmt.Errorf("get jwks: %w", err)
 	}
+	for _, key := range keys {
+		if _, err := oidc.DecodeRSAPublicKeyJWK(key); err != nil {
+			return oidc.JWKS{}, fmt.Errorf("invalid signing jwk: %w", err)
+		}
+	}
 
 	return oidc.JWKS{Keys: keys}, nil
 }
@@ -467,7 +472,7 @@ func (s *Service) exchangeAuthorizationCode(ctx context.Context, req oidc.TokenR
 	if code.ClientID != client.ID || code.RedirectURI != strings.TrimSpace(req.RedirectURI) {
 		return nil, s.oauthError("invalid_grant", "authorization code is not valid for this client", http.StatusBadRequest)
 	}
-	if !validPKCEMetadata(client.RequirePKCE, code.CodeChallenge, code.CodeChallengeMethod) ||
+	if !validPKCEMetadata(clientRequiresPKCE(client), code.CodeChallenge, code.CodeChallengeMethod) ||
 		(code.CodeChallenge != "" && !verifyCodeVerifier(req.CodeVerifier, code.CodeChallenge)) {
 		return nil, s.oauthError("invalid_grant", "pkce verification failed", http.StatusBadRequest)
 	}
@@ -693,14 +698,19 @@ func (s *Service) validateAuthorizeRequest(client oidc.Client, req oidc.Authoriz
 		}
 	}
 
-	if client.RequirePKCE && strings.TrimSpace(req.CodeChallenge) == "" {
+	if clientRequiresPKCE(client) && strings.TrimSpace(req.CodeChallenge) == "" {
 		return nil, s.oauthError("invalid_request", "code_challenge is required", http.StatusBadRequest)
 	}
-	if !validPKCEMetadata(client.RequirePKCE, strings.TrimSpace(req.CodeChallenge), strings.TrimSpace(req.CodeChallengeMethod)) {
+	if !validPKCEMetadata(clientRequiresPKCE(client),
+		strings.TrimSpace(req.CodeChallenge), strings.TrimSpace(req.CodeChallengeMethod)) {
 		return nil, s.oauthError("invalid_request", "code_challenge_method must be S256", http.StatusBadRequest)
 	}
 
 	return scopes, nil
+}
+
+func clientRequiresPKCE(client oidc.Client) bool {
+	return client.RequirePKCE || oidc.ClientTokenEndpointAuthMethod(client) == oidc.TokenEndpointAuthMethodNone
 }
 
 func validPKCEMetadata(required bool, challenge, method string) bool {

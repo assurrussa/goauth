@@ -8,11 +8,18 @@ A client must use its configured method and that method must be enabled.
 Unknown client/request methods are rejected; an omitted client method retains
 legacy defaults based on whether its static secret is present.
 
-`Client.RequirePKCE` controls whether a challenge is mandatory. Any supplied
-challenge requires S256, including for clients whose PKCE is optional. A method
-without a challenge is invalid. Code exchange validates persisted metadata and
-the verifier whenever a challenge exists. Hosts should require PKCE for public
-clients; allowing its omission is an explicit client policy.
+Public clients using `none`, including an omitted method with an empty static
+secret, always require S256 PKCE. `Client.RequirePKCE` controls whether PKCE is
+mandatory for confidential clients using `client_secret_basic` or
+`client_secret_post`. Any supplied challenge requires S256; a method without a
+challenge is invalid. Both authorization and code exchange enforce this policy,
+including persisted code metadata. This follows [RFC 9700 section 2.1.1](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.1).
+
+OIDC RSA signing and verification keys must have a modulus of at least 2048 bits
+and a valid exponent, as required by [RFC 7518 section 3.3](https://www.rfc-editor.org/rfc/rfc7518.html#section-3.3).
+`oidc.ValidateRSAPublicKey` exposes the same validation used by JWK encoding,
+decoding, the provider and verifier. Invalid keys from custom stores fail closed;
+signing additionally validates the private key and matching public key.
 
 The provider validates access-token signatures using only RS256 and requires
 issuer, expiration and issued-at claims. Its configured clock controls time
@@ -33,6 +40,10 @@ explicitly to `client_secret_basic` or `client_secret_post` when it leaves
 The host owns hash policy, verifier availability, rotation and lookup behavior.
 Treat the raw presented secret as ephemeral and never log or persist it.
 
-A nil verifier preserves `Client.Secret` for legacy static configuration. That
-field is a plaintext expected value; it is not a persistent-registry storage
+A nil verifier interface preserves `Client.Secret` for legacy static
+configuration. That field is a plaintext expected value; it is not a
+persistent-registry storage
 recommendation. This additive extension does not remove the existing field.
+
+A typed nil `ClientSecretVerifierFunc` returns an error and denies confidential
+client authentication; it never panics or triggers static-secret fallback.

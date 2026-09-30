@@ -151,3 +151,94 @@ func TestLateCachedGrantIsDiscardedAfterInvalidation(t *testing.T) {
 	require.False(t, service.Can(t.Context(), subject, "users:read"), "late read-through fills must be invalidated too")
 	require.Equal(t, 2, store.calls)
 }
+
+type controlledInvalidationCache struct {
+	recoveryCache
+	invalidate func(context.Context) error
+}
+
+func (c *controlledInvalidationCache) Invalidate(ctx context.Context) error { return c.invalidate(ctx) }
+
+func TestManagedCacheInvalidationHonorsDeadlineAfterCommit(t *testing.T) {
+	db := openNotificationRecordingDB(t, "deadline")
+	delegate := &controlledInvalidationCache{invalidate: func(ctx context.Context) error {
+		deadline, ok := ctx.Deadline()
+		require.True(t, ok, "post-commit invalidation must have a deadline")
+		require.WithinDuration(t, time.Now().Add(cacheInvalidationTimeout), deadline, time.Second)
+		<-ctx.Done()
+		return ctx.Err()
+	}}
+	cache := &transactionCache{db: db, delegate: delegate, invalidator: delegate}
+	management := &rbacStore{db: db, cache: cache}
+	start := time.Now()
+	require.NoError(t, (&Store{db: db}).InAuthTransaction(t.Context(), func(ctx context.Context) error {
+		return management.AssignRole(ctx, goauth.NewSubjectID(), "operator")
+	}))
+	require.Less(t, time.Since(start), cacheInvalidationTimeout+time.Second)
+	_, found, err := cache.HasPermission(t.Context(), goauth.NewSubjectID(), "users:read")
+	require.NoError(t, err)
+	require.False(t, found, "timed-out invalidation must leave cache bypassed")
+	require.Zero(t, delegate.reads)
+}
+
+func TestCacheInvalidationDetachesCanceledRequest(t *testing.T) {
+	delegate := &controlledInvalidationCache{invalidate: func(ctx context.Context) error {
+		require.NoError(t, ctx.Err(), "durable commit still needs invalidation after request cancellation")
+		_, ok := ctx.Deadline()
+		require.True(t, ok)
+		return nil
+	}}
+	management := &rbacStore{cache: &transactionCache{delegate: delegate, invalidator: delegate}}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	management.invalidateAfterCommit(ctx)
+}
+
+func TestCacheLockTimeoutCannotBeClearedByOlderSuccess(t *testing.T) {
+	entered, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	calls := 0
+	delegate := &controlledInvalidationCache{invalidate: func(context.Context) error {
+		calls++
+		if calls == 1 {
+			close(entered)
+			<-release
+		}
+		return nil
+	}}
+	cache := &transactionCache{delegate: delegate, invalidator: delegate}
+	go func() { cache.invalidate(t.Context()); close(done) }()
+	<-entered
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	cache.invalidate(ctx)
+	close(release)
+	<-done
+	_, found, err := cache.HasPermission(t.Context(), goauth.NewSubjectID(), "users:read")
+	require.NoError(t, err)
+	require.False(t, found, "older success must not clear a newer lock timeout")
+	cache.invalidate(t.Context())
+	_, found, err = cache.HasPermission(t.Context(), goauth.NewSubjectID(), "users:read")
+	require.NoError(t, err)
+	require.True(t, found, "a fresh successful invalidation restores cache reads")
+}
+
+func TestCacheInvalidationTimesOutBehindReadThroughFill(t *testing.T) {
+	delegate := &blockedReadCache{entered: make(chan struct{}), release: make(chan struct{})}
+	cache := &transactionCache{delegate: delegate, invalidator: delegate}
+	result := make(chan bool, 1)
+	go func() {
+		allowed, _, _ := cache.HasPermission(t.Context(), goauth.NewSubjectID(), "users:read")
+		result <- allowed
+	}()
+	<-delegate.entered
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	cache.invalidate(ctx)
+	close(delegate.release)
+	require.False(t, <-result)
+	_, found, err := cache.HasPermission(t.Context(), goauth.NewSubjectID(), "users:read")
+	require.NoError(t, err)
+	require.False(t, found, "late fill after timeout must remain bypassed")
+	cache.invalidate(t.Context())
+	require.False(t, delegate.cached, "recovery invalidation must clear the late fill")
+}

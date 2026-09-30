@@ -50,7 +50,8 @@ buffering before handlers run. Each adapter returns HTTP 501 with
 `notification_delivery_disabled` for `ErrNotificationDeliveryDisabled`; hosts
 may choose to omit recovery/email routes in disabled delivery mode.
 See [OIDC provider policy](docs/oidc-provider-policy.md) for client authentication,
-optional PKCE and persistent secret verification.
+public-client S256 PKCE, confidential-client policy and persistent secret
+verification.
 
 ## Runnable browser and JSON API example
 
@@ -265,8 +266,14 @@ PostgreSQL hosts can use `Runtime.InAuthTransaction` and `Runtime.SQLExecutor(ct
 to commit host projections with canonical writes, audit, and RBAC. The executor
 exposes only SQL execution/query methods, never transaction ownership. Participating
 adapters must share `Runtime.Database()` exactly; a separate handle is rejected.
-RBAC reads join the transaction and bypass caches. Supplied caches must implement
+RBAC authorization reads join the transaction and bypass caches. `Snapshot` needs
+a standalone repeatable-read transaction; invoking it in a managed auth transaction
+returns `rbac.ErrSnapshotTransactionUnsupported`. Supplied caches must implement
 `rbac.CacheInvalidator`; invalidation follows successful outer commit, never rollback.
+Each invalidation, including waiting for pending cache fills, has a two-second
+deadline detached from the request cancellation. Invalidators must honor that
+deadline and return after clearing the cache. Timeout leaves committed writes
+successful and the cache bypassed; an older completion cannot clear a newer failure.
 Failed cache invalidation bypasses the cache and reads authoritative PostgreSQL
 permissions; successful invalidation restores normal cached reads. An uncertain
 commit returns `ErrOperationOutcomeUnknown` and keeps this cache wrapper bypassed

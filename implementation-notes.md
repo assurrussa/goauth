@@ -1,13 +1,14 @@
 # Implementation notes
 
-## 2026-10-01: optional-module review corrections
+## 2026-10-01: initial optional-module review corrections (historical validation)
 
 Goal: resolve the current branch review findings while preserving canonical
 identity, transactional audit, migration history and dependency versions.
 Review lens: Go/backend, security and storage consistency.
 
 - Base: `27ea3f4c1ea6c366fd8654297889f100c4f43af9`, initially clean.
-- OIDC: optional PKCE must work end to end; supplied PKCE requires S256.
+- OIDC: the initial optional-PKCE behavior was subsequently narrowed to
+  confidential clients; public clients now always require S256 (see follow-up).
   The configured authentication-method list is enforced, unknown methods fail
   construction, and access-token parsing explicitly validates RS256/exp/iat/issuer.
 - Persistent client registries can supply an authoritative secret verifier;
@@ -61,3 +62,46 @@ public distribution. No public release, deployment, repository visibility or
 protection change is included. The owner authorized sending the changes but
 reported unavailable CI quota. The commit uses `[skip ci]`; the draft PR records
 local verification and explicitly leaves hosted CI at the committed SHA unrun.
+
+## 2026-10-01: repeat review and PR 11 snapshot correction
+
+Goal: close review findings against `5722c316d74fe0dd0e360699a19541dc15c3a475`.
+Review lens: security, Go/backend and storage consistency. The owner chose to
+keep the repository private; existing history and tags remain unchanged.
+Hosted CI remains intentionally skipped because the owner has no available quota.
+
+- PR 11 discussion `r4148669264`: PostgreSQL `Snapshot` rejects a managed auth
+  context with `rbac.ErrSnapshotTransactionUnsupported`; standalone snapshots
+  retain repeatable-read/read-only isolation without changing normal auth writes.
+- Public OIDC clients always require S256. Confidential-client PKCE remains
+  configurable. JWK/provider/verifier paths reject weak or malformed RSA keys;
+  signing validates the private key and matching pair. Typed nil secret verifier
+  functions fail closed with an error.
+- Each post-commit cache invalidation has a two-second detached deadline, including
+  the delegate lock wait. Timeout bypasses cached authorization while committed
+  writes remain successful. Generation checks prevent an older success from
+  clearing a newer failure; fresh completed invalidation can recover the cache.
+  External invalidators must honor context cancellation; no background worker
+  masks an invalidator that ignores this contract.
+- New public symbols are included in the public-surface and clean-consumer probes.
+- Regression coverage includes a live PostgreSQL commit paused between snapshot
+  queries, managed-context rejection with a usable outer transaction, deadline
+  expiration, blocked read-through fills and overlapping invalidation outcomes.
+
+Validation completed on the final follow-up source snapshot:
+
+- Targeted live PostgreSQL snapshot/cache regressions passed with the race
+  detector, integration build tag and an uncached test run.
+- `make release-candidate-readiness`: PASS, including tidy/format/vet/lint
+  (zero issues), full unit race/coverage, PostgreSQL/Redis race/coverage, both
+  runnable clean-consumer probes, govulncheck, actual backup/restore and HTTPS
+  Chromium acceptance. An initial format-only failure was corrected before
+  this complete successful gate.
+- Coverage thresholds passed: root 84.7%, OIDC provider 86.6%, RBAC 85.8%,
+  PostgreSQL 81.6%, Redis 100%. Govulncheck found zero reachable vulnerabilities;
+  three required-module findings remain in unused code.
+- Independent static security/storage review found no remaining actionable P1/P2
+  in this follow-up delta. Non-integration edited Go files have no gopls diagnostics;
+  build-tagged integration behavior was verified by the compiler and live tests.
+- Final diff and public-facing documentation passed whitespace/local-path checks.
+  Hosted CI remains unrun; this is local candidate verification only.
