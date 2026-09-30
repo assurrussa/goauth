@@ -36,7 +36,7 @@ func TestAccountLookupAndCredentialOutcomeMapping(t *testing.T) {
 
 	_, err = fixture.Runtime.VerifyCredential(context.Background(), goauth.Credential{
 		Identifier: goauth.IdentifierInput{Value: "lookup@example.test"},
-		Password:   "wrong-password",
+		Password:   wrongTestPassword,
 	})
 	require.ErrorIs(t, err, goauth.ErrInvalidCredentials)
 	_, err = fixture.Runtime.VerifyCredential(context.Background(), goauth.Credential{
@@ -79,7 +79,7 @@ func TestPasswordProfileAndLogoutTypedOutcomes(t *testing.T) {
 	require.ErrorIs(t, err, goauth.ErrInvalidPassword)
 	_, err = fixture.Runtime.ChangePassword(context.Background(), goauth.ChangePasswordRequest{
 		SubjectID:       registered.Account.Subject.ID,
-		CurrentPassword: "wrong-password",
+		CurrentPassword: wrongTestPassword,
 		NewPassword:     "Lifecycle-Outcome-Replacement-1",
 	})
 	require.ErrorIs(t, err, goauth.ErrCurrentPasswordInvalid)

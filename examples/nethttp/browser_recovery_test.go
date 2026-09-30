@@ -14,6 +14,11 @@ import (
 	"github.com/assurrussa/goauth/testkit"
 )
 
+const (
+	browserForgetSessionPath = "/browser/forget-session"
+	exampleOrigin            = "https://example.com"
+)
+
 // Any unexpected call to the nil embedded Runtime would panic: recovery must
 // work without consulting an authentication backend or validating stale cookies.
 type forgetOnlyRuntime struct{ authhttp.Runtime }
@@ -28,13 +33,13 @@ func TestBrowserForgetSessionCSRFAndCookieScope(t *testing.T) {
 			method, path, csrf, origin string
 			status                     int
 		}{
-			{http.MethodPost, "/browser/forget-session", "1", "https://example.com", http.StatusOK},
-			{http.MethodPost, "/browser/forget-session", "", "https://example.com", http.StatusForbidden},
-			{http.MethodPost, "/browser/forget-session", "1", "https://hostile.example", http.StatusForbidden},
-			{http.MethodGet, "/browser/forget-session", "1", "https://example.com", http.StatusMethodNotAllowed},
-			{http.MethodPost, "/api/forget-session", "1", "https://example.com", http.StatusNotFound},
+			{http.MethodPost, browserForgetSessionPath, "1", exampleOrigin, http.StatusOK},
+			{http.MethodPost, browserForgetSessionPath, "", exampleOrigin, http.StatusForbidden},
+			{http.MethodPost, browserForgetSessionPath, "1", "https://hostile.example", http.StatusForbidden},
+			{http.MethodGet, browserForgetSessionPath, "1", exampleOrigin, http.StatusMethodNotAllowed},
+			{http.MethodPost, "/api/forget-session", "1", exampleOrigin, http.StatusNotFound},
 		} {
-			request := httptest.NewRequestWithContext(t.Context(), tc.method, "https://example.com"+tc.path, nil)
+			request := httptest.NewRequestWithContext(t.Context(), tc.method, exampleOrigin+tc.path, nil)
 			request.Header.Set("X-Goauth-CSRF", tc.csrf)
 			request.Header.Set("Origin", tc.origin)
 			request.Header.Set("Cookie", h.accessCookieName()+"=expired; "+h.accessCookieName()+"=duplicate")
@@ -78,9 +83,16 @@ func TestBrowserForgetDoesNotRevokeCanonicalSession(t *testing.T) {
 	require.NoError(t, err)
 	handler, err := newHandler(fixture.Runtime, true)
 	require.NoError(t, err)
-	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/browser/forget-session", nil)
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, browserForgetSessionPath, nil)
 	request.Header.Set("X-Goauth-CSRF", "1")
-	request.AddCookie(&http.Cookie{Name: "__Host-SSID", Value: registered.Tokens.AccessToken})
+	request.AddCookie(&http.Cookie{
+		Name:     "__Host-SSID",
+		Value:    registered.Tokens.AccessToken,
+		Path:     "/",
+		Secure:   true,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	require.Equal(t, http.StatusOK, response.Code)

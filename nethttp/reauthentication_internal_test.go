@@ -40,12 +40,17 @@ func (s *trustedEmailChangeStub) RequestEmailChange(context.Context, goauth.Subj
 	return nil
 }
 
-func emailChangeRequest(body string, scope goauth.SessionScope) *http.Request {
-	r := httptest.NewRequest(http.MethodPost, "/email-change", strings.NewReader(body))
+func emailChangeRequest(ctx context.Context, body string, scope goauth.SessionScope) *http.Request {
 	auth := goauth.AuthContext{
 		SubjectID: goauth.NewSubjectID(), SessionID: "checked-session", Realm: goauth.RealmUser, Scope: scope,
 	}
-	return r.WithContext(context.WithValue(r.Context(), authContextKey{}, auth))
+	r := httptest.NewRequestWithContext(
+		context.WithValue(ctx, authContextKey{}, auth),
+		http.MethodPost,
+		"/email-change",
+		strings.NewReader(body),
+	)
+	return r
 }
 
 func TestEmailChangeHandlerBindsPasswordToAuthenticatedSubject(t *testing.T) {
@@ -56,6 +61,7 @@ func TestEmailChangeHandlerBindsPasswordToAuthenticatedSubject(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := emailChangeRequest(
+		t.Context(),
 		`{"email":"new@example.test","currentPassword":" exact password ","subjectId":"attacker-selected"}`,
 		goauth.SessionScopeAuthenticated,
 	)
@@ -90,7 +96,7 @@ func TestEmailChangeHandlerDeniesMissingProofOrConfirmationScope(t *testing.T) {
 				t.Fatal(err)
 			}
 			w := httptest.NewRecorder()
-			adapter.RequestEmailChange(w, emailChangeRequest(tc.body, tc.scope))
+			adapter.RequestEmailChange(w, emailChangeRequest(t.Context(), tc.body, tc.scope))
 			if w.Code != tc.status || stub.calls != 0 {
 				t.Fatalf("unexpected status=%d calls=%d", w.Code, stub.calls)
 			}
@@ -106,7 +112,7 @@ func TestEmailChangeHandlerNeverFallsBackToTrustedOperation(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := httptest.NewRecorder()
-	adapter.RequestEmailChange(w, emailChangeRequest(validEmailChangeBody, goauth.SessionScopeAuthenticated))
+	adapter.RequestEmailChange(w, emailChangeRequest(t.Context(), validEmailChangeBody, goauth.SessionScopeAuthenticated))
 	if w.Code != http.StatusServiceUnavailable || stub.calls != 0 {
 		t.Fatalf("unsafe fallback: status=%d trusted calls=%d", w.Code, stub.calls)
 	}
@@ -132,7 +138,7 @@ func TestEmailChangeHandlerPreservesPasswordFailureMapping(t *testing.T) {
 				t.Fatal(err)
 			}
 			w := httptest.NewRecorder()
-			adapter.RequestEmailChange(w, emailChangeRequest(validEmailChangeBody, goauth.SessionScopeAuthenticated))
+			adapter.RequestEmailChange(w, emailChangeRequest(t.Context(), validEmailChangeBody, goauth.SessionScopeAuthenticated))
 			if w.Code != tc.status || stub.calls != 1 {
 				t.Fatalf("unexpected status=%d calls=%d", w.Code, stub.calls)
 			}

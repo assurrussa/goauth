@@ -12,7 +12,11 @@ import (
 	"github.com/assurrussa/goauth/testkit"
 )
 
-const reauthPassword = "Reauth-Initial-Unique-Passphrase-42"
+const (
+	reauthNextEmail           = "reauth.next@example.test"
+	reauthPassword            = "Reauth-Initial-Unique-Passphrase-42" //nolint:gosec // Isolated fixture credential.
+	reauthReplacementPassword = "Reauth-Replacement-Passphrase-42"    //nolint:gosec // Isolated fixture credential.
+)
 
 func reauthFixture(t *testing.T, options ...testkit.RuntimeOption) (*testkit.Fixture, goauth.Account) {
 	t.Helper()
@@ -28,14 +32,14 @@ func reauthFixture(t *testing.T, options ...testkit.RuntimeOption) (*testkit.Fix
 func TestEmailChangeRequiresThisSubjectsPassword(t *testing.T) {
 	t.Parallel()
 	fixture, account := reauthFixture(t)
-	const otherPassword = "Reauth-Other-Account-Passphrase-42"
+	const otherPassword = "Reauth-Other-Account-Passphrase-42" //nolint:gosec // Isolated fixture credential.
 	_, err := fixture.Runtime.ProvisionTrustedLocalAccount(t.Context(), goauth.RegisterRequest{
 		Email: "reauth.other@example.test", Password: otherPassword,
 	})
 	require.NoError(t, err)
-	for _, password := range []string{"", "wrong-password", otherPassword} {
+	for _, password := range []string{"", wrongTestPassword, otherPassword} {
 		err := fixture.Runtime.RequestEmailChangeWithPassword(t.Context(), goauth.PasswordEmailChangeRequest{
-			SubjectID: account.Subject.ID, CurrentPassword: password, NewEmail: "reauth.next@example.test",
+			SubjectID: account.Subject.ID, CurrentPassword: password, NewEmail: reauthNextEmail,
 		})
 		require.ErrorIs(t, err, goauth.ErrCurrentPasswordInvalid)
 		_, err = fixture.Runtime.PendingEmailChange(t.Context(), account.Subject.ID)
@@ -48,11 +52,11 @@ func TestEmailChangeReauthenticationAndPreviousMailboxNotification(t *testing.T)
 	t.Parallel()
 	fixture, account := reauthFixture(t)
 	require.NoError(t, fixture.Runtime.RequestEmailChangeWithPassword(t.Context(), goauth.PasswordEmailChangeRequest{
-		SubjectID: account.Subject.ID, CurrentPassword: reauthPassword, NewEmail: "reauth.next@example.test",
+		SubjectID: account.Subject.ID, CurrentPassword: reauthPassword, NewEmail: reauthNextEmail,
 	}))
 	changed, err := fixture.Runtime.ConfirmEmailChange(t.Context(), account.Subject.ID, latestEmailChangeCode(t, fixture))
 	require.NoError(t, err)
-	require.Equal(t, "reauth.next@example.test", changed.PrimaryEmail.NormalizedValue)
+	require.Equal(t, reauthNextEmail, changed.PrimaryEmail.NormalizedValue)
 	var notices int
 	for _, event := range fixture.Events.Events() {
 		if event.Type != "email_changed" {
@@ -75,18 +79,18 @@ func TestEmailAndPasswordChangesShareSubjectAttemptBudget(t *testing.T) {
 		c.LoginRateLimit = goauth.RateLimitPolicy{Window: time.Minute, Limit: 2}
 	})
 	_, err := fixture.Runtime.ChangePassword(t.Context(), goauth.ChangePasswordRequest{
-		SubjectID: account.Subject.ID, CurrentPassword: "wrong", NewPassword: "Reauth-Replacement-Passphrase-42",
+		SubjectID: account.Subject.ID, CurrentPassword: "wrong", NewPassword: reauthReplacementPassword,
 	})
 	require.ErrorIs(t, err, goauth.ErrCurrentPasswordInvalid)
 	request := goauth.PasswordEmailChangeRequest{
-		SubjectID: account.Subject.ID, CurrentPassword: "wrong", NewEmail: "reauth.next@example.test",
+		SubjectID: account.Subject.ID, CurrentPassword: "wrong", NewEmail: reauthNextEmail,
 	}
 	require.ErrorIs(t, fixture.Runtime.RequestEmailChangeWithPassword(t.Context(), request), goauth.ErrCurrentPasswordInvalid)
 	request.CurrentPassword = reauthPassword
 	require.ErrorIs(t, fixture.Runtime.RequestEmailChangeWithPassword(t.Context(), request), goauth.ErrAuthenticationRateLimited)
 	require.Empty(t, fixture.Events.Events())
 	_, err = fixture.Runtime.ChangePassword(t.Context(), goauth.ChangePasswordRequest{
-		SubjectID: account.Subject.ID, CurrentPassword: reauthPassword, NewPassword: "Reauth-Replacement-Passphrase-42",
+		SubjectID: account.Subject.ID, CurrentPassword: reauthPassword, NewPassword: reauthReplacementPassword,
 	})
 	require.ErrorIs(t, err, goauth.ErrAuthenticationRateLimited)
 	now = now.Add(2 * time.Minute)
@@ -120,7 +124,7 @@ func TestEmailChangeDoesNotUpgradeStalePasswordProof(t *testing.T) {
 		require.NoError(t, err)
 	}
 	err := fixture.Runtime.RequestEmailChangeWithPassword(t.Context(), goauth.PasswordEmailChangeRequest{
-		SubjectID: account.Subject.ID, CurrentPassword: reauthPassword, NewEmail: "reauth.next@example.test",
+		SubjectID: account.Subject.ID, CurrentPassword: reauthPassword, NewEmail: reauthNextEmail,
 	})
 	require.ErrorIs(t, err, goauth.ErrSecurityVersionMismatch)
 	require.Empty(t, fixture.Events.Events())
@@ -151,7 +155,7 @@ func TestEmailChangeEnqueueRollbackDoesNotRefundPasswordAttempt(t *testing.T) {
 		c.EventSink = sink
 	})
 	request := goauth.PasswordEmailChangeRequest{
-		SubjectID: account.Subject.ID, CurrentPassword: reauthPassword, NewEmail: "reauth.next@example.test",
+		SubjectID: account.Subject.ID, CurrentPassword: reauthPassword, NewEmail: reauthNextEmail,
 	}
 	require.ErrorIs(t, fixture.Runtime.RequestEmailChangeWithPassword(t.Context(), request), errReauthDelivery)
 	_, err := fixture.Runtime.PendingEmailChange(t.Context(), account.Subject.ID)
@@ -169,7 +173,7 @@ func TestPreviousMailboxNotificationFailureRollsBackConfirmation(t *testing.T) {
 		c.EventSink = sink
 	})
 	require.NoError(t, fixture.Runtime.RequestEmailChangeWithPassword(t.Context(), goauth.PasswordEmailChangeRequest{
-		SubjectID: account.Subject.ID, CurrentPassword: reauthPassword, NewEmail: "reauth.next@example.test",
+		SubjectID: account.Subject.ID, CurrentPassword: reauthPassword, NewEmail: reauthNextEmail,
 	}))
 	code := latestEmailChangeCode(t, fixture)
 	_, err := fixture.Runtime.ConfirmEmailChange(t.Context(), account.Subject.ID, code)
@@ -187,11 +191,11 @@ func TestEmailChangeWithPasswordRejectsSSOOnlyAccounts(t *testing.T) {
 	t.Parallel()
 	fixture, _ := reauthFixture(t)
 	account, err := fixture.Runtime.ResolveExternalIdentity(t.Context(), goauth.ExternalIdentity{
-		Issuer: "https://reauth.example.test", Subject: "sso-only", Email: "reauth.sso@example.test", EmailVerified: true,
+		Issuer: "https://reauth.example.test", Subject: ssoOnlySubject, Email: "reauth.sso@example.test", EmailVerified: true,
 	})
 	require.NoError(t, err)
 	err = fixture.Runtime.RequestEmailChangeWithPassword(t.Context(), goauth.PasswordEmailChangeRequest{
-		SubjectID: account.Subject.ID, CurrentPassword: reauthPassword, NewEmail: "reauth.next@example.test",
+		SubjectID: account.Subject.ID, CurrentPassword: reauthPassword, NewEmail: reauthNextEmail,
 	})
 	require.ErrorIs(t, err, goauth.ErrCurrentPasswordInvalid)
 	require.Empty(t, fixture.Events.Events())

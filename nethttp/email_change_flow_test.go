@@ -18,7 +18,7 @@ func TestEmailChangeHTTPVerifiedSessionLifecycle(t *testing.T) {
 	t.Parallel()
 	fixture, err := testkit.NewRuntime()
 	require.NoError(t, err)
-	password := strings.Join([]string{"Email", "HTTP", "Lifecycle", "Passphrase", "42"}, "-")
+	password := strings.Join([]string{"Email", "Change", "Lifecycle", "Secret", "42"}, "-")
 	const oldEmail = "email.http.old@example.test"
 	const newEmail = "email.http.new@example.test"
 	account, err := fixture.Runtime.ProvisionTrustedLocalAccount(t.Context(), goauth.RegisterRequest{
@@ -44,7 +44,7 @@ func TestEmailChangeHTTPVerifiedSessionLifecycle(t *testing.T) {
 		return response
 	}
 	for _, current := range []string{"", "incorrect"} {
-		response := call(adapter.RequestEmailChange, map[string]string{"email": newEmail, "currentPassword": current})
+		response := call(adapter.RequestEmailChange, map[string]string{fieldEmail: newEmail, fieldCurrentPassword: current})
 		require.Equal(t, http.StatusUnprocessableEntity, response.Code)
 		var outcome authhttp.ErrorResponse
 		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &outcome))
@@ -52,7 +52,7 @@ func TestEmailChangeHTTPVerifiedSessionLifecycle(t *testing.T) {
 		require.Empty(t, fixture.Events.Events())
 	}
 	response := call(adapter.RequestEmailChange, map[string]string{
-		"email": newEmail, "currentPassword": password, "subjectId": goauth.NewSubjectID().String(),
+		fieldEmail: newEmail, fieldCurrentPassword: password, "subjectId": goauth.NewSubjectID().String(),
 	})
 	require.Equal(t, http.StatusAccepted, response.Code, response.Body.String())
 	require.Equal(t, "no-store", response.Header().Get("Cache-Control"))
