@@ -2,8 +2,11 @@
 package externalconsumerprobe
 
 import (
+	"go/ast"
 	"go/parser"
 	"go/token"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -75,4 +78,51 @@ func TestBuildPostgresProbeTestIsValidGo(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, content, `github.com/assurrussa/goauth/postgres`)
 	require.Contains(t, content, "func TestPostgresRuntimeExternalConsumer")
+}
+
+func TestOptionalModuleTemplatesRemainRunnableAndPublic(t *testing.T) {
+	cfg := Config{ModulePath: "example.test/auth", LocalPath: t.TempDir()}
+	for _, test := range []struct {
+		name  string
+		build func() (string, error)
+		tests []string
+	}{
+		{"memory", cfg.BuildProbeTest, []string{"TestDisabledDeliveryRuntimeExternalConsumer"}},
+		{"postgres", cfg.BuildPostgresProbeTest, []string{
+			"TestManagedHostTransactionExternalConsumer", "TestCredentialProofExternalConsumer",
+			"TestPasswordResetReceiptExternalConsumer", "TestDisabledDeliveryPostgresExternalConsumer",
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			source, err := test.build()
+			require.NoError(t, err)
+			require.NotContains(t, source, "GOAUTH_MODULE")
+			file, err := parser.ParseFile(token.NewFileSet(), test.name+"_test.go", source, parser.AllErrors)
+			require.NoError(t, err)
+			functions := make(map[string]bool)
+			for _, decl := range file.Decls {
+				if function, ok := decl.(*ast.FuncDecl); ok {
+					functions[function.Name.Name] = true
+				}
+			}
+			for _, name := range test.tests {
+				require.True(t, functions[name], "missing executable contract %s", name)
+			}
+			for _, importSpec := range file.Imports {
+				path, err := strconv.Unquote(importSpec.Path.Value)
+				require.NoError(t, err)
+				if !strings.HasPrefix(path, cfg.ModulePath) {
+					continue
+				}
+				supported := false
+				for _, pkg := range externalconsumer.SupportedPackages {
+					if path == strings.Replace(pkg, DefaultModulePath, cfg.ModulePath, 1) {
+						supported = true
+						break
+					}
+				}
+				require.True(t, supported, "consumer imported unsupported package %s", path)
+			}
+		})
+	}
 }

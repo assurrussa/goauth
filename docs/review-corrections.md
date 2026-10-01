@@ -3,9 +3,9 @@
 Base: `01b2a114a6b65a8de12197d60305acf41d4bf7d9`.
 Branch: `fix/review-security-release-hardening`.
 
-These changes are an implementation candidate, not release evidence. The dated
-`public-preview/release-evidence.local.yaml` remains unchanged and must not be
-interpreted as observations for this branch.
+These historical changes are an implementation candidate, not release evidence.
+Private local snapshots stay outside published sources and do not establish
+acceptance for a later branch or release SHA.
 
 ## Security boundaries
 

@@ -25,6 +25,9 @@ func (r *Runtime) requestEmailChange(
 	newEmail string,
 	expected *Account,
 ) error {
+	if r.notificationDelivery == NotificationDeliveryDisabled {
+		return ErrNotificationDeliveryDisabled
+	}
 	if subjectID.IsZero() {
 		return ErrAccountNotFound
 	}
@@ -139,6 +142,9 @@ func (r *Runtime) PendingEmailChange(ctx context.Context, subjectID SubjectID) (
 }
 
 func (r *Runtime) ConfirmEmailChange(ctx context.Context, subjectID SubjectID, code string) (Account, error) {
+	if r.notificationDelivery == NotificationDeliveryDisabled {
+		return Account{}, ErrNotificationDeliveryDisabled
+	}
 	if subjectID.IsZero() {
 		return Account{}, ErrInvalidConfirmationCode
 	}

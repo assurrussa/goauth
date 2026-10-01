@@ -48,7 +48,9 @@ var tokenEndpointAuthMethodOrder = []string{
 }
 
 type Client struct {
-	ID                      string
+	ID string
+	// Secret is a plaintext secret for legacy static client configuration.
+	// Providers using ClientSecretVerifier do not authenticate against this field.
 	Secret                  string
 	RedirectURIs            []string
 	PostLogoutRedirectURIs  []string
@@ -270,16 +272,11 @@ func DefaultTokenEndpointAuthMethod(clientSecret string) string {
 }
 
 func NormalizeTokenEndpointAuthMethod(method, clientSecret string) string {
-	switch strings.TrimSpace(method) {
-	case TokenEndpointAuthMethodNone:
-		return TokenEndpointAuthMethodNone
-	case TokenEndpointAuthMethodClientSecretBasic:
-		return TokenEndpointAuthMethodClientSecretBasic
-	case TokenEndpointAuthMethodClientSecretPost:
-		return TokenEndpointAuthMethodClientSecretPost
-	default:
+	method = strings.TrimSpace(method)
+	if method == "" {
 		return DefaultTokenEndpointAuthMethod(clientSecret)
 	}
+	return method
 }
 
 func ClientTokenEndpointAuthMethod(client Client) string {

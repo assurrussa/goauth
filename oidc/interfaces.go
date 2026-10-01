@@ -19,6 +19,22 @@ type ClientStore interface {
 	Get(ctx context.Context, clientID string) (Client, error)
 }
 
+// ClientSecretVerifier authenticates a client secret against host-managed storage.
+// A configured verifier is authoritative; any error denies authentication.
+type ClientSecretVerifier interface {
+	VerifyClientSecret(ctx context.Context, clientID, secret string) error
+}
+
+// ClientSecretVerifierFunc adapts a function to ClientSecretVerifier.
+type ClientSecretVerifierFunc func(ctx context.Context, clientID, secret string) error
+
+func (f ClientSecretVerifierFunc) VerifyClientSecret(ctx context.Context, clientID, secret string) error {
+	if f == nil {
+		return errors.New("client secret verifier is not configured")
+	}
+	return f(ctx, clientID, secret)
+}
+
 type AuthorizationRequestStore interface {
 	Save(ctx context.Context, request AuthorizationRequest) error
 	Get(ctx context.Context, challenge string) (AuthorizationRequest, error)

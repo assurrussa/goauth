@@ -9,7 +9,9 @@ make check
 
 `make prepare` modifies files. Review and commit its diff before recording a
 candidate SHA. `make check` is non-mutating and runs one canonical race/coverage
-pass, static checks, public API tests, a local consumer and source-guard tests.
+pass, static checks, public API tests, a local consumer, source-guard and formatter
+failure tests. `fmt-check` fails when either formatting tool exits unsuccessfully;
+gci receives `/dev/null` stdin so hosted runner pipes cannot be parsed as Go source.
 Use `make test-race` only for deliberate stress reruns and `make cover-html`
 only when an HTML artifact is needed.
 
@@ -43,6 +45,15 @@ waiver. Coverage alone does not prove the auth invariants.
 make externalconsumer-local
 make externalconsumer-postgres-local
 ```
+
+The database-free consumer also executes explicit disabled notification delivery:
+email/reset commands must not mutate account state or enqueue, while password
+change/login remain available and transactional audit stays mandatory. The PG
+consumer additionally executes managed host transaction commit/rollback with
+canonical auth, audit and RBAC, nested joining, foreign-handle rejection, valid
+and stale credential proofs, and reset receipt callback commit/rollback. Its
+projection tables and subjects are unique probe-owned resources and are cleaned
+up; it never resets the database schema. Use only a disposable fixture.
 
 These use a local `replace` and may reuse the developer module cache. Both
 force `GOWORK=off`; the PostgreSQL path deliberately receives the configured

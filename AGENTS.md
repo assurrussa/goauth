@@ -100,16 +100,12 @@ Important invariants:
 - Local clean-consumer probe: `make externalconsumer-local`
 - Published clean-consumer diagnostic: `make externalconsumer-published VERSION=<tag>`
 
-The Makefile exports repo-local `GOCACHE`, `GOMODCACHE`, and `GOPATH` under
-`.go-cache/`. Prefer Makefile targets for verification. If running raw `go`
-commands in this sandbox, use the same cache layout:
-
-```sh
-GOCACHE=$PWD/.go-cache/gocache \
-GOMODCACHE=$PWD/.go-cache/gomodcache \
-GOPATH=$PWD/.go-cache/gopath \
-go list ./...
-```
+The Makefile uses standard Go cache paths unless the host sets
+`GO_SHARED_CACHE_ROOT` or individual cache variables. Local hosts may require
+a shared cache root outside checkout through their parent instructions; honor
+that override. Existing GOPATH and toolchain settings are preserved. Sandbox
+restrictions require permitted shared-cache access; do not create per-checkout
+cache copies.
 
 During implementation, run package-scoped `go test` commands. Run `make check`
 once after a coherent batch; do not stack it with `make test`,
@@ -124,7 +120,7 @@ The frozen v0.1 compatibility baseline ends at `v0.1.7`. The tagged baseline is
 `v0.4.1`; the current unpublished candidate is `v0.5.0`. Select the intended
 release explicitly from repository tags; never rely on a stale default version.
 Published checks create fresh child-process caches instead of using the local
-cache layout above. Public availability is not established by a private tag.
+shared development cache. Public availability is not established by a private tag.
 
 The public module and CI must resolve all supported-package dependencies
 without private module credentials. Do not reintroduce a `GOPRIVATE` gate or

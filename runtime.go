@@ -26,7 +26,19 @@ const (
 	defaultPasswordResetRateWindow = time.Hour
 )
 
+// NotificationDeliveryPolicy selects whether recovery and email commands are available.
+// The zero value retains mandatory encrypted delivery.
+type NotificationDeliveryPolicy uint8
+
+const (
+	NotificationDeliveryRequired NotificationDeliveryPolicy = iota
+	NotificationDeliveryDisabled
+)
+
+var ErrNotificationDeliveryDisabled = errors.New("notification delivery is disabled")
+
 type Config struct {
+	NotificationDelivery    NotificationDeliveryPolicy
 	Store                   RuntimeStore
 	Signing                 SigningConfig
 	TokenHMACKeys           KeyRing
@@ -67,6 +79,7 @@ type Config struct {
 }
 
 type Runtime struct {
+	notificationDelivery        NotificationDeliveryPolicy
 	store                       RuntimeStore
 	identifiers                 map[IdentifierScheme]IdentifierResolver
 	membership                  MembershipGate
@@ -143,6 +156,7 @@ func NewRuntime(config Config) (*Runtime, error) {
 
 	return &Runtime{
 		store:                       config.Store,
+		notificationDelivery:        config.NotificationDelivery,
 		identifiers:                 identifierResolvers,
 		membership:                  config.MembershipGate,
 		claims:                      config.ClaimsEnricher,
@@ -250,11 +264,8 @@ func validateRuntimeConfig(config Config) error {
 	if config.Store == nil {
 		return errors.New("runtime store is required")
 	}
-	if config.EventSink == nil {
-		return ErrNotificationSinkRequired
-	}
-	if config.URLBuilder == nil {
-		return ErrURLBuilderRequired
+	if err := validateNotificationDelivery(config); err != nil {
+		return err
 	}
 	if config.AccessTTL < time.Second || config.AccessTTL > MaxAccessTokenTTL {
 		return fmt.Errorf("access token TTL must be between one second and %s", MaxAccessTokenTTL)
@@ -274,6 +285,9 @@ func validateRuntimeConfig(config Config) error {
 	if config.SessionTTL <= 0 || config.RefreshTTL <= 0 || config.PasswordResetTTL <= 0 ||
 		config.ChallengeTTL <= 0 || config.EmailChangeTTL <= 0 || config.EnvelopeRetention <= 0 {
 		return errors.New("runtime security TTLs must be positive")
+	}
+	if config.NotificationDelivery == NotificationDeliveryDisabled && len(config.OutboxAEADKeys.IDs()) == 0 {
+		return validateDistinctKeyRings(config.Signing.Keys, config.TokenHMACKeys)
 	}
 	return validateDistinctKeyRings(config.Signing.Keys, config.TokenHMACKeys, config.OutboxAEADKeys)
 }
@@ -720,5 +734,22 @@ func (r *Runtime) recordAudit(ctx context.Context, event SecurityEvent) error {
 		return fmt.Errorf("record security audit event: %w", err)
 	}
 
+	return nil
+}
+
+func validateNotificationDelivery(config Config) error {
+	if config.NotificationDelivery != NotificationDeliveryRequired && config.NotificationDelivery != NotificationDeliveryDisabled {
+		return errors.New("invalid notification delivery policy")
+	}
+	if config.NotificationDelivery == NotificationDeliveryDisabled &&
+		(config.EventSink != nil || config.ManagedNotificationDelivery) {
+		return errors.New("disabled notification delivery cannot configure an event sink or managed delivery")
+	}
+	if config.NotificationDelivery == NotificationDeliveryRequired && config.EventSink == nil {
+		return ErrNotificationSinkRequired
+	}
+	if config.NotificationDelivery == NotificationDeliveryRequired && config.URLBuilder == nil {
+		return ErrURLBuilderRequired
+	}
 	return nil
 }

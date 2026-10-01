@@ -1,6 +1,8 @@
 package goauth_test
 
 import (
+	"context"
+	"database/sql"
 	"go/parser"
 	"go/token"
 	"os"
@@ -9,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/assurrussa/goauth"
 	goauthfiber "github.com/assurrussa/goauth/fiber"
@@ -23,6 +26,26 @@ import (
 	"github.com/assurrussa/goauth/testkit"
 )
 
+var _ func(
+	*postgres.Runtime, context.Context, goauth.Credential,
+) (*postgres.CredentialProof, error) = (*postgres.Runtime).PrepareCredential
+
+var _ func(
+	*postgres.Runtime, context.Context, *postgres.CredentialProof,
+) (goauth.Account, error) = (*postgres.Runtime).RevalidateCredential
+
+var (
+	_ goauth.NotificationDeliveryPolicy                                      = goauth.NotificationDeliveryRequired
+	_ postgres.SQLExecutor                                                   = (*sql.Tx)(nil)
+	_ func(*postgres.Runtime, context.Context) (postgres.SQLExecutor, error) = (*postgres.Runtime).SQLExecutor
+	_ rbac.CacheInvalidator                                                  = publicCacheInvalidator{}
+	_ func(rbac.CacheInvalidator, context.Context) error                     = rbac.CacheInvalidator.Invalidate
+)
+
+type publicCacheInvalidator struct{}
+
+func (publicCacheInvalidator) Invalidate(context.Context) error { return nil }
+
 func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	t.Helper()
 
@@ -30,6 +53,8 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = authTransaction
 	_ = (*goauth.Runtime).VerifyJWT
 	_ = (*goauth.Runtime).AuthenticateSession
+	_ = (*goauth.Runtime).RequestPasswordResetWithReceipt
+	_ = goauth.PasswordResetReceipt{SubjectID: goauth.SubjectID{}, Selector: ""}
 	_ = goauth.ErrOperationOutcomeUnknown
 	_ = goauth.ErrRateLimitTransactionUnsupported
 	_ = goauth.ErrPasswordHashOverloaded
@@ -46,6 +71,11 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = verifier.Options{AccessTokenProfile: verifier.AccessTokenProfileZITADEL}
 	_ = verifier.AccessTokenProfileGoAuth
 	_ = verifier.AccessTokenProfile("")
+	_ = goauth.NotificationDeliveryDisabled
+	_ = goauth.ErrNotificationDeliveryDisabled
+	_ = goauth.Config{NotificationDelivery: goauth.NotificationDeliveryDisabled}
+	_ = (*postgres.Runtime).InAuthTransaction
+	_ = (*postgres.Runtime).Database
 	_ = goauth.NewRuntime
 	_ = goauth.NewKeyRing
 	_ = goauth.NewArgon2idHasher
@@ -70,7 +100,9 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = goauth.EmailChallengeRecord{ExpectedNormalizedEmail: "", ExpectedSecurityVersion: 1}
 	_ = goauth.ErrPasswordChangeConflict
 	_ = goauth.ErrEmailChangeNotFound
-	_ = goauth.NotificationDelivery{}
+	_ = goauth.NotificationDelivery{
+		ID: "", EncryptedEvent: goauth.EncryptedEvent{}, Notification: goauth.Notification{}, ValidUntil: time.Time{},
+	}
 	_ = goauth.NotificationSenderFunc(nil)
 	var sender goauth.NotificationSender = goauth.NotificationSenderFunc(nil)
 	_ = sender
@@ -124,6 +156,12 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = goauthfiber.RealmMiddlewareOptions{}
 
 	_ = oidc.ScopeOpenID
+	_ = oidc.ValidateRSAPublicKey
+	_ = oidc.ValidateRS256SigningJWKMetadata
+	_ = rbac.ErrSnapshotTransactionUnsupported
+	var _ oidc.ClientSecretVerifier = oidc.ClientSecretVerifierFunc(nil)
+	_ = oidc.ClientSecretVerifierFunc.VerifyClientSecret
+	_ = provider.Options{ClientSecretVerifier: oidc.ClientSecretVerifierFunc(nil)}
 	_ = oidc.AuthorizationRequest{}
 	_ = oidc.ErrRefreshTokenReplay
 	_ = provider.New

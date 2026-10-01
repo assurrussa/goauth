@@ -4,7 +4,6 @@ import (
 	"crypto/rsa"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/assurrussa/goauth/oidc"
 )
@@ -14,8 +13,7 @@ import (
 func verificationKeys(jwks oidc.JWKS) (map[string]*rsa.PublicKey, error) {
 	keys := make(map[string]*rsa.PublicKey)
 	for _, key := range jwks.Keys {
-		if key.Kty != "RSA" || strings.TrimSpace(key.Kid) == "" ||
-			(key.Use != "" && key.Use != "sig") || (key.Alg != "" && key.Alg != "RS256") {
+		if err := oidc.ValidateRS256SigningJWKMetadata(key); err != nil {
 			continue
 		}
 		publicKey, err := oidc.DecodeRSAPublicKeyJWK(key)

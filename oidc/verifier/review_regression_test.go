@@ -38,8 +38,10 @@ func TestReviewJWKSFiltersIncompatibleKeys(t *testing.T) {
 	_, err = verificationKeys(oidc.JWKS{Keys: []oidc.JWK{encryption, otherAlgorithm}})
 	require.Error(t, err)
 
-	conflict := signing
-	conflict.N = "AQAB"
+	conflictingKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	conflict, err := oidc.EncodeRSAPublicKeyJWK(signing.Kid, &conflictingKey.PublicKey)
+	require.NoError(t, err)
 	_, err = verificationKeys(oidc.JWKS{Keys: []oidc.JWK{signing, conflict}})
 	require.ErrorContains(t, err, "ambiguous")
 	_, err = verificationKeys(oidc.JWKS{Keys: []oidc.JWK{signing, signing}})

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -14,10 +15,54 @@ import (
 type (
 	notificationTxContextKey struct{}
 	notificationTxScope      struct {
-		db *sql.DB
-		tx *sql.Tx
+		db        *sql.DB
+		tx        *sql.Tx
+		callbacks *authTransactionCallbacks
 	}
 )
+
+// All operations sharing the transaction context share this callback owner.
+// Keep outcome hooks together and execute them outside the registration lock.
+type authTransactionCallbacks struct {
+	mu      sync.Mutex
+	rbacMu  sync.Mutex
+	entries []authTransactionCallback
+	caches  map[*transactionCache]struct{}
+}
+
+type authTransactionCallback struct {
+	afterCommit   func()
+	afterUnknown  func()
+	afterRollback func()
+}
+
+type authTransactionOutcome uint8
+
+const (
+	authTransactionRolledBack authTransactionOutcome = iota
+	authTransactionCommitted
+	authTransactionUnknown
+)
+
+func (c *authTransactionCallbacks) run(outcome authTransactionOutcome) {
+	c.mu.Lock()
+	entries := c.entries
+	c.entries = nil
+	c.mu.Unlock()
+	for _, entry := range entries {
+		callback := entry.afterRollback
+		switch outcome {
+		case authTransactionCommitted:
+			callback = entry.afterCommit
+		case authTransactionUnknown:
+			callback = entry.afterUnknown
+		case authTransactionRolledBack:
+		}
+		if callback != nil {
+			callback()
+		}
+	}
+}
 
 var errForeignNotificationTransaction = errors.New("notification transaction belongs to a different database handle")
 
@@ -40,13 +85,21 @@ func (s *Store) InAuthTransaction(ctx context.Context, fn func(context.Context) 
 	if err != nil {
 		return fmt.Errorf("begin notification transaction: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
-	if err := fn(context.WithValue(ctx, notificationTxContextKey{}, notificationTxScope{db: s.db, tx: tx})); err != nil {
+	scope := notificationTxScope{db: s.db, tx: tx, callbacks: &authTransactionCallbacks{}}
+	defer func() {
+		_ = tx.Rollback()
+		scope.callbacks.run(authTransactionRolledBack)
+	}()
+	if err := fn(context.WithValue(ctx, notificationTxContextKey{}, scope)); err != nil {
 		return err
 	}
 	if err := commitAuthTransaction(tx); err != nil {
+		if errors.Is(err, goauth.ErrOperationOutcomeUnknown) {
+			scope.callbacks.run(authTransactionUnknown)
+		}
 		return fmt.Errorf("commit auth transaction: %w", err)
 	}
+	scope.callbacks.run(authTransactionCommitted)
 	return nil
 }
 

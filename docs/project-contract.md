@@ -31,6 +31,47 @@ advanced integration path through direct root Runtime assembly. The PostgreSQL
 constructor rejects custom event sinks so auth state, mandatory audit and native
 enqueue share its database transaction.
 
+## Managed PostgreSQL transactions
+
+`postgres.Runtime.InAuthTransaction` coordinates canonical, audit, RBAC and host
+SQL writes on one database handle. The host obtains a context-scoped
+`SQLExecutor`; only the outer owner commits. Join concurrent operations before
+returning from its callback and do not retain its context or executor afterward.
+RBAC snapshots run in a standalone repeatable-read, read-only transaction. A
+managed auth context returns `rbac.ErrSnapshotTransactionUnsupported`, preserving
+the normal auth transaction isolation.
+RBAC callback registration is synchronized, with outcome hooks executed after
+unlocking. Writes reserve cache bypass before SQL mutation; rollback releases
+only its own reservations. Each transaction/cache pair shares one guard and one
+outcome callback regardless of write count. Managed RBAC mutations serialize their
+operation savepoints: errors restore the operation's state even when the host
+handles the error and continues the transaction. Recovery uses a bounded context
+detached from child cancellation; recovery failure aborts the outer transaction.
+Cache invalidation runs only after durable commit. Each invalidation has a two-second
+deadline detached from request cancellation, including lock waits; custom
+invalidators must honor it.
+Timeout keeps committed writes successful. Failed invalidation bypasses cache
+reads to authoritative PostgreSQL until successful invalidation. An unknown RBAC
+write outcome keeps cache reads bypassed for the wrapper lifetime; a read-only
+snapshot commit error cannot make cached permissions uncertain. Database failures
+still fail closed.
+
+Repeated RBAC assemblies on the exact same `*sql.DB` and live comparable cache
+share one transaction wrapper, including pending, failed and uncertain state.
+The synchronized registry holds weak DB and wrapper references; DB cleanup only
+removes its registry entry and never closes a host-owned connection or cache.
+Different caches, a mixture with uncached services, repeated noncomparable cache
+values or reconstruction after wrapper collection permanently disable cache reads
+for that DB. Invalidation success cannot restore this fallback. Reusing the same
+live cache/service preserves acceleration. Scope cache backends to one canonical
+database; separate handles and external SQL writes are not coordinated here.
+
+A transaction uses one SQL connection. Consume and close result sets before
+starting another operation on it; serialize mixed Query/Exec work. This callback
+synchronization does not provide a general concurrent SQL query scheduler.
+Idempotent role assignment uses one mutation Exec without changing the assignment's
+`created_at`; repeated assignments can create an additional PostgreSQL row version.
+
 ## Schema lifecycle
 
 The v0.2 baseline is authoritative for a fresh database. Detection of a v0.1

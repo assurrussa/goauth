@@ -28,7 +28,26 @@ func (jsonNotificationRenderer) RenderNotification(_ context.Context, notificati
 	return json.Marshal(notification)
 }
 
+// PasswordResetReceipt contains only public correlation identifiers, never a reset credential.
+type PasswordResetReceipt struct {
+	SubjectID SubjectID
+	Selector  string
+}
+
 func (r *Runtime) RequestPasswordReset(ctx context.Context, email string) error {
+	return r.RequestPasswordResetWithReceipt(ctx, email, nil)
+}
+
+// RequestPasswordResetWithReceipt calls bind inside the initiating auth transaction
+// after reset, encrypted notification and audit writes. A bind error rolls back all
+// participating writes. No callback runs when no reset is issued. Privileged hosts
+// must not expose whether bind ran to unauthenticated clients.
+func (r *Runtime) RequestPasswordResetWithReceipt(
+	ctx context.Context, email string, bind func(context.Context, PasswordResetReceipt) error,
+) error {
+	if r.notificationDelivery == NotificationDeliveryDisabled {
+		return ErrNotificationDeliveryDisabled
+	}
 	startedAt := time.Now()
 	defer r.waitForResetResponseFloor(startedAt)
 
@@ -90,15 +109,24 @@ func (r *Runtime) RequestPasswordReset(ctx context.Context, email string) error 
 		}, notificationMetadata{referenceID: token.selector, validUntil: now.Add(r.passwordResetTTL)}); err != nil {
 			return err
 		}
-		return r.recordAudit(txCtx, SecurityEvent{
+		if err := r.recordAudit(txCtx, SecurityEvent{
 			Type:      SecurityEventPasswordResetIssued,
 			SubjectID: record.Account.Subject.ID,
 			At:        now,
-		})
+		}); err != nil {
+			return err
+		}
+		if bind != nil {
+			return bind(txCtx, PasswordResetReceipt{SubjectID: record.Account.Subject.ID, Selector: token.selector})
+		}
+		return nil
 	})
 }
 
 func (r *Runtime) ResetPassword(ctx context.Context, rawToken, newPassword string) error {
+	if r.notificationDelivery == NotificationDeliveryDisabled {
+		return ErrNotificationDeliveryDisabled
+	}
 	if err := r.passwordPolicy.Validate(newPassword); err != nil {
 		return err
 	}
@@ -157,6 +185,9 @@ func (r *Runtime) SendEmailChallenge(
 	subjectID SubjectID,
 	purpose EmailChallengePurpose,
 ) error {
+	if r.notificationDelivery == NotificationDeliveryDisabled {
+		return ErrNotificationDeliveryDisabled
+	}
 	if subjectID.IsZero() {
 		return ErrAccountNotFound
 	}
@@ -290,6 +321,9 @@ func (r *Runtime) VerifyEmailChallenge(
 	purpose EmailChallengePurpose,
 	code string,
 ) (Account, error) {
+	if r.notificationDelivery == NotificationDeliveryDisabled {
+		return Account{}, ErrNotificationDeliveryDisabled
+	}
 	if subjectID.IsZero() {
 		return Account{}, ErrInvalidConfirmationCode
 	}
@@ -417,6 +451,9 @@ func (r *Runtime) enqueueNotification(
 }
 
 func (r *Runtime) AcknowledgeEncryptedEvent(ctx context.Context, eventID string) error {
+	if r.notificationDelivery == NotificationDeliveryDisabled {
+		return ErrNotificationDeliveryDisabled
+	}
 	if r.managedNotificationDelivery {
 		return errors.New("managed notifications can only be acknowledged by the lease-owning worker")
 	}
@@ -468,6 +505,9 @@ func notificationAdditionalData(event EncryptedEvent) []byte {
 }
 
 func (r *Runtime) CleanupExpiredEncryptedEvents(ctx context.Context) (int64, error) {
+	if r.notificationDelivery == NotificationDeliveryDisabled {
+		return 0, ErrNotificationDeliveryDisabled
+	}
 	deleted, err := r.eventSink.DeleteExpiredEncrypted(ctx, r.now().UTC())
 	if err != nil {
 		return 0, fmt.Errorf("delete expired encrypted events: %w", err)

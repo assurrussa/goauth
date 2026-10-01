@@ -4,12 +4,9 @@ Status: implementation specification; not a security attestation or a change to
 supported Go symbols. Prepared 2026-09-28 against master
 `070b1f37e8139d5796cb266b57d07cdd16b659c9`.
 
-The current unpublished v0.5 candidate has local profile validation recorded in
-[the dated local evidence snapshot](release-evidence.local.yaml): 17 catalog
-cases are recorded as passed and 21 remain `not_run`. That pre-commit snapshot
-does not constitute release-SHA acceptance under the complete template below.
-The aggregate site platform gate also remains failed at the unrelated gouploads
-generation/formatting boundary. Public-preview readiness is not established.
+The current v0.5 candidate is unpublished. Local profile observations are kept
+outside published sources; they do not constitute release-SHA acceptance under
+the complete template below. Public-preview readiness is not established.
 
 ## Outcome
 

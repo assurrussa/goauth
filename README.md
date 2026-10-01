@@ -34,6 +34,25 @@ The supported imports are intentionally small:
 of truth. Earlier v0.1 releases remain available at their immutable tags; the
 retired implementation is absent from this repository.
 
+## HTTP adapter capabilities
+
+| Capability | net/http | Fiber |
+| --- | --- | --- |
+| Register, login, refresh | Built in | Built in |
+| Password reset and email verification | Built in | Built in |
+| Logout, logout-all, password change, email change | Built in | Host handlers call the root Runtime |
+| Realm middleware with current-session checks | Default | Default |
+| Offline JWT verification | Explicit opt-in | Explicit opt-in |
+| Request body cap | 1 MiB | 1 MiB in auth handlers |
+
+Fiber hosts should also configure `fiber.Config.BodyLimit` to bound request
+buffering before handlers run. Each adapter returns HTTP 501 with
+`notification_delivery_disabled` for `ErrNotificationDeliveryDisabled`; hosts
+may choose to omit recovery/email routes in disabled delivery mode.
+See [OIDC provider policy](docs/oidc-provider-policy.md) for client authentication,
+public-client S256 PKCE, confidential-client policy and persistent secret
+verification.
+
 ## Runnable browser and JSON API example
 
 [examples/nethttp](examples/nethttp/README.md) runs one PostgreSQL-backed Runtime
@@ -232,3 +251,79 @@ checks the exact selected version after the test as well as before it.
 Database-backed acceptance runs through the separate local PostgreSQL consumer.
 Candidate checks do not establish publication; the public probe does not
 establish a security audit or production deployment.
+
+### Delivery-free operator administration
+
+`Config.NotificationDelivery = NotificationDeliveryDisabled` explicitly disables
+password-reset issuance/consumption, email challenge issuance/verification, and
+email-change commands. Commands return `ErrNotificationDeliveryDisabled` before
+attempt bookkeeping or storage writes. Password login, profile updates, and
+password changes remain available; password changes still commit mandatory audit
+and security-state revocation. No sender, URL builder, or outbox AEAD keys are
+required in this mode. The zero policy retains required encrypted delivery.
+
+PostgreSQL hosts can use `Runtime.InAuthTransaction` and `Runtime.SQLExecutor(ctx)`
+to commit host projections with canonical writes, audit, and RBAC. The executor
+exposes only SQL execution/query methods, never transaction ownership. Participating
+adapters must share `Runtime.Database()` exactly; a separate handle is rejected.
+RBAC authorization reads join the transaction and bypass caches. `Snapshot` needs
+a standalone repeatable-read transaction; invoking it in a managed auth transaction
+returns `rbac.ErrSnapshotTransactionUnsupported`. Supplied caches must implement
+`rbac.CacheInvalidator`; invalidation follows successful outer commit, never rollback.
+RBAC writes reserve cache bypass before SQL mutation, including standalone
+transactions. Managed operations use savepoints: an operation error restores its
+changes even if the host handles it and commits other writes. RBAC mutations on
+the same managed connection are serialized. Failure to restore a savepoint aborts
+the outer transaction. Rollback releases only its own reservations. While a write
+is pending, other authorization checks read committed PostgreSQL state.
+Each transaction/cache pair shares one guard and one invalidation regardless of
+write count. Each invalidation, including waiting for pending cache fills, has a two-second
+deadline detached from the request cancellation. Invalidators must honor that
+deadline and return after clearing the cache. Timeout leaves committed writes
+successful and the cache bypassed; an older completion cannot clear a newer failure.
+Failed cache invalidation bypasses the cache and reads authoritative PostgreSQL
+permissions; successful invalidation restores normal cached reads. An uncertain
+RBAC write commit returns `ErrOperationOutcomeUnknown` and keeps this cache wrapper
+bypassed for its lifetime. A read-only snapshot commit error keeps its classification
+without changing cache trust. Database read failures still deny authorization.
+
+Repeated `NewRBAC` or `Runtime.RBAC` calls with the same live, comparable cache
+value and exact `*sql.DB` share the cache guard, invalidation lock and outcome
+state. Keep these services alive to retain cache acceleration. The registry uses
+weak references and does not own the database or cache. Mixing different cache
+values, adding an uncached service, repeating a noncomparable value cache, or
+reassembling after its wrapper is collected permanently switches cached reads to
+PostgreSQL for that DB handle. Invalidation still follows management commits.
+This conservative fallback cannot be cleared by later assembly or invalidation.
+Cache backends must belong to one canonical database; distinct DB handles and
+external SQL writers are outside this coordination contract.
+
+Managed `NotificationDelivery.EncryptedEvent` contains the original sealed envelope
+for hosts that forward delivery into durable transports. The native queue remains
+the initiating auth transaction owner; downstream transports persist ciphertext
+only and deduplicate by delivery ID. `Notification` plaintext is ephemeral; never
+persist its reset URLs or codes. Acceptance is at least once, so SMTP or downstream
+transport acceptance may repeat after an uncertain acknowledgement. The worker
+renews its owned unexpired lease while reserving the attempt before sending;
+reservation and send share a bounded deadline. Expiry of that delivery deadline
+expires, retries or exhausts only the delivery; it does not stop the worker pool.
+After an ambiguous reservation timeout, the worker reads the persisted attempt
+count under the same lease token before settling the delivery. Parent cancellation
+stops the worker. Senders must honor cancellation and should deduplicate by delivery ID.
+
+Privileged hosts can use `Runtime.RequestPasswordResetWithReceipt` to bind a
+`PasswordResetReceipt` (subject ID and public selector only) within the same
+transaction as the reset record, encrypted enqueue and mandatory audit. A callback
+failure rolls back those writes; no callback runs when issuance is suppressed.
+Use the PostgreSQL runtime's context SQL executor in the callback. Keep receipt
+presence private from unauthenticated clients. On `ErrOperationOutcomeUnknown`,
+preserve the host claim and reconcile durable state before attempting issuance
+again; never clear a cooldown and resend blindly.
+
+PostgreSQL trusted bootstrap flows can call `PrepareCredential` before the host
+transaction. Its opaque, runtime-bound proof expires after five minutes. Inside
+`InAuthTransaction`, call `RevalidateCredential` before granting membership: it
+holds the canonical subject row lock through outer commit and checks active
+status, security version and normalized primary email. It creates no session and
+does not bypass durable rate admission. Fresh trusted provisioning can remain
+inside the transaction.

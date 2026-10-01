@@ -35,6 +35,11 @@ func TestWriteErrorOutcomePrecedence(t *testing.T) {
 	}
 	tests := make([]errorCase, 0, 36)
 	tests = append(tests, []errorCase{
+		{"delivery_disabled", goauth.ErrNotificationDeliveryDisabled, 501, "notification_delivery_disabled", ""},
+		{
+			"wrapped_delivery_disabled", fmt.Errorf("secret database details: %w", goauth.ErrNotificationDeliveryDisabled),
+			501, "notification_delivery_disabled", "",
+		},
 		{"unknown", goauth.ErrOperationOutcomeUnknown, 503, outcomeCode, ""},
 		{"wrapped_unknown", fmt.Errorf("secret database details: %w", goauth.ErrOperationOutcomeUnknown), 503, outcomeCode, ""},
 		{"canceled", context.Canceled, 503, authenticationUnavailableCode, ""},
@@ -58,6 +63,15 @@ func TestWriteErrorOutcomePrecedence(t *testing.T) {
 			"wrapped_unregistered_realm", fmt.Errorf("secret database details: %w", goauth.ErrRealmNotRegistered),
 			400, unregisteredRealmCode, "",
 		},
+		{"current_password", goauth.ErrCurrentPasswordInvalid, 422, "current_password_invalid", ""},
+		{
+			"wrapped_current_password", fmt.Errorf("secret database details: %w", goauth.ErrCurrentPasswordInvalid),
+			422, "current_password_invalid", "",
+		},
+		{"password_unchanged", goauth.ErrPasswordUnchanged, 422, "password_unchanged", ""},
+		{"password_conflict", goauth.ErrPasswordChangeConflict, 409, "password_change_conflict", ""},
+		{"email_unchanged", goauth.ErrEmailChangeSameValue, 422, "email_change_same_value", ""},
+		{"email_pending_absent", goauth.ErrEmailChangeNotFound, 404, "email_change_not_found", ""},
 		{"invalid_credentials", goauth.ErrInvalidCredentials, 401, "invalid_credentials", ""},
 		{"membership_denied", goauth.ErrMembershipDenied, 403, "membership_denied", ""},
 	}...)

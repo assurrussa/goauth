@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"github.com/assurrussa/goauth"
 )
 
@@ -178,20 +180,33 @@ func (r *Runtime) deliverNotification(ctx context.Context, claim notificationCla
 		}
 		return nil
 	}
-	reserved, err := r.store.reserveNotificationSend(ctx, claim, r.notificationWorker.MaxAttempts)
-	if err != nil {
-		return err
-	}
-	if !reserved {
-		return nil // The lease was lost before the sender call.
-	}
 	deadline := time.Now().Add(r.notificationWorker.SendTimeout)
 	if claim.event.ValidUntil.Before(deadline) {
 		deadline = claim.event.ValidUntil
 	}
 	sendCtx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+	reserved, err := r.store.reserveNotificationSend(sendCtx, claim, r.notificationWorker.MaxAttempts,
+		r.notificationNow().UTC(), r.notificationWorker.LeaseDuration)
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if err != nil {
+		if sendCtx.Err() != nil && notificationReservationCancelled(err) {
+			// Cancellation can race the reservation's commit. Read the persisted
+			// budget rather than assuming whether this attempt was counted.
+			return r.finishNotificationSendFailure(ctx, claim)
+		}
+		return err
+	}
+	if !reserved {
+		return nil // The lease was lost before the sender call.
+	}
+	if sendCtx.Err() != nil {
+		return r.finishNotificationSendFailure(ctx, claim)
+	}
 	err = r.notificationSender.SendNotification(sendCtx, goauth.NotificationDelivery{
-		ID: claim.event.ID, Notification: notification, ValidUntil: claim.event.ValidUntil,
+		ID: claim.event.ID, Notification: notification, ValidUntil: claim.event.ValidUntil, EncryptedEvent: claim.event,
 	})
 	cancel()
 	if ctx.Err() != nil {
@@ -200,15 +215,47 @@ func (r *Runtime) deliverNotification(ctx context.Context, claim notificationCla
 	if err == nil {
 		return r.store.finishNotification(ctx, claim, notificationDelivered, "", time.Time{})
 	}
+	// A successful reservation counted this attempt before calling the sender.
+	claim.attempts++
+	return r.settleNotificationSendFailure(ctx, claim)
+}
+
+// pgx cancel-request handlers can return PostgreSQL query_canceled instead of
+// wrapping a context error. The caller also requires the send context to be done.
+func notificationReservationCancelled(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return true
+	}
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "57014"
+}
+
+func (r *Runtime) finishNotificationSendFailure(ctx context.Context, claim notificationClaim) error {
+	err := r.store.db.QueryRowContext(ctx, `
+SELECT attempts FROM auth_notification_deliveries
+WHERE id = $1 AND lease_token = $2 AND state = 'leased'`,
+		claim.event.ID, claim.leaseToken).Scan(&claim.attempts)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil // A newer lease owner or cleanup owns the delivery now.
+	}
+	if err != nil {
+		return fmt.Errorf("check managed notification send budget: %w", err)
+	}
+	return r.settleNotificationSendFailure(ctx, claim)
+}
+
+func (r *Runtime) settleNotificationSendFailure(ctx context.Context, claim notificationClaim) error {
 	completedAt := r.notificationNow().UTC()
 	if !completedAt.Before(claim.event.ValidUntil) {
 		return r.store.finishNotification(ctx, claim, notificationExpired, "stale", time.Time{})
 	}
-	if claim.attempts+1 >= r.notificationWorker.MaxAttempts {
+	if claim.attempts >= r.notificationWorker.MaxAttempts {
 		return r.store.finishNotification(ctx, claim, notificationExhausted, "sender", time.Time{})
 	}
+	// Backoff is indexed by the preceding attempt count, as on sender failure.
+	previousAttempts := max(claim.attempts-1, 0)
 	return r.store.finishNotification(ctx, claim, notificationPending, "sender",
-		completedAt.Add(notificationBackoff(r.notificationWorker, claim.attempts)))
+		completedAt.Add(notificationBackoff(r.notificationWorker, previousAttempts)))
 }
 
 func notificationBackoff(config NotificationWorkerConfig, attempts int) time.Duration {

@@ -38,6 +38,11 @@ func TestWriteErrorOutcomePrecedence(t *testing.T) {
 	}
 	tests := make([]errorCase, 0, 36)
 	tests = append(tests, []errorCase{
+		{"delivery_disabled", goauth.ErrNotificationDeliveryDisabled, 501, "notification_delivery_disabled", ""},
+		{
+			"wrapped_delivery_disabled", fmt.Errorf("secret database details: %w", goauth.ErrNotificationDeliveryDisabled),
+			501, "notification_delivery_disabled", "",
+		},
 		{"unknown", goauth.ErrOperationOutcomeUnknown, 503, outcomeCode, ""},
 		{"wrapped_unknown", fmt.Errorf("secret database details: %w", goauth.ErrOperationOutcomeUnknown), 503, outcomeCode, ""},
 		{"canceled", context.Canceled, 503, authenticationUnavailableCode, ""},

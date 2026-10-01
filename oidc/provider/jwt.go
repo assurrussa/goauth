@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -82,6 +83,9 @@ func (s *Service) signIDToken(
 }
 
 func (s *Service) signToken(key oidc.SigningKey, claims jwt.Claims, typ string) (string, error) {
+	if err := validateSigningKey(key); err != nil {
+		return "", err
+	}
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	token.Header["kid"] = key.ID
 	if typ != "" {
@@ -96,6 +100,33 @@ func (s *Service) signToken(key oidc.SigningKey, claims jwt.Claims, typ string) 
 	return signed, nil
 }
 
+func validateSigningKey(key oidc.SigningKey) error {
+	if strings.TrimSpace(key.ID) == "" {
+		return errors.New("signing key id is required")
+	}
+	if key.Algorithm != "" && key.Algorithm != jwt.SigningMethodRS256.Alg() {
+		return errors.New("unsupported signing key algorithm")
+	}
+	if err := oidc.ValidateRSAPublicKey(key.PublicKey); err != nil {
+		return err
+	}
+	if key.PrivateKey == nil || key.PrivateKey.D == nil || key.PrivateKey.D.Sign() <= 0 {
+		return errors.New("invalid rsa private key")
+	}
+	if err := oidc.ValidateRSAPublicKey(&key.PrivateKey.PublicKey); err != nil {
+		return err
+	}
+	if !key.PublicKey.Equal(&key.PrivateKey.PublicKey) {
+		return errors.New("rsa private and public keys do not match")
+	}
+	for _, prime := range key.PrivateKey.Primes {
+		if prime == nil || prime.Sign() <= 0 {
+			return errors.New("invalid rsa private key prime")
+		}
+	}
+	return key.PrivateKey.Validate()
+}
+
 func (s *Service) parseAccessToken(ctx context.Context, token string) (*accessTokenClaims, error) {
 	claims := &accessTokenClaims{}
 	parsed, err := jwt.ParseWithClaims(token, claims, func(t *jwt.Token) (any, error) {
@@ -105,6 +136,9 @@ func (s *Service) parseAccessToken(ctx context.Context, token string) (*accessTo
 			if err != nil {
 				return nil, err
 			}
+			if err := oidc.ValidateRSAPublicKey(key.PublicKey); err != nil {
+				return nil, err
+			}
 			return key.PublicKey, nil
 		}
 
@@ -112,14 +146,21 @@ func (s *Service) parseAccessToken(ctx context.Context, token string) (*accessTo
 		if err != nil {
 			return nil, err
 		}
+		if err := oidc.ValidateRSAPublicKey(key.PublicKey); err != nil {
+			return nil, err
+		}
 
 		return key.PublicKey, nil
-	}, jwt.WithIssuer(s.issuer))
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()}),
+		jwt.WithIssuer(s.issuer), jwt.WithExpirationRequired(), jwt.WithIssuedAt(), jwt.WithTimeFunc(s.now))
 	if err != nil {
 		return nil, err
 	}
 	if !parsed.Valid {
 		return nil, errors.New("token is invalid")
+	}
+	if claims.IssuedAt == nil {
+		return nil, errors.New("token issued at is required")
 	}
 
 	return claims, nil

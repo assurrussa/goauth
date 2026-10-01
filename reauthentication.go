@@ -19,6 +19,9 @@ type PasswordEmailChangeRequest struct {
 // actor-to-target authorization. SSO-only accounts need an explicit host-owned
 // recent-IdP-authentication flow through RequestEmailChange; there is no fallback.
 func (r *Runtime) RequestEmailChangeWithPassword(ctx context.Context, request PasswordEmailChangeRequest) error {
+	if r.notificationDelivery == NotificationDeliveryDisabled {
+		return ErrNotificationDeliveryDisabled
+	}
 	if request.SubjectID.IsZero() {
 		return ErrAccountNotFound
 	}

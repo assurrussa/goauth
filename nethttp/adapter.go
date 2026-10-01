@@ -318,6 +318,8 @@ func mapError(err error) (status int, code, message string) {
 	case errors.Is(err, goauth.ErrOperationOutcomeUnknown):
 		// A canceled commit may have persisted; its cause must not imply safe retry.
 		return http.StatusServiceUnavailable, "operation_outcome_unknown", "operation outcome unknown"
+	case errors.Is(err, goauth.ErrNotificationDeliveryDisabled):
+		return http.StatusNotImplemented, "notification_delivery_disabled", "notification delivery is disabled"
 	case errors.Is(err, goauth.ErrPasswordHashOverloaded):
 		return http.StatusServiceUnavailable, "password_hash_overloaded", "authentication temporarily unavailable"
 	case errors.Is(err, goauth.ErrPasswordVerificationUnavailable),

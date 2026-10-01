@@ -9,9 +9,13 @@ import (
 // expires, or exhausts the attempt limit. A sender must use ID as its
 // idempotency key when the underlying transport supports deduplication.
 type NotificationDelivery struct {
-	ID           string
-	Notification Notification
-	ValidUntil   time.Time
+	ID string
+	// EncryptedEvent is the exact sealed event claimed by the managed worker.
+	// Delivery transports may persist this envelope, but never Notification's
+	// plaintext codes/tokens. Use ID for downstream idempotency; delivery is at-least-once.
+	EncryptedEvent EncryptedEvent
+	Notification   Notification
+	ValidUntil     time.Time
 }
 
 // NotificationSender is the only delivery integration required from a host
