@@ -1,10 +1,14 @@
 # goauth
 
-`goauth` is a reusable authentication, identity, session, and RBAC Runtime for
-Go hosts. PostgreSQL stores canonical auth state; net/http and Fiber are optional HTTP
+`goauth` is a PostgreSQL-first authentication Runtime for Go applications, with
+sessions, recovery, encrypted notification delivery, OIDC and RBAC.
+PostgreSQL stores canonical auth state; net/http and Fiber are optional HTTP
 adapters, and Redis is needed only for optional OIDC one-time state.
 
 This checkout prepares unpublished `v0.5.0` from the `v0.4.1` tagged baseline.
+The release will go directly to `v0.5.0`, without alpha, beta or RC tags.
+Before tagging, integration acceptance will run in the `goadmin` administration
+flow composed with `site`, against the selected goauth source SHA.
 See [the v0.5 migration](docs/v0.5-migration.md) for changed contracts.
 
 **Pre-v1, public-release preparation.** A Git tag is not proof of public
@@ -14,6 +18,21 @@ criteria and [RELEASING.md](RELEASING.md) for exact-tag verification.
 The frozen v0.1 line ends at `v0.1.7`; consumers crossing that schema
 boundary must explicitly reset isolated development or test auth state.
 Existing tags remain immutable.
+
+## Documentation
+
+- [Runnable quickstart](examples/nethttp/README.md): browser and JSON API wiring.
+- [Project contract](docs/project-contract.md) and
+  [auth invariants](AUTH_INVARIANTS.md): ownership and security boundaries.
+- [PostgreSQL Runtime](docs/v0.2-runtime.md): canonical storage and lifecycle.
+- [OIDC policy](docs/oidc-provider-policy.md) and [RBAC API](rbac/rbac.go).
+- [v0.5 migration](docs/v0.5-migration.md): changed contracts and upgrade guidance.
+- [Security policy](SECURITY.md): private reporting and support scope.
+- [Releasing](RELEASING.md): candidate, publication and full acceptance gates.
+
+The [public-preview specification](docs/public-preview/README.md) defines release
+acceptance criteria. Engineering review notes record historical work and checks;
+they do not replace consumer guidance or acceptance evidence at the release SHA.
 
 ## Supported API
 
@@ -60,7 +79,7 @@ with standard net/http, browser cookies, coordinated refresh, a bearer-only JSON
 API, and a local SMTP catcher. Its host owns CSRF, cookies, UI and worker lifetime.
 The `nethttp` middleware checks current sessions by default; `OfflineJWT` is an
 explicit opt-out. `AuthContext(request.Context())` retrieves the checked identity.
-The accepted [profile contracts and evidence](docs/public-preview/README.md)
+The [profile contracts and required evidence](docs/public-preview/README.md)
 separate browser cookies from explicit native/API credentials. The candidate gate
 includes a real HTTPS browser and backup/restore; see release verification for
 the required installed browser selection.

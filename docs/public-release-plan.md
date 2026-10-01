@@ -2,11 +2,16 @@
 
 ## Goal and scope
 
-Publish a reusable PostgreSQL-first Go authentication Runtime as a **pre-v1
-preview**, with reproducible evidence and explicit limitations. This is not a
-claim of independent security certification, OIDC conformance, or production
-adoption. Opening the source, publishing a module, and production readiness
-are separate milestones.
+Publish a reusable PostgreSQL-first Go authentication Runtime as the **pre-v1
+release `v0.5.0`**, with reproducible evidence and explicit limitations. This is
+not a claim of independent security certification, OIDC conformance, or
+production adoption. Opening the source, publishing a module, and production
+readiness are separate milestones.
+
+Release `v0.5.0` directly, without alpha, beta or RC tags. Before tagging, run
+integration acceptance in the `goadmin` administration flow composed with
+`site`, pinned to the selected goauth source SHA. This is the selected host
+acceptance environment; it does not mark testing as completed.
 
 The initial supported path is the root Runtime with PostgreSQL, optional Fiber,
 and the existing documented adapters. Host applications own browser token
@@ -14,7 +19,7 @@ storage, CSRF, membership policy, UI, delivery providers, and process wiring.
 Do not add MFA, passkeys, multi-tenancy, another database, or another transport
 just to complete this release.
 
-## 1. Release tooling (this change)
+## 1. Available release tooling
 
 - Published probes use fresh home, module/build caches and Go settings. They
   cannot inherit private module rules, auth helpers, workspaces, proxy
@@ -26,9 +31,12 @@ just to complete this release.
 - A manual `Public module verification` workflow verifies an existing tag. It
   never creates tags, publishes releases, or changes visibility.
 - The existing CI can be dispatched manually while the repository is private.
+- `make public-preview-readiness VERSION=<tag> EVIDENCE="$RELEASE_EVIDENCE_FILE"`
+  combines executable release gates with the reviewed release-SHA manifest;
+  see [full acceptance](release-verification.md#full-public-preview-acceptance).
 
-Implementation and test evidence are distinct: merge this change only after
-its normal repository checks have run on the project's declared toolchain.
+Available tooling is not passing evidence. Run the matching gates on the
+project's declared toolchain and record their exact source SHA and outcomes.
 
 ## 2. Before opening repository visibility
 
@@ -48,16 +56,18 @@ Owner: maintainer; code fixes go through reviewed PRs.
   and archive the candidate SHA and command results. Restore working CI or
   record equivalent reproducible local evidence; a runner/billing failure is
   not a code-test result.
-- Have another developer follow the documented Runtime/notification lifecycle
-  in an application outside the maintainer's platform. Record integration
-  problems; the synthetic consumer alone does not demonstrate usability.
+- Exercise the documented Runtime/notification lifecycle and account,
+  session, recovery and RBAC flows in `site` with `goadmin`. Record the site
+  commit, resolved goadmin version/SHA and resolved goauth version/SHA, commands,
+  outcomes and integration problems in the private site/admin evidence.
+  The synthetic consumer alone does not demonstrate host integration.
 - Review the MIT license, public README, support scope and security-reporting
   instructions. Decide whether optional OIDC packages remain preview-only;
   do not advertise untested protocol conformance.
 
 Acceptance: no known unmitigated release-blocking security finding, recorded
 history review, passing candidate gates at one SHA, and an owner-approved
-preview scope. These checks are not completed merely by adding this document.
+release scope. These checks are not completed merely by adding this document.
 
 ## 3. Visibility and distribution
 
@@ -70,19 +80,26 @@ Owner: maintainer. These are explicit administrative actions, not code gates.
    Verify the reporting link from a non-maintainer account.
 3. Configure required successful checks/review and protection of release tags.
    Do not weaken security checks to work around a CI-account problem.
-4. Select a new unused semver tag at the reviewed SHA. A patch/pre-release tag
-   is appropriate only if supported API and persisted semantics remain
-   compatible; security-default or API changes may require a new minor line.
+4. Confirm that `v0.5.0` is unused and create it at the reviewed,
+   candidate-tested SHA after site/goadmin acceptance. There is no alpha,
+   beta or RC stage for this release. Preserve the documented v0.5 migration
+   for its changed API and security defaults.
 5. From a clean checkout of that tag, run:
 
    ```sh
-   make public-module-check VERSION=<tag>
+   make public-module-check VERSION=v0.5.0
    ```
 
    Or dispatch `Public module verification` for the same tag. A private
    repository, inaccessible public proxy, mismatched version, replacement, or
    failed test must fail the gate. Never fall back to authenticated access.
-6. Publish release notes and announce the preview only after the gate passes.
+6. Complete all 38 scenario records, both host checks and required release-gate
+   records in the private evidence manifest. From the clean tagged checkout,
+   with integration services and browser tools available, run
+   `make public-preview-readiness VERSION=v0.5.0 EVIDENCE="$RELEASE_EVIDENCE_FILE"`.
+   History/scoped review, operational drills, reporting/protection and owner
+   approval must be evidenced too; executable tests do not stand in for them.
+7. Publish release notes and announce `v0.5.0` only after these gates pass.
    Include compatibility/migration guidance and actual verification evidence.
    A failed published candidate is superseded by a new tag, never moved.
 
@@ -91,7 +108,7 @@ the public Go proxy and checksum service; the reporting channel works; notes
 state the supported scope. Proxy propagation/network failures remain failures
 until rerun successfully, not a reason to disable checksums.
 
-## 4. After the public preview
+## 4. After the public release
 
 Collect feedback from independent consumers, document deployment/key-rotation
 operations, and commission an independent security review before stronger

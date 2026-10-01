@@ -1,12 +1,22 @@
 # Public preview: contracts, verification and release work
 
-Status: implementation specification; not a security attestation or a change to
-supported Go symbols. Prepared 2026-09-28 against master
-`070b1f37e8139d5796cb266b57d07cdd16b659c9`.
+Status: release acceptance specification; not a candidate-status report,
+security attestation or a change to supported Go symbols. The preparation
+baseline, master `070b1f37e8139d5796cb266b57d07cdd16b659c9` on 2026-09-28,
+is historical and does not identify the current release candidate.
 
-The current v0.5 candidate is unpublished. Local profile observations are kept
-outside published sources; they do not constitute release-SHA acceptance under
-the complete template below. Public-preview readiness is not established.
+See [RELEASING.md](../../RELEASING.md) for version state and current gates, and
+the [public release plan](../public-release-plan.md) for publication prerequisites.
+The criteria below remain applicable. Passing implementation checks or CI alone
+does not establish full public-preview acceptance; that requires the reviewed
+release-SHA manifest and
+[full acceptance gate](../release-verification.md#full-public-preview-acceptance).
+Keep private observations outside published sources.
+
+The selected release is `v0.5.0` without alpha, beta or RC tags, following
+integration acceptance in `goadmin` composed with `site`. The historical
+public-preview document and target names remain the acceptance contract for
+this pre-v1 release; they do not require a pre-release version suffix.
 
 ## Outcome
 
@@ -97,6 +107,11 @@ conditions hold at the release SHA:
   complete.
 - An anonymous consumer successfully resolves the exact new tag at the tested
   SHA, with the result recorded in `release_gates.anonymous_exact_tag`.
+- `make public-preview-readiness VERSION=<tag> EVIDENCE="$RELEASE_EVIDENCE_FILE"`
+  passes from the clean tagged checkout with the reviewed manifest. This combines
+  executable release gates with validation of scenarios, host checks, all
+  required release gates and owner approval; it does not independently verify
+  the truth of the manifest's observations.
 
 A reviewer records residual limitations and support scope. Neither successful
 production use, coverage, scanners nor an independent review proves absence of

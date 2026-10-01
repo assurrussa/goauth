@@ -2,7 +2,7 @@
 
 The module path is `github.com/assurrussa/goauth`.
 Read [docs/public-release-plan.md](docs/public-release-plan.md) for the owner,
-acceptance criteria and sequence of the first public preview.
+acceptance criteria and sequence of the first public release.
 
 ## Version state
 
@@ -11,6 +11,13 @@ explicitly with `VERSION=<tag>`. There is no implicit latest/default version.
 During preparation on 2026-09-28, `v0.4.1` pointed to `070b1f3`; that observation
 alone is not evidence of public resolution or completed release checks.
 The current unpublished candidate is `v0.5.0`.
+The selected public release is `v0.5.0`, issued directly without alpha, beta or
+RC tags. Confirm that this tag is unused before publication. Before tagging,
+run integration acceptance in the `goadmin` administration flow composed with
+`site` at the selected goauth SHA. Record the site commit, resolved goadmin
+version/SHA and resolved goauth version/SHA in the private host evidence.
+This release decision does not establish completed acceptance or production
+readiness; the existing candidate, publication and evidence gates still apply.
 
 Never move or replace a tag, publish a committed local `replace`, or describe a
 private tag as a verified public release. The frozen v0.1 compatibility line
@@ -72,6 +79,9 @@ PostgreSQL consumer, reachable vulnerability analysis, and aggregate coverage.
 `make check` also runs the network-free source-guard regression tests.
 The candidate gate additionally exercises real PostgreSQL dump/restore and
 Chromium/HTTPS browser acceptance.
+The current `CI` workflow runs the source/unit, integration, aggregate coverage
+and vulnerability checks, but not dump/restore or browser acceptance. A green
+CI run therefore does not replace the complete candidate gate.
 
 The `CI` workflow supports manual dispatch for a candidate branch as well as
 pushes/PRs. Record its SHA and outcome. A job that cannot acquire a runner is
@@ -129,7 +139,31 @@ OS trust store are trusted inputs; this is not a hostile-code sandbox.
 Publish release notes/announce only after the gate passes. Include migrations,
 support limitations and actual evidence, not a blanket production-ready claim.
 
+## Full public-preview acceptance
+
+Candidate and anonymous publication gates prove only their declared scope.
+Before announcing a fully accepted public preview, complete the
+[scenario and evidence specification](docs/public-preview/README.md#completion)
+and run the [full acceptance gate](docs/release-verification.md#full-public-preview-acceptance):
+
+```sh
+make public-preview-readiness VERSION=<tag> EVIDENCE="$RELEASE_EVIDENCE_FILE"
+```
+
+Set `RELEASE_EVIDENCE_FILE` to the absolute path of the reviewed manifest outside
+the clean checkout. Use the [template](docs/public-preview/release-evidence.example.yaml)
+to record all 38 scenarios, both host checks, release gates and owner approval
+at the selected SHA/tag. An unfilled template or historical passing summary is
+insufficient. The validator checks declared evidence and source identity; it
+does not execute every scenario or certify the truth of recorded observations.
+
 ## Consumer evidence
+
+For `v0.5.0`, the selected acceptance environment is `goadmin` composed with
+`site`. Record the site's host flows as `host_checks.site` and its goadmin
+administration flow as `host_checks.admin`; include the resolved goadmin
+version/SHA in the admin evidence. Passing the library's synthetic consumer
+does not substitute for these host observations.
 
 Each consumer records its resolved version and absence of local replacements,
 its own format/lint/test/migration gates, realm membership and permission

@@ -1,5 +1,9 @@
 # Implementation notes
 
+Historical engineering records. Validation below applies to the stated source
+snapshot, not automatically to the current candidate. Use [RELEASING.md](RELEASING.md)
+and [release verification](docs/release-verification.md) for current release gates.
+
 ## 2026-10-01: Complete PR #11 review pass (local working tree)
 
 Goal: address every applicable comment in PR #11 in one coherent batch.

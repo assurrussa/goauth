@@ -1,8 +1,8 @@
 package externalconsumer
 
-// StablePublicPackages is the complete supported v0.2 import surface. Packages
-// omitted from this list are implementation details even when Go can import
-// them for compatibility with an older v0.1 consumer.
+// StablePublicPackages is the complete supported pre-v1 import surface.
+// Packages omitted from this list are implementation details even when Go
+// can import them. Earlier v0.1 consumers must use their immutable tags.
 var StablePublicPackages = [...]string{
 	"github.com/assurrussa/goauth",
 	"github.com/assurrussa/goauth/fiber",

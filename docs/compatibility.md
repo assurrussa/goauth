@@ -1,6 +1,9 @@
 # Compatibility policy
 
 The tagged baseline is `v0.4.1`; `v0.5.0` is an unpublished pre-v1 candidate.
+The selected release goes directly to `v0.5.0`, without alpha, beta or RC tags,
+after integration acceptance in `goadmin` composed with `site` at the selected
+goauth SHA. This planned acceptance is not evidence of completed host adoption.
 Host adoption is verified separately from this library's release gates. Private
 host inventories and acceptance observations belong outside published sources.
 

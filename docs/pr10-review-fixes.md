@@ -1,5 +1,8 @@
 # PR #10 review corrections
 
+Historical engineering record; use [RELEASING.md](../RELEASING.md) and
+[release verification](release-verification.md) for current release gates.
+
 Reviewed base: `408d4ea6a55e813c396d649a6eda7a116159aac5`.
 This follow-up corrects the logout/coordinator, test-fixture and example-documentation
 findings. It also closes the related client-side wait and pending-login gaps.

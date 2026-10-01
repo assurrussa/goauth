@@ -1,13 +1,18 @@
 # Publication, operations and ongoing support
 
-Status: proposed release/support process. It does not enable repository settings,
-publish a tag, promise an SLA or certify security. Existing
-[RELEASING.md](../../RELEASING.md) and [SECURITY.md](../../SECURITY.md) remain the
-current instructions until implementation PRs align them with this specification.
+Status: release/support acceptance process, not a current candidate-status
+report. It does not enable repository settings, publish a tag, promise an SLA or
+certify security. See [RELEASING.md](../../RELEASING.md) for current version state
+and executable gates, and [SECURITY.md](../../SECURITY.md) for reporting policy.
 
-The current v0.5 candidate has no completed release acceptance. Keep private
-local observations outside published sources. Preserve all passing-gate and
-per-case evidence requirements when combining implementation and release tooling.
+Keep private local observations outside published sources. Preserve all
+passing-gate and per-case evidence requirements; the
+[full acceptance gate](../release-verification.md#full-public-preview-acceptance)
+checks their reviewed manifest separately from implementation and publication.
+
+The selected public release is `v0.5.0`, without alpha, beta or RC tags.
+Integration acceptance runs first in `goadmin` composed with `site`, with host
+commits and resolved dependency versions recorded at the selected goauth SHA.
 
 ## R1: security and compatibility evidence before exposure
 

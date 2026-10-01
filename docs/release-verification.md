@@ -118,6 +118,48 @@ A cold download gets a 10-minute per-command timeout through the Makefile;
 does not relax isolation. The Go executable and system trust store remain
 trusted; this is an environment-isolation check, not an OS security sandbox.
 
+## Full public-preview acceptance
+
+`make release-candidate-readiness` checks the implementation;
+`make public-module-check VERSION=<tag>` checks anonymous exact-tag distribution.
+Neither completes the profile, host and operational acceptance specification.
+
+Copy the [evidence template](public-preview/release-evidence.example.yaml) to a
+private location outside the clean checkout and fill it from actual observations
+at the selected release SHA/tag. Set `RELEASE_EVIDENCE_FILE` to its absolute path.
+The manifest must include:
+
+- All 38 SEC/WEB/ADM/OID/OPS scenarios and AUTH requirement coverage. Applicable
+  cases must pass; permitted optional-profile exclusions need a scope reason
+  and reviewer approval.
+- Separate passing `site` and `admin` host checks, including host commits,
+  resolved goauth version/SHA, replacement flags, commands and redacted evidence.
+  For `v0.5.0`, run these in `site` with `goadmin`; `admin` records the goadmin
+  administration flow. Include the resolved goadmin version/SHA in its evidence.
+- Passing candidate, browser/host, independent review, exposure review, private
+  reporting, branch/tag protection, anonymous exact-tag and operational-drill
+  gates, plus owner approval for the stated release claim.
+
+After the tag is public, from its clean checkout with disposable integration
+services and installed browser tools available, run:
+
+```sh
+make public-preview-readiness VERSION=<tag> EVIDENCE="$RELEASE_EVIDENCE_FILE"
+```
+
+This runs `release-readiness` followed by `release-evidence-check`.
+To validate the manifest alone after executable gates have passed, use:
+
+```sh
+make release-evidence-check VERSION=<tag> EVIDENCE="$RELEASE_EVIDENCE_FILE"
+```
+
+The selected version must match `candidate.tag`, even if another tag points at
+the same commit. The manifest and tag must identify clean HEAD. Missing, stale,
+failed, blocked or `not_run` observations prevent acceptance. Validation checks
+structure and declared source identity, not the truth of evidence or reviewer
+authority. Keep private findings and raw host data out of published sources.
+
 ## Evidence boundary
 
 Keep implementation, local verification, tag creation, anonymous publication,
