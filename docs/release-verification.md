@@ -9,7 +9,9 @@ make check
 
 `make prepare` modifies files. Review and commit its diff before recording a
 candidate SHA. `make check` is non-mutating and runs one canonical race/coverage
-pass, static checks, public API tests, a local consumer and source-guard tests.
+pass, static checks, public API tests, a local consumer, source-guard and formatter
+failure tests. `fmt-check` fails when either formatting tool exits unsuccessfully;
+gci receives `/dev/null` stdin so hosted runner pipes cannot be parsed as Go source.
 Use `make test-race` only for deliberate stress reruns and `make cover-html`
 only when an HTML artifact is needed.
 

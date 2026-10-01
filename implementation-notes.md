@@ -1,6 +1,64 @@
 # Implementation notes
 
-## 2026-10-01: Snapshot, PKCE and JWK follow-up (local working tree)
+## 2026-10-01: Pre-commit RBAC bypass, CI and JWK follow-up (local working tree)
+
+Goal: resolve PR discussion
+[r4151920361](https://github.com/assurrussa/goauth/pull/11#discussion_r4151920361)
+and the supplied follow-up review. Base HEAD:
+`fd2062fc05cc9fefabbcc785cb3d3b5b2a0d62e9`; working tree was clean at the start.
+Review lens: authorization concurrency, PostgreSQL transaction outcomes and
+release-tool correctness. Public signatures, dependencies and migrations are
+preserved; the existing RS256 key profile is enforced consistently.
+
+- Successful managed RBAC writes reserve bypass when their outcome callbacks
+  register. Standalone writes reserve before committing. This closes the gap
+  between PostgreSQL commit visibility and post-commit cache invalidation.
+- Rollback, callback panic/cancellation and known commit rejection release only
+  their own pending guards. Unknown commit marks the cache uncertain before
+  releasing its guards. Commit invalidation retains the bounded detached context,
+  failed-cache fallback and conservative generation handling.
+- Provider JWKS rejects different RSA public keys sharing one `kid`, while
+  permitting identical duplicates as the verifier does. The JWK encoder rejects
+  blank key IDs; provider signing rejects explicit algorithms other than RS256.
+- `fmt-check` preserves formatter exit status. gci explicitly receives `/dev/null`
+  stdin: its v0.14.0 source automatically includes inherited pipes as Go input.
+  Six regression checks exercise tool errors, format diffs and piped stdin.
+- CI pins golangci-lint v2.14.0, verified from its official checksummed binary
+  built with Go 1.27. Trigger scope, single job, runner size, cancellation and
+  timeout stay bounded; no extra hosted job or matrix is introduced.
+
+Validation status:
+
+- New regressions reproduced stale grants at both commit boundaries, incompatible
+  JWK/signing metadata and swallowed formatter failures before implementation.
+- Focused race checks passed, including existing managed commit/rollback/unknown
+  outcome tests. gci v0.14.0 reproduced the CI `StdIn EOF` error with inherited
+  piped stdin; the corrected formatter gate passed the same input scenario.
+- Final `make release-candidate-readiness`: PASS with CI-matching gci v0.14.0,
+  gofumpt v0.11.0 and the official golangci-lint v2.14.0 binary. The gate includes
+  formatting, tidy, vet, lint, race/coverage, PostgreSQL/Redis integration, both
+  local clean consumers, govulncheck, backup/restore and the real HTTPS browser
+  scenario. Disposable integration containers were removed after verification.
+- Coverage thresholds passed: root 84.7%, OIDC provider 87.1%, RBAC 85.8%,
+  PostgreSQL 81.5%, Redis 100%. Govulncheck reports zero reachable vulnerabilities;
+  three findings remain in unused code of required modules.
+- The full suite exposed a strength-test fixture publishing two different keys
+  under one `kid`. It now uses a separate ID for the 2048/3072-bit active key,
+  preserving issuance, parsing and publication checks under the new invariant.
+- Verified source fingerprint:
+  `c0e1cb7598a85e9739e1bff691b923af384f7632c03268712376365101af3868`.
+  It is SHA-256 of sorted `path + NUL + SHA256(file bytes) + LF` records for
+  tracked and nonignored files, excluding this notes file to avoid self-reference.
+  It identifies the verified working tree, not a new commit or published tag.
+- Final diff and public-document local-path checks passed; CI YAML parsed and
+  its linter pin was verified. This does not establish hosted runner success.
+- Hosted CI for base SHA `fd2062f`: FAIL
+  ([run 36815937502](https://github.com/assurrussa/goauth/actions/runs/36815937502)).
+  Its log confirms the Go 1.26-built linter/Go 1.27 mismatch and swallowed gci error.
+  No hosted run for this local correction has been claimed.
+- Public module/tag verification: not run. Independent audit: not performed.
+
+## 2026-10-01: Snapshot, PKCE and JWK follow-up (historical validation)
 
 Goal: fix the three confirmed findings in the supplied follow-up review.
 Base HEAD: `c2a73cf40ac0a85384bd0ec636793d96791193b6`; the earlier no-findings
@@ -40,12 +98,14 @@ Validation for this working tree:
   It is SHA-256 of sorted `path + NUL + SHA256(file bytes) + LF` records for
   tracked and nonignored files, excluding this notes file to avoid self-reference.
   It identifies the local working tree, not a commit or published tag.
-- Final diff review found no additional actionable issue in these corrections;
+- Historical diff review found no additional actionable issue in those corrections;
   whitespace and public-document local-path checks passed. This is scoped local
   verification, not an independent security audit or hosted CI result.
 
-No release, deployment, GitHub Actions run or new commit is part of this local
-correction. Earlier historical gates do not certify this working tree.
+This section records local verification before commit `fd2062f` was published.
+Hosted CI subsequently failed on that commit, and the later pre-commit cache
+finding above supersedes its review verdict. Historical gates do not certify the
+new working tree or a release tag.
 
 ## 2026-10-01: initial optional-module review corrections (historical validation)
 

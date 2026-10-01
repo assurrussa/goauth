@@ -35,6 +35,10 @@ an omitted `use`/`alg`, and otherwise requires `sig`/`RS256`. RSA material is
 validated separately by `oidc.DecodeRSAPublicKeyJWK`. The provider rejects
 incompatible publication metadata from custom key stores; the verifier filters
 incompatible entries from third-party sets before decoding compatible keys.
+Both reject a `kid` shared by different RSA public keys; identical duplicates are
+allowed. `EncodeRSAPublicKeyJWK` rejects blank signing key IDs. A provider
+`SigningKey.Algorithm` may be omitted (RS256) or set to `RS256`; other values fail
+signing instead of silently being overridden.
 
 The provider validates access-token signatures using only RS256 and requires
 issuer, expiration and issued-at claims. Its configured clock controls time

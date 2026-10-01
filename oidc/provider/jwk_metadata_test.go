@@ -2,8 +2,11 @@
 package provider
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
 	"testing"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/require"
 
 	"github.com/assurrussa/goauth/oidc"
@@ -35,6 +38,48 @@ func TestProviderJWKSRejectsIncompatibleSigningMetadata(t *testing.T) {
 			} else {
 				require.Error(t, err)
 				require.Empty(t, keys.Keys)
+			}
+		})
+	}
+}
+
+func TestProviderJWKSRejectsAmbiguousKeyIDs(t *testing.T) {
+	h := newOIDCTestHarness(t)
+	first := h.keys.jwks[0]
+	h.keys.jwks = append(h.keys.jwks, first)
+	keys, err := h.service.JWKS(t.Context())
+	require.NoError(t, err, "identical duplicates remain compatible with the verifier")
+	require.Len(t, keys.Keys, 2)
+	other, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	conflict, err := oidc.EncodeRSAPublicKeyJWK(first.Kid, &other.PublicKey)
+	require.NoError(t, err)
+	h.keys.jwks[1] = conflict
+	keys, err = h.service.JWKS(t.Context())
+	require.ErrorContains(t, err, "ambiguous signing key id")
+	require.Empty(t, keys.Keys)
+}
+
+func TestProviderSigningAlgorithmPolicy(t *testing.T) {
+	for _, algorithm := range []string{
+		"", jwt.SigningMethodRS256.Alg(), jwt.SigningMethodRS512.Alg(), jwt.SigningMethodPS256.Alg(),
+	} {
+		t.Run(algorithm, func(t *testing.T) {
+			h := newOIDCTestHarness(t)
+			key := h.keys.keys[h.keys.activeID]
+			key.Algorithm = algorithm
+			h.keys.keys[h.keys.activeID] = key
+			code := hostedAuthorizationCode(t, h, rfcPKCEChallenge, codeChallengeMethodS256)
+			response, err := h.service.ExchangeToken(t.Context(), oidc.TokenRequest{
+				GrantType: grantTypeAuthorizationCode, Code: code, ClientID: h.client.ID,
+				RedirectURI: h.client.RedirectURIs[0], CodeVerifier: rfcPKCEVerifier,
+			})
+			if algorithm == "" || algorithm == jwt.SigningMethodRS256.Alg() {
+				require.NoError(t, err)
+				require.NotEmpty(t, response.AccessToken)
+			} else {
+				require.Error(t, err)
+				require.Nil(t, response)
 			}
 		})
 	}

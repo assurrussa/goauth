@@ -100,6 +100,9 @@ func (s *Service) signToken(key oidc.SigningKey, claims jwt.Claims, typ string) 
 }
 
 func validateSigningKey(key oidc.SigningKey) error {
+	if key.Algorithm != "" && key.Algorithm != jwt.SigningMethodRS256.Alg() {
+		return errors.New("unsupported signing key algorithm")
+	}
 	if err := oidc.ValidateRSAPublicKey(key.PublicKey); err != nil {
 		return err
 	}

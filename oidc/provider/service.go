@@ -3,6 +3,7 @@ package provider
 
 import (
 	"context"
+	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
@@ -227,13 +228,19 @@ func (s *Service) JWKS(ctx context.Context) (oidc.JWKS, error) {
 	if err != nil {
 		return oidc.JWKS{}, fmt.Errorf("get jwks: %w", err)
 	}
+	seen := make(map[string]*rsa.PublicKey, len(keys))
 	for _, key := range keys {
 		if err := oidc.ValidateRS256SigningJWKMetadata(key); err != nil {
 			return oidc.JWKS{}, fmt.Errorf("invalid signing jwk: %w", err)
 		}
-		if _, err := oidc.DecodeRSAPublicKeyJWK(key); err != nil {
+		publicKey, err := oidc.DecodeRSAPublicKeyJWK(key)
+		if err != nil {
 			return oidc.JWKS{}, fmt.Errorf("invalid signing jwk: %w", err)
 		}
+		if previous, exists := seen[key.Kid]; exists && !previous.Equal(publicKey) {
+			return oidc.JWKS{}, fmt.Errorf("ambiguous signing key id %q", key.Kid)
+		}
+		seen[key.Kid] = publicKey
 	}
 
 	return oidc.JWKS{Keys: keys}, nil

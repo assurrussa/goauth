@@ -184,13 +184,15 @@ func TestProviderRejectsInvalidSigningKeys(t *testing.T) {
 
 func TestProviderKeyStrengthAcrossIssuanceParsingAndJWKS(t *testing.T) {
 	t.Parallel()
+	const strengthKeyID = "strength-key"
 	for _, bits := range []int{2048, 3072} {
 		t.Run(map[int]string{2048: "2048", 3072: "3072"}[bits], func(t *testing.T) {
 			t.Parallel()
 			h := newOIDCTestHarness(t)
 			key, err := rsa.GenerateKey(rand.Reader, bits)
 			require.NoError(t, err)
-			require.NoError(t, h.keys.addKey(h.keys.activeID, key))
+			require.NoError(t, h.keys.addKey(strengthKeyID, key))
+			h.keys.activeID = strengthKeyID
 			code := hostedAuthorizationCode(t, h, codeChallengeFor(testPKCEVerifier), codeChallengeMethodS256)
 			response, err := h.service.ExchangeToken(context.Background(), oidc.TokenRequest{
 				GrantType: grantTypeAuthorizationCode, Code: code, RedirectURI: h.client.RedirectURIs[0],

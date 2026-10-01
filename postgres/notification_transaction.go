@@ -22,32 +22,47 @@ type (
 )
 
 // All operations sharing the transaction context share this callback owner.
-// Keep each pair together and execute hooks outside the registration lock.
+// Keep outcome hooks together and execute them outside the registration lock.
 type authTransactionCallbacks struct {
 	mu      sync.Mutex
 	entries []authTransactionCallback
 }
 
 type authTransactionCallback struct {
-	afterCommit  func()
-	afterUnknown func()
+	afterCommit   func()
+	afterUnknown  func()
+	afterRollback func()
 }
 
-func (c *authTransactionCallbacks) add(afterCommit, afterUnknown func()) {
+type authTransactionOutcome uint8
+
+const (
+	authTransactionRolledBack authTransactionOutcome = iota
+	authTransactionCommitted
+	authTransactionUnknown
+)
+
+func (c *authTransactionCallbacks) add(afterCommit, afterUnknown, afterRollback func()) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.entries = append(c.entries, authTransactionCallback{afterCommit: afterCommit, afterUnknown: afterUnknown})
+	c.entries = append(c.entries, authTransactionCallback{
+		afterCommit: afterCommit, afterUnknown: afterUnknown, afterRollback: afterRollback,
+	})
 }
 
-func (c *authTransactionCallbacks) run(committed bool) {
+func (c *authTransactionCallbacks) run(outcome authTransactionOutcome) {
 	c.mu.Lock()
 	entries := c.entries
 	c.entries = nil
 	c.mu.Unlock()
 	for _, entry := range entries {
-		callback := entry.afterUnknown
-		if committed {
+		callback := entry.afterRollback
+		switch outcome {
+		case authTransactionCommitted:
 			callback = entry.afterCommit
+		case authTransactionUnknown:
+			callback = entry.afterUnknown
+		case authTransactionRolledBack:
 		}
 		if callback != nil {
 			callback()
@@ -76,18 +91,21 @@ func (s *Store) InAuthTransaction(ctx context.Context, fn func(context.Context) 
 	if err != nil {
 		return fmt.Errorf("begin notification transaction: %w", err)
 	}
-	defer func() { _ = tx.Rollback() }()
 	scope := notificationTxScope{db: s.db, tx: tx, callbacks: &authTransactionCallbacks{}}
+	defer func() {
+		_ = tx.Rollback()
+		scope.callbacks.run(authTransactionRolledBack)
+	}()
 	if err := fn(context.WithValue(ctx, notificationTxContextKey{}, scope)); err != nil {
 		return err
 	}
 	if err := commitAuthTransaction(tx); err != nil {
 		if errors.Is(err, goauth.ErrOperationOutcomeUnknown) {
-			scope.callbacks.run(false)
+			scope.callbacks.run(authTransactionUnknown)
 		}
 		return fmt.Errorf("commit auth transaction: %w", err)
 	}
-	scope.callbacks.run(true)
+	scope.callbacks.run(authTransactionCommitted)
 	return nil
 }
 

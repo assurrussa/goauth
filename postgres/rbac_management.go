@@ -156,11 +156,10 @@ RETURNING `+roleColumns,
 	if err := replaceRolePermissionsTx(ctx, tx, role.ID, keys); err != nil {
 		return rbac.Role{}, err
 	}
-	if err := s.finishWrite(tx, owned); err != nil {
+	if err := s.finishWrite(ctx, tx, owned); err != nil {
 		return rbac.Role{}, fmt.Errorf("commit create RBAC role: %w", err)
 	}
 
-	s.invalidateAfterCommit(ctx)
 	return role, nil
 }
 
@@ -207,11 +206,10 @@ RETURNING `+roleColumns,
 			return rbac.Role{}, err
 		}
 	}
-	if err := s.finishWrite(tx, owned); err != nil {
+	if err := s.finishWrite(ctx, tx, owned); err != nil {
 		return rbac.Role{}, fmt.Errorf("commit update RBAC role: %w", err)
 	}
 
-	s.invalidateAfterCommit(ctx)
 	return role, nil
 }
 
@@ -237,11 +235,10 @@ func (s *rbacStore) DeleteRole(ctx context.Context, roleID int64) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM auth_roles WHERE id = $1`, roleID); err != nil {
 		return fmt.Errorf("delete RBAC role: %w", err)
 	}
-	if err := s.finishWrite(tx, owned); err != nil {
+	if err := s.finishWrite(ctx, tx, owned); err != nil {
 		return fmt.Errorf("commit delete RBAC role: %w", err)
 	}
 
-	s.invalidateAfterCommit(ctx)
 	return nil
 }
 
@@ -348,11 +345,10 @@ func (s *rbacStore) ReplaceRolePermissions(
 	if err := replaceRolePermissionsTx(ctx, tx, roleID, keys); err != nil {
 		return err
 	}
-	if err := s.finishWrite(tx, owned); err != nil {
+	if err := s.finishWrite(ctx, tx, owned); err != nil {
 		return fmt.Errorf("commit replace RBAC permissions: %w", err)
 	}
 
-	s.invalidateAfterCommit(ctx)
 	return nil
 }
 
@@ -422,11 +418,10 @@ SELECT $1, id FROM auth_roles WHERE id = $2`, subjectID, roleID)
 			return fmt.Errorf("%w: %d", rbac.ErrRoleNotFound, roleID)
 		}
 	}
-	if err := s.finishWrite(tx, owned); err != nil {
+	if err := s.finishWrite(ctx, tx, owned); err != nil {
 		return fmt.Errorf("commit replace subject roles: %w", err)
 	}
 
-	s.invalidateAfterCommit(ctx)
 	return nil
 }
 

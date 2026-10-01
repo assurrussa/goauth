@@ -207,11 +207,10 @@ func (s *rbacStore) SetRolePermissions(
 	if err := replaceRolePermissionsTx(ctx, tx, roleID, keys); err != nil {
 		return err
 	}
-	if err := s.finishWrite(tx, owned); err != nil {
+	if err := s.finishWrite(ctx, tx, owned); err != nil {
 		return fmt.Errorf("commit RBAC permission transaction: %w", err)
 	}
 
-	s.invalidateAfterCommit(ctx)
 	return nil
 }
 

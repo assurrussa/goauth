@@ -13,7 +13,7 @@ export GOCACHE GOMODCACHE
 
 .DEFAULT_GOAL := full
 
-.PHONY: full prepare check tidy-check tidy generate fmt fmt-check lint lint-fix vet test test-full test-race bench-all cover-html coverage-unit-check coverage-integration-check coverage-aggregate integration integration-up integration-down integration-local vulnerability-check externalconsumer-local externalconsumer-postgres-local externalconsumer-published release-candidate-readiness release-readiness release-tooling-test release-source-check public-module-check browser-acceptance backup-restore-check release-evidence-check public-preview-readiness
+.PHONY: full prepare check tidy-check tidy generate fmt fmt-check fmt-tooling-test lint lint-fix vet test test-full test-race bench-all cover-html coverage-unit-check coverage-integration-check coverage-aggregate integration integration-up integration-down integration-local vulnerability-check externalconsumer-local externalconsumer-postgres-local externalconsumer-published release-candidate-readiness release-readiness release-tooling-test release-source-check public-module-check browser-acceptance backup-restore-check release-evidence-check public-preview-readiness
 
 GO_MODULE := $(shell awk '$$1 == "module" { print $$2; exit }' go.mod)
 GO_FILES := $(shell find . -type f -name '*.go' -not -path './.cache/*' -not -path './.go-cache/*' -not -path './tmp/*' -not -path './vendor/*')
@@ -38,7 +38,7 @@ full: prepare check
 
 prepare: tidy generate fmt lint-fix
 
-check: release-tooling-test tidy-check fmt-check vet lint test-full coverage-unit-check externalconsumer-local
+check: release-tooling-test fmt-tooling-test tidy-check fmt-check vet lint test-full coverage-unit-check externalconsumer-local
 
 release-candidate-readiness: check integration vulnerability-check coverage-aggregate backup-restore-check browser-acceptance
 
@@ -80,10 +80,13 @@ fmt:
 	gci write -s standard -s default -s "prefix($(GO_MODULE))" $(GO_FILES)
 
 fmt-check:
-	@unformatted="$$(gofumpt -l $(GO_FILES))"; \
+	@unformatted="$$(gofumpt -l $(GO_FILES))" || exit $$?; \
 		test -z "$$unformatted" || { printf 'gofumpt changes are required:\n%s\nRun: make prepare\n' "$$unformatted" >&2; exit 1; }
-	@import_diff="$$(gci diff -s standard -s default -s "prefix($(GO_MODULE))" $(GO_FILES))"; \
+	@import_diff="$$(gci diff -s standard -s default -s "prefix($(GO_MODULE))" $(GO_FILES) < /dev/null)" || exit $$?; \
 		test -z "$$import_diff" || { printf 'gci changes are required:\n%s\nRun: make prepare\n' "$$import_diff" >&2; exit 1; }
+
+fmt-tooling-test:
+	sh ./scripts/check-format-tools-test.sh
 
 lint:
 	golangci-lint run --timeout=5m ./...

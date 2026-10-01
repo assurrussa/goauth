@@ -68,3 +68,17 @@ func TestNilClientSecretVerifierFuncFailsClosed(t *testing.T) {
 	var verify oidc.ClientSecretVerifierFunc
 	require.Error(t, verify.VerifyClientSecret(context.Background(), "client", "secret"))
 }
+
+func TestRSAJWKEncoderRejectsBlankSigningKeyID(t *testing.T) {
+	t.Parallel()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	for _, id := range []string{"", " \t\n"} {
+		jwk, err := oidc.EncodeRSAPublicKeyJWK(id, &key.PublicKey)
+		require.Error(t, err)
+		require.Empty(t, jwk)
+	}
+	jwk, err := oidc.EncodeRSAPublicKeyJWK("key", &key.PublicKey)
+	require.NoError(t, err)
+	require.NoError(t, oidc.ValidateRS256SigningJWKMetadata(jwk))
+}

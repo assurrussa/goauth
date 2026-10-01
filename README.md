@@ -270,6 +270,9 @@ RBAC authorization reads join the transaction and bypass caches. `Snapshot` need
 a standalone repeatable-read transaction; invoking it in a managed auth transaction
 returns `rbac.ErrSnapshotTransactionUnsupported`. Supplied caches must implement
 `rbac.CacheInvalidator`; invalidation follows successful outer commit, never rollback.
+Successful RBAC writes reserve cache bypass before commit, including standalone
+transactions. Rollback releases only its own reservations. While a write is
+pending, other authorization checks read committed PostgreSQL state.
 Each invalidation, including waiting for pending cache fills, has a two-second
 deadline detached from the request cancellation. Invalidators must honor that
 deadline and return after clearing the cache. Timeout leaves committed writes

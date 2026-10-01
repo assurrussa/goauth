@@ -46,14 +46,18 @@ func EncodeRSAPublicKeyJWK(keyID string, publicKey crypto.PublicKey) (JWK, error
 		return JWK{}, err
 	}
 
-	return JWK{
+	jwk := JWK{
 		Kty: jwkKeyTypeRSA,
 		Use: "sig",
 		Kid: keyID,
 		Alg: "RS256",
 		N:   base64.RawURLEncoding.EncodeToString(rsaKey.N.Bytes()),
 		E:   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(rsaKey.E)).Bytes()),
-	}, nil
+	}
+	if err := ValidateRS256SigningJWKMetadata(jwk); err != nil {
+		return JWK{}, err
+	}
+	return jwk, nil
 }
 
 func DecodeRSAPublicKeyJWK(jwk JWK) (*rsa.PublicKey, error) {

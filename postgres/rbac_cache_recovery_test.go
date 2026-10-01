@@ -24,6 +24,11 @@ func (c *recoveryCache) HasPermission(context.Context, goauth.SubjectID, rbac.Pe
 
 func (c *recoveryCache) Invalidate(context.Context) error { return c.err }
 
+// invalidate drives a complete reserved invalidation in the cache fixtures.
+func (c *transactionCache) invalidate(ctx context.Context) {
+	c.invalidatePending(ctx, c.beginInvalidation())
+}
+
 func TestCacheFailureBypassesAndRecovers(t *testing.T) {
 	delegate := &recoveryCache{}
 	cache := &transactionCache{delegate: delegate, invalidator: delegate}

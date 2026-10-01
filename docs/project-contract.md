@@ -40,9 +40,13 @@ returning from its callback and do not retain its context or executor afterward.
 RBAC snapshots run in a standalone repeatable-read, read-only transaction. A
 managed auth context returns `rbac.ErrSnapshotTransactionUnsupported`, preserving
 the normal auth transaction isolation.
-RBAC callback registration is synchronized, with hooks executed after unlocking
-and only after commit. Each invalidation has a two-second deadline detached from
-request cancellation, including lock waits; custom invalidators must honor it.
+RBAC callback registration is synchronized, with outcome hooks executed after
+unlocking. Successful writes reserve cache bypass before commit; rollback releases
+only its own reservations. Managed writes reserve at callback registration, and
+standalone writes reserve before committing their owned transaction. Cache
+invalidation runs only after durable commit. Each invalidation has a two-second
+deadline detached from request cancellation, including lock waits; custom
+invalidators must honor it.
 Timeout keeps committed writes successful. Failed invalidation bypasses cache
 reads to authoritative PostgreSQL until successful invalidation. An unknown RBAC
 write outcome keeps cache reads bypassed for the wrapper lifetime; a read-only

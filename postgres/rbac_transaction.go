@@ -60,14 +60,23 @@ func (c *transactionCache) HasPermission(
 	return allowed, found, err
 }
 
-func (c *transactionCache) invalidate(ctx context.Context) {
-	// Publish bypass before external I/O. Readers never wait for invalidation,
-	// even when a cache backend hangs; late cached reads are discarded.
+// beginInvalidation publishes bypass before a write can become visible. Each
+// reservation must be completed by invalidation or released after rollback.
+func (c *transactionCache) beginInvalidation() uint64 {
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.generation++
-	generation := c.generation
 	c.pending++
-	c.mu.Unlock()
+	return c.generation
+}
+
+func (c *transactionCache) cancelInvalidation() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.pending--
+}
+
+func (c *transactionCache) invalidatePending(ctx context.Context, generation uint64) {
 	// Serialize callbacks separately so their results cannot clear a newer
 	// failure. The state lock is never held while calling the cache backend.
 	if err := c.lockInvalidation(ctx); err != nil {
@@ -131,18 +140,24 @@ func (s *rbacStore) invalidateAfterCommit(ctx context.Context) {
 	if s.cache == nil {
 		return
 	}
-	callback := func() {
-		// Commit is already durable; cancellation must not skip cache invalidation.
-		invalidationCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheInvalidationTimeout)
-		defer cancel()
-		s.cache.invalidate(invalidationCtx)
-	}
+	generation := s.cache.beginInvalidation()
+	callback := func() { s.invalidatePendingAfterCommit(ctx, generation) }
 	scope, managed := ctx.Value(notificationTxContextKey{}).(notificationTxScope)
 	if managed && scope.db == s.db {
-		scope.callbacks.add(callback, s.cache.markUncertain)
+		scope.callbacks.add(callback, func() {
+			s.cache.markUncertain()
+			s.cache.cancelInvalidation()
+		}, s.cache.cancelInvalidation)
 		return
 	}
 	callback()
+}
+
+func (s *rbacStore) invalidatePendingAfterCommit(ctx context.Context, generation uint64) {
+	// Commit is already durable; cancellation must not skip cache invalidation.
+	invalidationCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheInvalidationTimeout)
+	defer cancel()
+	s.cache.invalidatePending(invalidationCtx, generation)
 }
 
 func (s *rbacStore) executor(ctx context.Context) SQLExecutor {
@@ -170,10 +185,23 @@ func (r rejectedSQLExecutor) QueryRowContext(ctx context.Context, query string, 
 	return rejectedQuerier{db: r.db}.QueryRowContext(ctx, query, args...)
 }
 
-func (s *rbacStore) finishWrite(tx *sql.Tx, owned bool) error {
-	err := finishWrite(tx, owned)
-	if s.cache != nil && errors.Is(err, goauth.ErrOperationOutcomeUnknown) {
-		s.cache.markUncertain()
+func (s *rbacStore) finishWrite(ctx context.Context, tx *sql.Tx, owned bool) error {
+	if !owned {
+		s.invalidateAfterCommit(ctx)
+		return nil
 	}
-	return err
+	if s.cache == nil {
+		return finishWrite(tx, true)
+	}
+	// Standalone transactions need the same pre-commit guard as managed writes.
+	generation := s.cache.beginInvalidation()
+	if err := finishWrite(tx, true); err != nil {
+		if errors.Is(err, goauth.ErrOperationOutcomeUnknown) {
+			s.cache.markUncertain()
+		}
+		s.cache.cancelInvalidation()
+		return err
+	}
+	s.invalidatePendingAfterCommit(ctx, generation)
+	return nil
 }
