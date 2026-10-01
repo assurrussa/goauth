@@ -19,12 +19,16 @@ func NewRBAC(db *sql.DB, cache rbac.Cache) (*rbac.Service, error) {
 	}
 
 	store := &rbacStore{db: db}
+	var invalidator rbac.CacheInvalidator
 	if cache != nil {
-		invalidator, ok := cache.(rbac.CacheInvalidator)
+		var ok bool
+		invalidator, ok = cache.(rbac.CacheInvalidator)
 		if !ok {
 			return nil, errors.New("PostgreSQL RBAC cache requires invalidation support")
 		}
-		store.cache = &transactionCache{db: db, delegate: cache, invalidator: invalidator}
+	}
+	store.cache = shareTransactionCache(db, cache, invalidator)
+	if store.cache != nil {
 		cache = store.cache
 	}
 	return rbac.New(store, cache)

@@ -287,6 +287,17 @@ RBAC write commit returns `ErrOperationOutcomeUnknown` and keeps this cache wrap
 bypassed for its lifetime. A read-only snapshot commit error keeps its classification
 without changing cache trust. Database read failures still deny authorization.
 
+Repeated `NewRBAC` or `Runtime.RBAC` calls with the same live, comparable cache
+value and exact `*sql.DB` share the cache guard, invalidation lock and outcome
+state. Keep these services alive to retain cache acceleration. The registry uses
+weak references and does not own the database or cache. Mixing different cache
+values, adding an uncached service, repeating a noncomparable value cache, or
+reassembling after its wrapper is collected permanently switches cached reads to
+PostgreSQL for that DB handle. Invalidation still follows management commits.
+This conservative fallback cannot be cleared by later assembly or invalidation.
+Cache backends must belong to one canonical database; distinct DB handles and
+external SQL writers are outside this coordination contract.
+
 Managed `NotificationDelivery.EncryptedEvent` contains the original sealed envelope
 for hosts that forward delivery into durable transports. The native queue remains
 the initiating auth transaction owner; downstream transports persist ciphertext

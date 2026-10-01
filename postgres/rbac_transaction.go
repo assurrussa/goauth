@@ -27,6 +27,7 @@ type transactionCache struct {
 	pending     int
 	failed      bool
 	uncertain   bool
+	scope       *rbacCacheScope
 }
 
 func (c *transactionCache) HasPermission(
@@ -37,7 +38,7 @@ func (c *transactionCache) HasPermission(
 	}
 	c.mu.Lock()
 	generation := c.generation
-	bypass := c.failed || c.uncertain || c.pending > 0
+	bypass := c.bypassed()
 	c.mu.Unlock()
 	if bypass {
 		return false, false, nil
@@ -49,19 +50,24 @@ func (c *transactionCache) HasPermission(
 	}
 	defer c.delegateMu.RUnlock()
 	c.mu.Lock()
-	bypass = generation != c.generation || c.failed || c.uncertain || c.pending > 0
+	bypass = generation != c.generation || c.bypassed()
 	c.mu.Unlock()
 	if bypass {
 		return false, false, nil
 	}
 	allowed, found, err = c.delegate.HasPermission(ctx, subject, key)
 	c.mu.Lock()
-	changed := generation != c.generation || c.failed || c.uncertain || c.pending > 0
+	changed := generation != c.generation || c.bypassed()
 	c.mu.Unlock()
 	if changed {
 		return false, false, nil
 	}
 	return allowed, found, err
+}
+
+// bypassed is called under c.mu. The database-wide fallback is irreversible.
+func (c *transactionCache) bypassed() bool {
+	return c.failed || c.uncertain || c.pending > 0 || (c.scope != nil && c.scope.disabled.Load())
 }
 
 // beginInvalidation publishes bypass before a write can become visible. Each

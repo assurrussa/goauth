@@ -56,6 +56,16 @@ write outcome keeps cache reads bypassed for the wrapper lifetime; a read-only
 snapshot commit error cannot make cached permissions uncertain. Database failures
 still fail closed.
 
+Repeated RBAC assemblies on the exact same `*sql.DB` and live comparable cache
+share one transaction wrapper, including pending, failed and uncertain state.
+The synchronized registry holds weak DB and wrapper references; DB cleanup only
+removes its registry entry and never closes a host-owned connection or cache.
+Different caches, a mixture with uncached services, repeated noncomparable cache
+values or reconstruction after wrapper collection permanently disable cache reads
+for that DB. Invalidation success cannot restore this fallback. Reusing the same
+live cache/service preserves acceleration. Scope cache backends to one canonical
+database; separate handles and external SQL writes are not coordinated here.
+
 A transaction uses one SQL connection. Consume and close result sets before
 starting another operation on it; serialize mixed Query/Exec work. This callback
 synchronization does not provide a general concurrent SQL query scheduler.

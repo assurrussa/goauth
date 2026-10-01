@@ -1,6 +1,45 @@
 # Implementation notes
 
-## 2026-10-01: Deleted credential-proof subject (local working tree)
+## 2026-10-01: Shared RBAC cache protection (local working tree)
+
+Goal: resolve [r4152858130](https://github.com/assurrussa/goauth/pull/11#discussion_r4152858130).
+Base HEAD: `6c6ed6b2c8173d8c3dc0b1fe496396145935be11`, initially clean.
+Review lens: authorization concurrency and cache-state lifetime.
+
+- Equal live comparable cache values on one exact DB share the full wrapper,
+  including pending guards, invalidation lock, failure/unknown state and managed
+  outcome callbacks. Invalid constructor inputs do not affect existing services.
+- A weak DB/wrapper registry avoids retaining host resources. Ambiguous assembly
+  permanently selects authoritative reads for that DB: different/nil caches,
+  noncomparable repeated values or an original wrapper collected before reuse.
+  This preserves authorization and constructor compatibility, with a documented
+  cache-acceleration tradeoff in those cases. Distinct DB handles remain outside
+  the coordination contract; no public symbols, dependencies or schema are added.
+- The original race reproduced through both public constructors with standalone
+  and managed transactions. Focused race checks passed three times, including
+  concurrent constructors, callback coalescing, rollback/unknown/failure outcomes,
+  value caches, invalid construction, collected wrappers and registry cleanup.
+- Go 1.27.1 `go doc weak.Pointer` and `go doc runtime.AddCleanup` establish weak
+  identity and cleanup constraints. Context7 returned no matching excerpt, so the
+  installed toolchain's official documentation supplies the API evidence.
+- Live PostgreSQL shared-cache and uncached-writer regressions passed under race
+  detection. Final `make release-candidate-readiness`: PASS for formatting, tidy,
+  vet, lint, race/coverage, PostgreSQL/Redis integration, both clean local
+  consumers, govulncheck, backup/restore and actual HTTPS browser acceptance.
+  Coverage thresholds passed: root 84.7%, OIDC provider 87.7%, RBAC 85.8%,
+  PostgreSQL 83.0%, Redis 100%. Govulncheck reported zero reachable vulnerabilities;
+  three findings remain in required modules outside called code paths.
+- Independent read-only review of cache concurrency, ownership and regressions
+  found no actionable defect. This was a focused review, not a full security audit.
+  Gopls did not load the new source file and retained missing-symbol diagnostics;
+  compilation, vet, lint and race tests checked the current source instead.
+- Final diff and source fingerprint checks passed. Disposable integration
+  containers, volumes and network were removed. No commit, push, hosted CI result
+  or published release is claimed. Verified source fingerprint (excluding these
+  running notes):
+  `4ba03ae6623d4656b3ad99599032346cd078008a7d59e3629c6e0e6a79e7598c`.
+
+## 2026-10-01: Deleted credential-proof subject (historical validation)
 
 Goal: resolve [r4152563001](https://github.com/assurrussa/goauth/pull/11#discussion_r4152563001).
 Base HEAD: `6c661eb056cc734e8fb8c11817d38a87ae9a5795`, initially clean.

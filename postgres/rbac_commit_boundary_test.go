@@ -6,6 +6,7 @@ import (
 	"database/sql/driver"
 	"errors"
 	"io"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -36,7 +37,10 @@ func (c *cacheBoundaryConn) BeginTx(context.Context, driver.TxOptions) (driver.T
 	return cacheBoundaryTx{boundary: c.boundary}, nil
 }
 
-func (*cacheBoundaryConn) QueryContext(context.Context, string, []driver.NamedValue) (driver.Rows, error) {
+func (*cacheBoundaryConn) QueryContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Rows, error) {
+	if strings.Contains(query, "SELECT EXISTS") {
+		return &cacheBoundaryRoleRows{value: false}, nil
+	}
 	return &cacheBoundaryRoleRows{}, nil
 }
 
@@ -49,7 +53,10 @@ func (tx cacheBoundaryTx) Commit() error {
 
 func (cacheBoundaryTx) Rollback() error { return nil }
 
-type cacheBoundaryRoleRows struct{ read bool }
+type cacheBoundaryRoleRows struct {
+	read  bool
+	value driver.Value
+}
 
 func (*cacheBoundaryRoleRows) Columns() []string { return []string{"id"} }
 func (*cacheBoundaryRoleRows) Close() error      { return nil }
@@ -58,7 +65,10 @@ func (r *cacheBoundaryRoleRows) Next(values []driver.Value) error {
 		return io.EOF
 	}
 	r.read = true
-	values[0] = int64(1)
+	values[0] = r.value
+	if r.value == nil {
+		values[0] = int64(1)
+	}
 	return nil
 }
 
