@@ -1,6 +1,30 @@
 # Implementation notes
 
-## 2026-10-01: Delivery deadlines and handled RBAC errors (local working tree)
+## 2026-10-01: Deleted credential-proof subject (local working tree)
+
+Goal: resolve [r4152563001](https://github.com/assurrussa/goauth/pull/11#discussion_r4152563001).
+Base HEAD: `6c661eb056cc734e8fb8c11817d38a87ae9a5795`, initially clean.
+Review lens: authentication error classification. A subject deleted after
+`PrepareCredential` invalidates its proof. Revalidation now returns
+`ErrInvalidCredentials` for `sql.ErrNoRows`; other SQL errors retain their cause
+and storage-error wrapper. Public signatures, dependencies and schema are unchanged.
+
+Unit and live PostgreSQL regressions reproduced the incorrect storage error
+before the fix. After the correction:
+
+- `go test -race ./postgres -run '^TestCredentialProofSubjectLockErrorClassification$' -count=1`: PASS;
+  missing subjects deny authentication, while storage errors and query deadlines
+  retain their original cause and wrapper. Failed revalidation returns no account.
+- `go test -race -tags=integration ./postgres -run '^TestPreparedCredential' -count=1`: PASS on live PostgreSQL;
+  deleted subjects, canonical security changes and expiry during row-lock waits
+  are covered. Disposable integration fixtures were removed afterward.
+- `make check`: PASS for formatting, tidy, vet, lint, race/coverage and the local
+  clean consumer. Go diagnostics and final diff checks passed.
+
+The full candidate/browser/backup gate was not rerun for this isolated error
+classification change. No commit, push, new hosted CI result or release is claimed.
+
+## 2026-10-01: Delivery deadlines and handled RBAC errors (historical validation)
 
 Goal: fix the supplied review and PR discussion
 [r4152303917](https://github.com/assurrussa/goauth/pull/11#discussion_r4152303917).

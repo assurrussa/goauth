@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"time"
@@ -51,6 +52,9 @@ func (r *Runtime) RevalidateCredential(ctx context.Context, proof *CredentialPro
 	var subject goauth.SubjectID
 	if err := tx.QueryRowContext(ctx, "SELECT id FROM auth_subjects WHERE id=$1 FOR UPDATE",
 		proof.account.Subject.ID).Scan(&subject); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return goauth.Account{}, goauth.ErrInvalidCredentials
+		}
 		return goauth.Account{}, fmt.Errorf("lock verified subject: %w", err)
 	}
 	// A lock wait must not extend the proof's recent-authentication window.

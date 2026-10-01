@@ -61,3 +61,39 @@ func TestPreparedCredentialRevalidatesCanonicalSecurityAndHoldsSubjectLock(t *te
 	err = runtime.InAuthTransaction(t.Context(), func(ctx context.Context) error { _, err := runtime.RevalidateCredential(ctx, fresh); return err })
 	require.ErrorIs(t, err, goauth.ErrInvalidCredentials)
 }
+
+func TestPreparedCredentialRejectsDeletedCanonicalSubject(t *testing.T) {
+	db := integrationDB(t)
+	resetSchema(t, db)
+	require.NoError(t, postgres.Migrate(t.Context(), db))
+	config := runtimeConfig(t)
+	config.NotificationDelivery = goauth.NotificationDeliveryDisabled
+	runtime, err := postgres.NewRuntime(postgres.Config{DB: db, Runtime: config})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, runtime.Close()) })
+	account, err := runtime.ProvisionTrustedLocalAccount(t.Context(), goauth.RegisterRequest{
+		Email: "deleted-proof@example.test", Password: "Integration-Deleted-Proof-Passphrase-1",
+	})
+	require.NoError(t, err)
+	proof, err := runtime.PrepareCredential(t.Context(), goauth.Credential{
+		Identifier: goauth.IdentifierInput{Scheme: goauth.IdentifierSchemeEmail, Value: account.PrimaryEmail.DisplayValue},
+		Password:   "Integration-Deleted-Proof-Passphrase-1",
+	})
+	require.NoError(t, err)
+	require.NoError(t, runtime.InAuthTransaction(t.Context(), func(ctx context.Context) error {
+		verified, err := runtime.RevalidateCredential(ctx, proof)
+		require.Equal(t, account.Subject.ID, verified.Subject.ID)
+		return err
+	}))
+	result, err := db.ExecContext(t.Context(), "DELETE FROM auth_subjects WHERE id=$1", account.Subject.ID)
+	require.NoError(t, err)
+	deleted, err := result.RowsAffected()
+	require.NoError(t, err)
+	require.EqualValues(t, 1, deleted)
+	err = runtime.InAuthTransaction(t.Context(), func(ctx context.Context) error {
+		verified, err := runtime.RevalidateCredential(ctx, proof)
+		require.Empty(t, verified, "a stale proof cannot grant host membership")
+		return err
+	})
+	require.ErrorIs(t, err, goauth.ErrInvalidCredentials)
+}
