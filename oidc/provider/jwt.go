@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -100,6 +101,9 @@ func (s *Service) signToken(key oidc.SigningKey, claims jwt.Claims, typ string) 
 }
 
 func validateSigningKey(key oidc.SigningKey) error {
+	if strings.TrimSpace(key.ID) == "" {
+		return errors.New("signing key id is required")
+	}
 	if key.Algorithm != "" && key.Algorithm != jwt.SigningMethodRS256.Alg() {
 		return errors.New("unsupported signing key algorithm")
 	}

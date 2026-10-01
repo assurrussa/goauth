@@ -41,10 +41,13 @@ RBAC snapshots run in a standalone repeatable-read, read-only transaction. A
 managed auth context returns `rbac.ErrSnapshotTransactionUnsupported`, preserving
 the normal auth transaction isolation.
 RBAC callback registration is synchronized, with outcome hooks executed after
-unlocking. Successful writes reserve cache bypass before commit; rollback releases
-only its own reservations. Managed writes reserve at callback registration, and
-standalone writes reserve before committing their owned transaction. Cache
-invalidation runs only after durable commit. Each invalidation has a two-second
+unlocking. Writes reserve cache bypass before SQL mutation; rollback releases
+only its own reservations. Each transaction/cache pair shares one guard and one
+outcome callback regardless of write count. Managed RBAC mutations serialize their
+operation savepoints: errors restore the operation's state even when the host
+handles the error and continues the transaction. Recovery uses a bounded context
+detached from child cancellation; recovery failure aborts the outer transaction.
+Cache invalidation runs only after durable commit. Each invalidation has a two-second
 deadline detached from request cancellation, including lock waits; custom
 invalidators must honor it.
 Timeout keeps committed writes successful. Failed invalidation bypasses cache
@@ -56,7 +59,7 @@ still fail closed.
 A transaction uses one SQL connection. Consume and close result sets before
 starting another operation on it; serialize mixed Query/Exec work. This callback
 synchronization does not provide a general concurrent SQL query scheduler.
-Idempotent role assignment uses one Exec without changing the assignment's
+Idempotent role assignment uses one mutation Exec without changing the assignment's
 `created_at`; repeated assignments can create an additional PostgreSQL row version.
 
 ## Schema lifecycle

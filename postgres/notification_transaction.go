@@ -25,7 +25,9 @@ type (
 // Keep outcome hooks together and execute them outside the registration lock.
 type authTransactionCallbacks struct {
 	mu      sync.Mutex
+	rbacMu  sync.Mutex
 	entries []authTransactionCallback
+	caches  map[*transactionCache]struct{}
 }
 
 type authTransactionCallback struct {
@@ -41,14 +43,6 @@ const (
 	authTransactionCommitted
 	authTransactionUnknown
 )
-
-func (c *authTransactionCallbacks) add(afterCommit, afterUnknown, afterRollback func()) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.entries = append(c.entries, authTransactionCallback{
-		afterCommit: afterCommit, afterUnknown: afterUnknown, afterRollback: afterRollback,
-	})
-}
 
 func (c *authTransactionCallbacks) run(outcome authTransactionOutcome) {
 	c.mu.Lock()

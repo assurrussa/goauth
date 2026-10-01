@@ -166,7 +166,9 @@ func (c *controlledInvalidationCache) Invalidate(ctx context.Context) error { re
 
 func TestManagedCacheInvalidationHonorsDeadlineAfterCommit(t *testing.T) {
 	db := openNotificationRecordingDB(t, "deadline")
+	var calls int
 	delegate := &controlledInvalidationCache{invalidate: func(ctx context.Context) error {
+		calls++
 		deadline, ok := ctx.Deadline()
 		require.True(t, ok, "post-commit invalidation must have a deadline")
 		require.WithinDuration(t, time.Now().Add(cacheInvalidationTimeout), deadline, time.Second)
@@ -177,9 +179,15 @@ func TestManagedCacheInvalidationHonorsDeadlineAfterCommit(t *testing.T) {
 	management := &rbacStore{db: db, cache: cache}
 	start := time.Now()
 	require.NoError(t, (&Store{db: db}).InAuthTransaction(t.Context(), func(ctx context.Context) error {
-		return management.AssignRole(ctx, goauth.NewSubjectID(), "operator")
+		for range 64 {
+			if err := management.AssignRole(ctx, goauth.NewSubjectID(), "operator"); err != nil {
+				return err
+			}
+		}
+		return nil
 	}))
 	require.Less(t, time.Since(start), cacheInvalidationTimeout+time.Second)
+	require.Equal(t, 1, calls, "write count cannot multiply the invalidation deadline")
 	_, found, err := cache.HasPermission(t.Context(), goauth.NewSubjectID(), "users:read")
 	require.NoError(t, err)
 	require.False(t, found, "timed-out invalidation must leave cache bypassed")
@@ -196,7 +204,7 @@ func TestCacheInvalidationDetachesCanceledRequest(t *testing.T) {
 	management := &rbacStore{cache: &transactionCache{delegate: delegate, invalidator: delegate}}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	management.invalidateAfterCommit(ctx)
+	management.invalidatePendingAfterCommit(ctx, management.cache.beginInvalidation())
 }
 
 func TestCacheLockTimeoutCannotBeClearedByOlderSuccess(t *testing.T) {

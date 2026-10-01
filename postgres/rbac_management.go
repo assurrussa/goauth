@@ -134,11 +134,12 @@ func (s *rbacStore) CreateRole(
 	role rbac.Role,
 	keys []rbac.PermissionKey,
 ) (rbac.Role, error) {
-	tx, owned, err := (&Store{db: s.db}).beginWrite(ctx)
+	write, err := s.beginWrite(ctx)
 	if err != nil {
 		return rbac.Role{}, fmt.Errorf("begin create RBAC role: %w", err)
 	}
-	defer rollbackWrite(tx, owned)
+	defer write.rollback(ctx)
+	tx := write.tx
 	role.PublicID = uuid.NewString()
 	role, err = scanRole(tx.QueryRowContext(ctx, `
 INSERT INTO auth_roles (public_id, slug, name, description, is_system)
@@ -156,7 +157,7 @@ RETURNING `+roleColumns,
 	if err := replaceRolePermissionsTx(ctx, tx, role.ID, keys); err != nil {
 		return rbac.Role{}, err
 	}
-	if err := s.finishWrite(ctx, tx, owned); err != nil {
+	if err := write.finish(ctx); err != nil {
 		return rbac.Role{}, fmt.Errorf("commit create RBAC role: %w", err)
 	}
 
@@ -168,11 +169,12 @@ func (s *rbacStore) UpdateRole(
 	role rbac.Role,
 	keys *[]rbac.PermissionKey,
 ) (rbac.Role, error) {
-	tx, owned, err := (&Store{db: s.db}).beginWrite(ctx)
+	write, err := s.beginWrite(ctx)
 	if err != nil {
 		return rbac.Role{}, fmt.Errorf("begin update RBAC role: %w", err)
 	}
-	defer rollbackWrite(tx, owned)
+	defer write.rollback(ctx)
+	tx := write.tx
 	current, err := scanRole(tx.QueryRowContext(
 		ctx,
 		`SELECT `+roleColumns+` FROM auth_roles WHERE id = $1 FOR UPDATE`,
@@ -206,7 +208,7 @@ RETURNING `+roleColumns,
 			return rbac.Role{}, err
 		}
 	}
-	if err := s.finishWrite(ctx, tx, owned); err != nil {
+	if err := write.finish(ctx); err != nil {
 		return rbac.Role{}, fmt.Errorf("commit update RBAC role: %w", err)
 	}
 
@@ -214,11 +216,12 @@ RETURNING `+roleColumns,
 }
 
 func (s *rbacStore) DeleteRole(ctx context.Context, roleID int64) error {
-	tx, owned, err := (&Store{db: s.db}).beginWrite(ctx)
+	write, err := s.beginWrite(ctx)
 	if err != nil {
 		return fmt.Errorf("begin delete RBAC role: %w", err)
 	}
-	defer rollbackWrite(tx, owned)
+	defer write.rollback(ctx)
+	tx := write.tx
 	var system bool
 	if err := tx.QueryRowContext(
 		ctx,
@@ -235,7 +238,7 @@ func (s *rbacStore) DeleteRole(ctx context.Context, roleID int64) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM auth_roles WHERE id = $1`, roleID); err != nil {
 		return fmt.Errorf("delete RBAC role: %w", err)
 	}
-	if err := s.finishWrite(ctx, tx, owned); err != nil {
+	if err := write.finish(ctx); err != nil {
 		return fmt.Errorf("commit delete RBAC role: %w", err)
 	}
 
@@ -328,11 +331,12 @@ func (s *rbacStore) ReplaceRolePermissions(
 	roleID int64,
 	keys []rbac.PermissionKey,
 ) error {
-	tx, owned, err := (&Store{db: s.db}).beginWrite(ctx)
+	write, err := s.beginWrite(ctx)
 	if err != nil {
 		return fmt.Errorf("begin replace RBAC permissions: %w", err)
 	}
-	defer rollbackWrite(tx, owned)
+	defer write.rollback(ctx)
+	tx := write.tx
 	if err := tx.QueryRowContext(
 		ctx,
 		`SELECT id FROM auth_roles WHERE id = $1 FOR UPDATE`,
@@ -345,7 +349,7 @@ func (s *rbacStore) ReplaceRolePermissions(
 	if err := replaceRolePermissionsTx(ctx, tx, roleID, keys); err != nil {
 		return err
 	}
-	if err := s.finishWrite(ctx, tx, owned); err != nil {
+	if err := write.finish(ctx); err != nil {
 		return fmt.Errorf("commit replace RBAC permissions: %w", err)
 	}
 
@@ -385,11 +389,12 @@ func (s *rbacStore) ReplaceSubjectRoles(
 	subjectID goauth.SubjectID,
 	roleIDs []int64,
 ) error {
-	tx, owned, err := (&Store{db: s.db}).beginWrite(ctx)
+	write, err := s.beginWrite(ctx)
 	if err != nil {
 		return fmt.Errorf("begin replace subject roles: %w", err)
 	}
-	defer rollbackWrite(tx, owned)
+	defer write.rollback(ctx)
+	tx := write.tx
 	var locked goauth.SubjectID
 	if err := tx.QueryRowContext(
 		ctx,
@@ -418,7 +423,7 @@ SELECT $1, id FROM auth_roles WHERE id = $2`, subjectID, roleID)
 			return fmt.Errorf("%w: %d", rbac.ErrRoleNotFound, roleID)
 		}
 	}
-	if err := s.finishWrite(ctx, tx, owned); err != nil {
+	if err := write.finish(ctx); err != nil {
 		return fmt.Errorf("commit replace subject roles: %w", err)
 	}
 

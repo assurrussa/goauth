@@ -76,7 +76,7 @@ func TestConcurrentManagedRBACCachePostgresCommitBoundary(t *testing.T) {
 		} else {
 			require.NoError(t, err)
 			require.Len(t, roles, 1)
-			require.EqualValues(t, 64, cache.calls.Load(), "all public AssignRole callbacks execute")
+			require.EqualValues(t, 1, cache.calls.Load(), "parallel writes share one invalidation")
 			require.True(t, permissions.Can(t.Context(), account.Subject.ID, "users:read"))
 		}
 	}

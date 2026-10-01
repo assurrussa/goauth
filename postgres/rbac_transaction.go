@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -11,7 +12,10 @@ import (
 	"github.com/assurrussa/goauth/rbac"
 )
 
-const cacheInvalidationTimeout = 2 * time.Second
+const (
+	cacheInvalidationTimeout     = 2 * time.Second
+	rbacOperationRecoveryTimeout = 2 * time.Second
+)
 
 type transactionCache struct {
 	db          *sql.DB
@@ -136,21 +140,30 @@ func (c *transactionCache) markUncertain() {
 	c.generation++
 }
 
-func (s *rbacStore) invalidateAfterCommit(ctx context.Context) {
+// reserveManagedInvalidation coalesces writes by transaction/cache identity.
+// Register the guard before SQL mutation, including operations that later fail.
+func (s *rbacStore) reserveManagedInvalidation(ctx context.Context, callbacks *authTransactionCallbacks) {
 	if s.cache == nil {
 		return
 	}
-	generation := s.cache.beginInvalidation()
-	callback := func() { s.invalidatePendingAfterCommit(ctx, generation) }
-	scope, managed := ctx.Value(notificationTxContextKey{}).(notificationTxScope)
-	if managed && scope.db == s.db {
-		scope.callbacks.add(callback, func() {
-			s.cache.markUncertain()
-			s.cache.cancelInvalidation()
-		}, s.cache.cancelInvalidation)
+	callbacks.mu.Lock()
+	defer callbacks.mu.Unlock()
+	if _, reserved := callbacks.caches[s.cache]; reserved {
 		return
 	}
-	callback()
+	if callbacks.caches == nil {
+		callbacks.caches = make(map[*transactionCache]struct{})
+	}
+	generation := s.cache.beginInvalidation()
+	callbacks.caches[s.cache] = struct{}{}
+	callbacks.entries = append(callbacks.entries, authTransactionCallback{
+		afterCommit: func() { s.invalidatePendingAfterCommit(ctx, generation) },
+		afterUnknown: func() {
+			s.cache.markUncertain()
+			s.cache.cancelInvalidation()
+		},
+		afterRollback: s.cache.cancelInvalidation,
+	})
 }
 
 func (s *rbacStore) invalidatePendingAfterCommit(ctx context.Context, generation uint64) {
@@ -185,23 +198,101 @@ func (r rejectedSQLExecutor) QueryRowContext(ctx context.Context, query string, 
 	return rejectedQuerier{db: r.db}.QueryRowContext(ctx, query, args...)
 }
 
-func (s *rbacStore) finishWrite(ctx context.Context, tx *sql.Tx, owned bool) error {
-	if !owned {
-		s.invalidateAfterCommit(ctx)
+// rbacWrite protects each operation, even if its error is handled by the host.
+// Managed RBAC operations serialize their savepoints on the shared connection.
+type rbacWrite struct {
+	store      *rbacStore
+	tx         *sql.Tx
+	owned      bool
+	generation uint64
+	unlock     func()
+	finished   bool
+}
+
+func (s *rbacStore) beginWrite(ctx context.Context) (*rbacWrite, error) {
+	w := &rbacWrite{store: s}
+	scope, managed := ctx.Value(notificationTxContextKey{}).(notificationTxScope)
+	if managed && scope.db == s.db {
+		scope.callbacks.rbacMu.Lock()
+		w.unlock = scope.callbacks.rbacMu.Unlock
+	}
+	if err := ctx.Err(); err != nil {
+		if w.unlock != nil {
+			w.unlock()
+		}
+		return nil, err
+	}
+	var err error
+	w.tx, w.owned, err = (&Store{db: s.db}).beginWrite(ctx)
+	if err != nil {
+		if w.unlock != nil {
+			w.unlock()
+		}
+		return nil, err
+	}
+	if w.owned {
+		if s.cache != nil {
+			w.generation = s.cache.beginInvalidation()
+		}
+	} else {
+		s.reserveManagedInvalidation(ctx, scope.callbacks)
+		if _, err := w.tx.ExecContext(ctx, `SAVEPOINT goauth_rbac_operation`); err != nil {
+			// A failed savepoint cannot support safe operation-level recovery.
+			_ = w.tx.Rollback()
+			w.unlock()
+			return nil, fmt.Errorf("begin RBAC operation savepoint: %w", err)
+		}
+	}
+	return w, nil
+}
+
+func (w *rbacWrite) finish(ctx context.Context) error {
+	if !w.owned {
+		if _, err := w.tx.ExecContext(ctx, `RELEASE SAVEPOINT goauth_rbac_operation`); err != nil {
+			return fmt.Errorf("release RBAC operation savepoint: %w", err)
+		}
+		w.finished = true
 		return nil
 	}
-	if s.cache == nil {
-		return finishWrite(tx, true)
-	}
-	// Standalone transactions need the same pre-commit guard as managed writes.
-	generation := s.cache.beginInvalidation()
-	if err := finishWrite(tx, true); err != nil {
-		if errors.Is(err, goauth.ErrOperationOutcomeUnknown) {
-			s.cache.markUncertain()
+	// Keep the guard through the commit result and the detached invalidation.
+	w.finished = true
+	if err := finishWrite(w.tx, true); err != nil {
+		if w.store.cache != nil {
+			if errors.Is(err, goauth.ErrOperationOutcomeUnknown) {
+				w.store.cache.markUncertain()
+			}
+			w.store.cache.cancelInvalidation()
 		}
-		s.cache.cancelInvalidation()
 		return err
 	}
-	s.invalidatePendingAfterCommit(ctx, generation)
+	if w.store.cache != nil {
+		w.store.invalidatePendingAfterCommit(ctx, w.generation)
+	}
 	return nil
+}
+
+func (w *rbacWrite) rollback(ctx context.Context) {
+	if w.unlock != nil {
+		defer w.unlock()
+	}
+	if w.owned {
+		_ = w.tx.Rollback()
+		if !w.finished && w.store.cache != nil {
+			w.store.cache.cancelInvalidation()
+		}
+		return
+	}
+	if w.finished {
+		return
+	}
+	// A child operation cancellation must not prevent restoring the savepoint.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rbacOperationRecoveryTimeout)
+	defer cancel()
+	if _, err := w.tx.ExecContext(ctx, `ROLLBACK TO SAVEPOINT goauth_rbac_operation`); err != nil {
+		_ = w.tx.Rollback() // Fail closed: the host cannot commit partial writes.
+		return
+	}
+	if _, err := w.tx.ExecContext(ctx, `RELEASE SAVEPOINT goauth_rbac_operation`); err != nil {
+		_ = w.tx.Rollback()
+	}
 }

@@ -270,10 +270,14 @@ RBAC authorization reads join the transaction and bypass caches. `Snapshot` need
 a standalone repeatable-read transaction; invoking it in a managed auth transaction
 returns `rbac.ErrSnapshotTransactionUnsupported`. Supplied caches must implement
 `rbac.CacheInvalidator`; invalidation follows successful outer commit, never rollback.
-Successful RBAC writes reserve cache bypass before commit, including standalone
-transactions. Rollback releases only its own reservations. While a write is
-pending, other authorization checks read committed PostgreSQL state.
-Each invalidation, including waiting for pending cache fills, has a two-second
+RBAC writes reserve cache bypass before SQL mutation, including standalone
+transactions. Managed operations use savepoints: an operation error restores its
+changes even if the host handles it and commits other writes. RBAC mutations on
+the same managed connection are serialized. Failure to restore a savepoint aborts
+the outer transaction. Rollback releases only its own reservations. While a write
+is pending, other authorization checks read committed PostgreSQL state.
+Each transaction/cache pair shares one guard and one invalidation regardless of
+write count. Each invalidation, including waiting for pending cache fills, has a two-second
 deadline detached from the request cancellation. Invalidators must honor that
 deadline and return after clearing the cache. Timeout leaves committed writes
 successful and the cache bypassed; an older completion cannot clear a newer failure.
@@ -290,8 +294,11 @@ only and deduplicate by delivery ID. `Notification` plaintext is ephemeral; neve
 persist its reset URLs or codes. Acceptance is at least once, so SMTP or downstream
 transport acceptance may repeat after an uncertain acknowledgement. The worker
 renews its owned unexpired lease while reserving the attempt before sending;
-reservation and send share a bounded deadline. Senders must honor cancellation
-and should deduplicate by delivery ID.
+reservation and send share a bounded deadline. Expiry of that delivery deadline
+expires, retries or exhausts only the delivery; it does not stop the worker pool.
+After an ambiguous reservation timeout, the worker reads the persisted attempt
+count under the same lease token before settling the delivery. Parent cancellation
+stops the worker. Senders must honor cancellation and should deduplicate by delivery ID.
 
 Privileged hosts can use `Runtime.RequestPasswordResetWithReceipt` to bind a
 `PasswordResetReceipt` (subject ID and public selector only) within the same

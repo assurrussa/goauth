@@ -1,6 +1,66 @@
 # Implementation notes
 
-## 2026-10-01: Pre-commit RBAC bypass, CI and JWK follow-up (local working tree)
+## 2026-10-01: Delivery deadlines and handled RBAC errors (local working tree)
+
+Goal: fix the supplied review and PR discussion
+[r4152303917](https://github.com/assurrussa/goauth/pull/11#discussion_r4152303917).
+Base HEAD: `a15e8fcd001e893c3e39ec04d942ae1f349f4357`, initially clean.
+Review lens: worker reliability, authorization cache consistency and operation
+atomicity. Preserve public signatures, dependencies and migrations.
+
+- Child delivery deadlines expire/retry/exhaust only the delivery, preserving
+  the running worker. Ambiguous reservation cancellation reconciles persisted
+  attempts under the owned lease token. pgx query-canceled errors are classified
+  only when the child context is done. Parent cancellation stops the worker;
+  genuine storage errors remain fatal, including errors coincident with timeout.
+- All RBAC mutations reserve bypass before SQL and share a write helper.
+  Managed mutations serialize their savepoints and roll back operation-local
+  changes even if the host handles the error and commits other writes. Recovery
+  uses a bounded detached context; failed recovery aborts the outer transaction.
+- One guard and one outcome callback are reserved per transaction/cache pair,
+  preserving synchronized registration, rollback and unknown-outcome behavior.
+  Separate cache wrappers and overlapping transactions retain separate guards.
+- Provider signing rejects blank active key IDs and preserves valid IDs verbatim.
+
+Validation:
+
+- New tests reproduced callback fan-out and blank signing IDs on the original
+  implementation. The handled-error regression failed for all six cases against
+  an exact temporary copy of the base SHA and live PostgreSQL. Worker regressions
+  reproduced the deadline failure before its correction.
+- Focused race checks passed for deadline/parent/storage outcomes, concurrent
+  RBAC writes, commit boundaries, rollback, savepoint recovery failures and
+  signing IDs. Live PostgreSQL checks cover all five handled business-error paths,
+  SQL-error recovery, continuation of host writes, retained metadata/permissions
+  and 64 concurrent assignments with one invalidation.
+- Go diagnostics for edited implementation files are clear of errors; existing
+  style hints remain. Some new test files lacked gopls metadata; compilation,
+  lint and race tests checked them through the full gate instead.
+- Final `make release-candidate-readiness`: PASS with CI-matching gci v0.14.0,
+  gofumpt v0.11.0 and official golangci-lint v2.14.0. Formatting, tidy, vet, lint,
+  race/coverage, PostgreSQL/Redis integration, both clean local consumers,
+  govulncheck, backup/restore and actual HTTPS browser acceptance all passed.
+  Disposable integration containers, volumes and network were removed.
+- Coverage thresholds passed: root 84.7%, OIDC provider 87.2%, RBAC 85.8%,
+  PostgreSQL 82.5%, Redis 100%. Govulncheck found zero reachable vulnerabilities;
+  three findings remain in required modules outside called code paths.
+- Independent read-only review of this diff and new tests found no actionable
+  defect. Its scope was transaction/cache correctness and worker outcomes;
+  it was not a complete security audit.
+- Verified source fingerprint:
+  `61213eddcad2505e777303b965a6b6bfdedd38cf502ee1df80492e758e15ef2a`.
+  It is SHA-256 of sorted `path + NUL + SHA256(file bytes) + LF` records for
+  tracked and nonignored files, excluding this notes file. It stayed unchanged
+  throughout the full gate and identifies local sources, not a published commit.
+- Final diff and public-document local-path checks passed. No commit, push,
+  new hosted CI run, tag or exact-tag public module verification was performed.
+
+Hosted CI for the base SHA passed:
+[run 36821855136](https://github.com/assurrussa/goauth/actions/runs/36821855136).
+This verifies the committed base only; the findings above supersede the earlier
+review verdicts. The new local validation is recorded separately above.
+
+## 2026-10-01: Pre-commit RBAC bypass, CI and JWK follow-up (historical validation)
 
 Goal: resolve PR discussion
 [r4151920361](https://github.com/assurrussa/goauth/pull/11#discussion_r4151920361)

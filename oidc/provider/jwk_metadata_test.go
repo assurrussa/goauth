@@ -84,3 +84,28 @@ func TestProviderSigningAlgorithmPolicy(t *testing.T) {
 		})
 	}
 }
+
+func TestProviderSigningKeyRequiresID(t *testing.T) {
+	for _, id := range []string{"", " \t", " signing-key "} {
+		t.Run(id, func(t *testing.T) {
+			h := newOIDCTestHarness(t)
+			key := h.keys.keys[h.keys.activeID]
+			key.ID = id
+			h.keys.keys[h.keys.activeID] = key
+			code := hostedAuthorizationCode(t, h, rfcPKCEChallenge, codeChallengeMethodS256)
+			response, err := h.service.ExchangeToken(t.Context(), oidc.TokenRequest{
+				GrantType: grantTypeAuthorizationCode, Code: code, ClientID: h.client.ID,
+				RedirectURI: h.client.RedirectURIs[0], CodeVerifier: rfcPKCEVerifier,
+			})
+			if id == " signing-key " {
+				require.NoError(t, err)
+				token, _, parseErr := new(jwt.Parser).ParseUnverified(response.AccessToken, jwt.MapClaims{})
+				require.NoError(t, parseErr)
+				require.Equal(t, id, token.Header["kid"], "valid IDs are preserved verbatim")
+			} else {
+				require.ErrorContains(t, err, "signing key id is required")
+				require.Nil(t, response)
+			}
+		})
+	}
+}

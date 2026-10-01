@@ -42,11 +42,11 @@ func TestConcurrentManagedRBACCallbacks(t *testing.T) {
 		wantCalls                               int64
 		wantAllowed                             bool
 	}{
-		{name: "commit", wantCalls: 64, wantAllowed: true},
+		{name: "commit", wantCalls: 1, wantAllowed: true},
 		{name: "rollback", callbackErr: rollback, wantErr: rollback, wantAllowed: true},
 		{name: "unknown commit", commitErr: io.ErrUnexpectedEOF, wantErr: goauth.ErrOperationOutcomeUnknown},
 		{name: "rejected commit", commitErr: &pgconn.PgError{Code: "40001"}, wantAllowed: true},
-		{name: "failed invalidation", invalidationErr: errors.New("cache unavailable"), wantCalls: 64},
+		{name: "failed invalidation", invalidationErr: errors.New("cache unavailable"), wantCalls: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			driverName := "goauth-concurrent-rbac-" + uuid.NewString()
@@ -76,7 +76,7 @@ func TestConcurrentManagedRBACCallbacks(t *testing.T) {
 			default:
 				require.NoError(t, err)
 			}
-			require.Equal(t, tc.wantCalls, cache.calls.Load(), "no registered callback may be lost")
+			require.Equal(t, tc.wantCalls, cache.calls.Load(), "one invalidation per transaction and cache")
 			require.Equal(t, tc.wantAllowed, permissions.Can(t.Context(), subject, "users:read"))
 		})
 	}
@@ -100,4 +100,22 @@ func assignConcurrentRoles(t *testing.T, ctx context.Context, permissions *rbac.
 	for err := range results {
 		require.NoError(t, err)
 	}
+}
+
+func TestManagedRBACCoalescesEachCacheSeparately(t *testing.T) {
+	db := openNotificationRecordingDB(t, "distinct-managed-caches")
+	first, second := &concurrentInvalidationCache{}, &concurrentInvalidationCache{}
+	one, err := NewRBAC(db, first)
+	require.NoError(t, err)
+	two, err := NewRBAC(db, second)
+	require.NoError(t, err)
+	require.NoError(t, (&Store{db: db}).InAuthTransaction(t.Context(), func(ctx context.Context) error {
+		assignConcurrentRoles(t, ctx, one, goauth.NewSubjectID())
+		assignConcurrentRoles(t, ctx, two, goauth.NewSubjectID())
+		require.Zero(t, first.calls.Load())
+		require.Zero(t, second.calls.Load())
+		return nil
+	}))
+	require.EqualValues(t, 1, first.calls.Load())
+	require.EqualValues(t, 1, second.calls.Load())
 }

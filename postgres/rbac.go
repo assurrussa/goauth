@@ -66,22 +66,16 @@ SELECT EXISTS (
 }
 
 func (s *rbacStore) UpsertRole(ctx context.Context, role rbac.Role) (rbac.Role, error) {
-	if tx, err := (&Store{db: s.db}).notificationTx(ctx); err != nil {
+	write, err := s.beginWrite(ctx)
+	if err != nil {
 		return rbac.Role{}, err
-	} else if tx == nil {
-		var result rbac.Role
-		err = (&Store{db: s.db}).InAuthTransaction(ctx, func(ctx context.Context) error {
-			var err error
-			result, err = s.UpsertRole(ctx, role)
-			return err
-		})
-		return result, err
 	}
+	defer write.rollback(ctx)
 
 	if role.PublicID == "" {
 		role.PublicID = uuid.NewString()
 	}
-	err := s.executor(ctx).QueryRowContext(ctx, `
+	err = write.tx.QueryRowContext(ctx, `
 INSERT INTO auth_roles (public_id, slug, name, description, is_system)
 VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (slug) DO UPDATE
@@ -109,7 +103,9 @@ RETURNING id, public_id::text, slug, name, description, is_system, created_at, u
 		return rbac.Role{}, fmt.Errorf("upsert RBAC role: %w", err)
 	}
 
-	s.invalidateAfterCommit(ctx)
+	if err := write.finish(ctx); err != nil {
+		return rbac.Role{}, err
+	}
 	return role, nil
 }
 
@@ -117,22 +113,16 @@ func (s *rbacStore) UpsertPermission(
 	ctx context.Context,
 	permission rbac.Permission,
 ) (rbac.Permission, error) {
-	if tx, err := (&Store{db: s.db}).notificationTx(ctx); err != nil {
+	write, err := s.beginWrite(ctx)
+	if err != nil {
 		return rbac.Permission{}, err
-	} else if tx == nil {
-		var result rbac.Permission
-		err = (&Store{db: s.db}).InAuthTransaction(ctx, func(ctx context.Context) error {
-			var err error
-			result, err = s.UpsertPermission(ctx, permission)
-			return err
-		})
-		return result, err
 	}
+	defer write.rollback(ctx)
 
 	if permission.PublicID == "" {
 		permission.PublicID = uuid.NewString()
 	}
-	err := s.executor(ctx).QueryRowContext(ctx, `
+	err = write.tx.QueryRowContext(ctx, `
 INSERT INTO auth_permissions (public_id, permission_key, description)
 VALUES ($1, $2, $3)
 ON CONFLICT (permission_key) DO UPDATE
@@ -153,22 +143,22 @@ RETURNING id, public_id::text, permission_key, description, created_at, updated_
 		return rbac.Permission{}, fmt.Errorf("upsert RBAC permission: %w", err)
 	}
 
-	s.invalidateAfterCommit(ctx)
+	if err := write.finish(ctx); err != nil {
+		return rbac.Permission{}, err
+	}
 	return permission, nil
 }
 
 func (s *rbacStore) AssignRole(ctx context.Context, subjectID goauth.SubjectID, roleSlug string) error {
-	if tx, err := (&Store{db: s.db}).notificationTx(ctx); err != nil {
+	write, err := s.beginWrite(ctx)
+	if err != nil {
 		return err
-	} else if tx == nil {
-		return (&Store{db: s.db}).InAuthTransaction(ctx, func(ctx context.Context) error {
-			return s.AssignRole(ctx, subjectID, roleSlug)
-		})
 	}
+	defer write.rollback(ctx)
 
 	// Count an existing assignment as success without leaving a result set open
 	// between QueryRow and Scan on the shared transaction's single connection.
-	result, err := s.executor(ctx).ExecContext(ctx, `
+	result, err := write.tx.ExecContext(ctx, `
 INSERT INTO auth_subject_roles (subject_id, role_id)
 SELECT $1, id FROM auth_roles WHERE slug = $2
 ON CONFLICT (subject_id, role_id) DO UPDATE SET role_id = EXCLUDED.role_id`, subjectID, strings.TrimSpace(roleSlug))
@@ -183,8 +173,7 @@ ON CONFLICT (subject_id, role_id) DO UPDATE SET role_id = EXCLUDED.role_id`, sub
 		return errors.New("RBAC role not found")
 	}
 
-	s.invalidateAfterCommit(ctx)
-	return nil
+	return write.finish(ctx)
 }
 
 func (s *rbacStore) SetRolePermissions(
@@ -192,11 +181,12 @@ func (s *rbacStore) SetRolePermissions(
 	roleSlug string,
 	keys []rbac.PermissionKey,
 ) error {
-	tx, owned, err := (&Store{db: s.db}).beginWrite(ctx)
+	write, err := s.beginWrite(ctx)
 	if err != nil {
 		return fmt.Errorf("begin RBAC permission transaction: %w", err)
 	}
-	defer rollbackWrite(tx, owned)
+	defer write.rollback(ctx)
+	tx := write.tx
 	var roleID int64
 	if err := tx.QueryRowContext(ctx, `SELECT id FROM auth_roles WHERE slug = $1 FOR UPDATE`, roleSlug).Scan(&roleID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -207,7 +197,7 @@ func (s *rbacStore) SetRolePermissions(
 	if err := replaceRolePermissionsTx(ctx, tx, roleID, keys); err != nil {
 		return err
 	}
-	if err := s.finishWrite(ctx, tx, owned); err != nil {
+	if err := write.finish(ctx); err != nil {
 		return fmt.Errorf("commit RBAC permission transaction: %w", err)
 	}
 
