@@ -26,7 +26,8 @@ func (c *recoveryCache) Invalidate(context.Context) error { return c.err }
 
 // invalidate drives a complete reserved invalidation in the cache fixtures.
 func (c *transactionCache) invalidate(ctx context.Context) {
-	c.invalidatePending(ctx, c.beginInvalidation())
+	c.beginInvalidation()
+	c.invalidatePending(ctx)
 }
 
 func TestCacheFailureBypassesAndRecovers(t *testing.T) {
@@ -204,7 +205,8 @@ func TestCacheInvalidationDetachesCanceledRequest(t *testing.T) {
 	management := &rbacStore{cache: &transactionCache{delegate: delegate, invalidator: delegate}}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	management.invalidatePendingAfterCommit(ctx, management.cache.beginInvalidation())
+	management.cache.beginInvalidation()
+	management.invalidatePendingAfterCommit(ctx)
 }
 
 func TestCacheLockTimeoutCannotBeClearedByOlderSuccess(t *testing.T) {

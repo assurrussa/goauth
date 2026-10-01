@@ -24,6 +24,7 @@ type transactionCache struct {
 	mu          sync.Mutex
 	delegateMu  sync.RWMutex
 	generation  uint64
+	failures    uint64
 	pending     int
 	failed      bool
 	uncertain   bool
@@ -72,12 +73,11 @@ func (c *transactionCache) bypassed() bool {
 
 // beginInvalidation publishes bypass before a write can become visible. Each
 // reservation must be completed by invalidation or released after rollback.
-func (c *transactionCache) beginInvalidation() uint64 {
+func (c *transactionCache) beginInvalidation() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.generation++
 	c.pending++
-	return c.generation
 }
 
 func (c *transactionCache) cancelInvalidation() {
@@ -86,20 +86,25 @@ func (c *transactionCache) cancelInvalidation() {
 	c.pending--
 }
 
-func (c *transactionCache) invalidatePending(ctx context.Context, generation uint64) {
+func (c *transactionCache) invalidatePending(ctx context.Context) {
 	// Serialize callbacks separately so their results cannot clear a newer
 	// failure. The state lock is never held while calling the cache backend.
 	if err := c.lockInvalidation(ctx); err != nil {
-		c.finishInvalidation(generation, err)
+		c.finishInvalidation(0, err)
 		return
 	}
 	defer c.delegateMu.Unlock()
 
+	// Only a failure recorded during this invalidation can suppress recovery.
+	// Later reservations still bypass reads, but their rollback cannot poison it.
+	c.mu.Lock()
+	failures := c.failures
+	c.mu.Unlock()
 	err := c.invalidator.Invalidate(ctx)
 	if err == nil {
 		err = ctx.Err()
 	}
-	c.finishInvalidation(generation, err)
+	c.finishInvalidation(failures, err)
 }
 
 func (c *transactionCache) lockInvalidation(ctx context.Context) error {
@@ -126,13 +131,14 @@ func (c *transactionCache) lockInvalidation(ctx context.Context) error {
 	}
 }
 
-func (c *transactionCache) finishInvalidation(generation uint64, err error) {
+func (c *transactionCache) finishInvalidation(failures uint64, err error) {
 	c.mu.Lock()
 	// An older success cannot clear a newer timeout while it waited for the
 	// delegate lock. A later completed invalidation can safely restore reads.
 	if err != nil {
+		c.failures++
 		c.failed = true
-	} else if generation == c.generation {
+	} else if failures == c.failures {
 		c.failed = false
 	}
 	c.pending--
@@ -160,10 +166,10 @@ func (s *rbacStore) reserveManagedInvalidation(ctx context.Context, callbacks *a
 	if callbacks.caches == nil {
 		callbacks.caches = make(map[*transactionCache]struct{})
 	}
-	generation := s.cache.beginInvalidation()
+	s.cache.beginInvalidation()
 	callbacks.caches[s.cache] = struct{}{}
 	callbacks.entries = append(callbacks.entries, authTransactionCallback{
-		afterCommit: func() { s.invalidatePendingAfterCommit(ctx, generation) },
+		afterCommit: func() { s.invalidatePendingAfterCommit(ctx) },
 		afterUnknown: func() {
 			s.cache.markUncertain()
 			s.cache.cancelInvalidation()
@@ -172,11 +178,11 @@ func (s *rbacStore) reserveManagedInvalidation(ctx context.Context, callbacks *a
 	})
 }
 
-func (s *rbacStore) invalidatePendingAfterCommit(ctx context.Context, generation uint64) {
+func (s *rbacStore) invalidatePendingAfterCommit(ctx context.Context) {
 	// Commit is already durable; cancellation must not skip cache invalidation.
 	invalidationCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cacheInvalidationTimeout)
 	defer cancel()
-	s.cache.invalidatePending(invalidationCtx, generation)
+	s.cache.invalidatePending(invalidationCtx)
 }
 
 func (s *rbacStore) executor(ctx context.Context) SQLExecutor {
@@ -207,12 +213,11 @@ func (r rejectedSQLExecutor) QueryRowContext(ctx context.Context, query string, 
 // rbacWrite protects each operation, even if its error is handled by the host.
 // Managed RBAC operations serialize their savepoints on the shared connection.
 type rbacWrite struct {
-	store      *rbacStore
-	tx         *sql.Tx
-	owned      bool
-	generation uint64
-	unlock     func()
-	finished   bool
+	store    *rbacStore
+	tx       *sql.Tx
+	owned    bool
+	unlock   func()
+	finished bool
 }
 
 func (s *rbacStore) beginWrite(ctx context.Context) (*rbacWrite, error) {
@@ -238,7 +243,7 @@ func (s *rbacStore) beginWrite(ctx context.Context) (*rbacWrite, error) {
 	}
 	if w.owned {
 		if s.cache != nil {
-			w.generation = s.cache.beginInvalidation()
+			s.cache.beginInvalidation()
 		}
 	} else {
 		s.reserveManagedInvalidation(ctx, scope.callbacks)
@@ -272,7 +277,7 @@ func (w *rbacWrite) finish(ctx context.Context) error {
 		return err
 	}
 	if w.store.cache != nil {
-		w.store.invalidatePendingAfterCommit(ctx, w.generation)
+		w.store.invalidatePendingAfterCommit(ctx)
 	}
 	return nil
 }

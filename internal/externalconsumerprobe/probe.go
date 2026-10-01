@@ -87,11 +87,13 @@ const runnableProbeTest = `package probe
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	basefiber "github.com/gofiber/fiber/v3"
 	goredis "github.com/redis/go-redis/v9"
@@ -107,6 +109,22 @@ import (
 	goauthredis "GOAUTH_MODULE/redis"
 	"GOAUTH_MODULE/testkit"
 )
+
+type probeCacheInvalidator struct{}
+
+func (probeCacheInvalidator) Invalidate(context.Context) error { return nil }
+
+var _ rbac.CacheInvalidator = probeCacheInvalidator{}
+var _ func(rbac.CacheInvalidator, context.Context) error = rbac.CacheInvalidator.Invalidate
+var _ postgres.SQLExecutor = (*sql.Tx)(nil)
+var _ func(*postgres.Runtime, context.Context) (postgres.SQLExecutor, error) = (*postgres.Runtime).SQLExecutor
+var _ func(
+	*postgres.Runtime, context.Context, goauth.Credential,
+) (*postgres.CredentialProof, error) = (*postgres.Runtime).PrepareCredential
+var _ func(
+	*postgres.Runtime, context.Context, *postgres.CredentialProof,
+) (goauth.Account, error) = (*postgres.Runtime).RevalidateCredential
+var _ goauth.NotificationDeliveryPolicy = goauth.NotificationDeliveryRequired
 
 type allowRBACStore struct{}
 
@@ -185,6 +203,7 @@ strings.NewReader("{\"email\":\"http-probe@example.test\",\"password\":\"Probe-P
 		t.Fatal(err)
 	}
 	_ = rbac.ErrSnapshotTransactionUnsupported
+	_ = goauth.PasswordResetReceipt{SubjectID: goauth.SubjectID{}, Selector: ""}
 	var _ oidc.ClientSecretVerifier = oidc.ClientSecretVerifierFunc(nil)
 	_ = provider.Options{ClientSecretVerifier: oidc.ClientSecretVerifierFunc(nil)}
 	sender := goauth.NotificationSenderFunc(func(_ context.Context, delivery goauth.NotificationDelivery) error {
@@ -194,7 +213,8 @@ strings.NewReader("{\"email\":\"http-probe@example.test\",\"password\":\"Probe-P
 		return nil
 	})
 	if err := sender.SendNotification(context.Background(), goauth.NotificationDelivery{
-		ID: "probe", Notification: goauth.Notification{Template: "probe"},
+		ID: "probe", EncryptedEvent: goauth.EncryptedEvent{},
+		Notification: goauth.Notification{Template: "probe"}, ValidUntil: time.Time{},
 	}); err != nil {
 		t.Fatal(err)
 	}

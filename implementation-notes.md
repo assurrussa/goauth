@@ -1,6 +1,53 @@
 # Implementation notes
 
-## 2026-10-01: Shared RBAC cache protection (local working tree)
+## 2026-10-01: Complete PR #11 review pass (local working tree)
+
+Goal: address every applicable comment in PR #11 in one coherent batch.
+Base HEAD: `800e1ce20f5a27c06e9cf5fb215e795b1eb7499a`, initially clean and
+matching the remote PR head. Review lens: authorization concurrency and public
+library compatibility.
+
+- Review inventory: all eight inline threads, seven issue comments and seven
+  review summaries were fetched. Six threads are resolved; their regressions
+  remain part of the final gate. Two current findings need changes:
+  [cache recovery](https://github.com/assurrussa/goauth/pull/11#discussion_r4153225657)
+  and [CacheInvalidator contract](https://github.com/assurrussa/goauth/pull/11#discussion_r4153225672).
+- Reservation/read generations are separate from actual invalidation failures.
+  Recovery captures the failure counter immediately before invoking the delegate;
+  a failure recorded during that call suppresses recovery. Later reservations
+  still bypass reads until completion, but their rollback cannot poison successful
+  recovery. Unknown commits and database-wide fallback remain irreversible.
+- Compile assertions pin `CacheInvalidator` and its method signature in both
+  gates. The adjacent public-surface audit also pins `CredentialProof`,
+  `SQLExecutor`, `NotificationDeliveryPolicy/Required` and receipt/delivery fields.
+  An overlay adding `InvalidateAll` fails the new interface implementation assertion.
+- The cache defect reproduced in both deterministic rollback orders through
+  public constructors and again on real PostgreSQL using an exact base-source
+  overlay. Focused cache race checks passed three times. API tests and a generated
+  local clean consumer passed; targeted lint is clean.
+- Final `make release-candidate-readiness`: PASS for formatting, tidy, vet,
+  lint (zero issues), race/coverage, PostgreSQL/Redis integration, both clean
+  consumers, govulncheck, backup/restore and actual HTTPS browser acceptance.
+  Coverage thresholds passed: root 84.7%, OIDC provider 87.7%, RBAC 85.8%,
+  PostgreSQL 83.1%, Redis 100%. Govulncheck reported zero reachable vulnerabilities;
+  three findings remain in required modules outside called code paths.
+- The first full gate exposed QF1011 on local typed declarations. Moving the
+  assertions to package level retains exact compile contracts without suppressions;
+  root lint and the interface mutation check passed before the successful rerun.
+- Independent read-only review checked the eight original comments, changed
+  contracts and adjacent transaction/cache paths, then rechecked the final
+  assertion placement. No actionable findings remained. Gopls retained stale
+  metadata for new files; current compilation, vet, lint and race checks supply
+  executable evidence instead. This is not a complete security audit.
+- Final GitHub inventory still has exactly the original eight threads and the
+  same remote HEAD. The two current threads remain open on GitHub because these
+  fixes are local. Reviewed/tested source fingerprint is unchanged:
+  `9becff2632bf3bd0547eb72ebb8416ed8f2257295745e8b80e1e57a4926cdfa6`.
+  Final diff checks passed; disposable integration containers, volumes and network
+  were removed. Public signatures, dependencies and migrations stay unchanged.
+  No commit, push, hosted CI result or GitHub thread mutation is claimed.
+
+## 2026-10-01: Shared RBAC cache protection (historical validation)
 
 Goal: resolve [r4152858130](https://github.com/assurrussa/goauth/pull/11#discussion_r4152858130).
 Base HEAD: `6c6ed6b2c8173d8c3dc0b1fe496396145935be11`, initially clean.
