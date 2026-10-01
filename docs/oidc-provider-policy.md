@@ -15,11 +15,26 @@ mandatory for confidential clients using `client_secret_basic` or
 challenge is invalid. Both authorization and code exchange enforce this policy,
 including persisted code metadata. This follows [RFC 9700 section 2.1.1](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.1).
 
+The token endpoint accepts `code_verifier` only as 43-128 ASCII unreserved
+characters (`A-Z`, `a-z`, `0-9`, `-`, `.`, `_`, `~`), without trimming whitespace.
+An S256 challenge must be the canonical unpadded base64url encoding of a 32-byte
+SHA-256 digest (43 characters). Authorization rejects malformed challenges;
+exchange revalidates persisted metadata and rejects malformed or mismatched
+verifiers. Clients must generate a fresh cryptographically random verifier for
+each request: server-side grammar checks cannot prove entropy. See
+[RFC 7636 sections 4.1 and 7.1](https://www.rfc-editor.org/rfc/rfc7636.html#section-4.1).
+
 OIDC RSA signing and verification keys must have a modulus of at least 2048 bits
 and a valid exponent, as required by [RFC 7518 section 3.3](https://www.rfc-editor.org/rfc/rfc7518.html#section-3.3).
 `oidc.ValidateRSAPublicKey` exposes the same validation used by JWK encoding,
 decoding, the provider and verifier. Invalid keys from custom stores fail closed;
 signing additionally validates the private key and matching public key.
+
+`oidc.ValidateRS256SigningJWKMetadata` requires RSA and a nonblank `kid`, permits
+an omitted `use`/`alg`, and otherwise requires `sig`/`RS256`. RSA material is
+validated separately by `oidc.DecodeRSAPublicKeyJWK`. The provider rejects
+incompatible publication metadata from custom key stores; the verifier filters
+incompatible entries from third-party sets before decoding compatible keys.
 
 The provider validates access-token signatures using only RS256 and requires
 issuer, expiration and issued-at claims. Its configured clock controls time

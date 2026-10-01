@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	testPKCEVerifier       = "proof"
+	testPKCEVerifier       = rfcPKCEVerifier
 	testPKCEPlain          = "plain"
 	testUnknownAuthMethod  = "unknown"
 	testStoredClientSecret = "stored-secret"
@@ -71,7 +71,7 @@ func TestPKCEPolicyAuthorizationAndExchange(t *testing.T) {
 		},
 		{
 			name: "optional wrong verifier", challenge: codeChallengeFor(testPKCEVerifier),
-			method: codeChallengeMethodS256, verifier: "wrong",
+			method: codeChallengeMethodS256, verifier: "0" + testPKCEVerifier[1:],
 			exchangeError: true,
 		},
 		{

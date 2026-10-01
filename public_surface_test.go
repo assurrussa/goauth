@@ -135,6 +135,7 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 
 	_ = oidc.ScopeOpenID
 	_ = oidc.ValidateRSAPublicKey
+	_ = oidc.ValidateRS256SigningJWKMetadata
 	_ = rbac.ErrSnapshotTransactionUnsupported
 	var _ oidc.ClientSecretVerifier = oidc.ClientSecretVerifierFunc(nil)
 	_ = oidc.ClientSecretVerifierFunc.VerifyClientSecret

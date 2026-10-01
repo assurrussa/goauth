@@ -1,5 +1,52 @@
 # Implementation notes
 
+## 2026-10-01: Snapshot, PKCE and JWK follow-up (local working tree)
+
+Goal: fix the three confirmed findings in the supplied follow-up review.
+Base HEAD: `c2a73cf40ac0a85384bd0ec636793d96791193b6`; the earlier no-findings
+assessments below are superseded by this review. No dependency, migration,
+client-authentication policy or cache invalidation state machine change is needed.
+Review lens: Go/backend, authorization security and storage consistency.
+
+- PR discussion `r4151727953`: standalone read-only RBAC snapshots now commit
+  through `commitAuthTransaction`, retaining unknown-outcome classification
+  without marking the write cache uncertain. Mutation commits keep their guard.
+- PKCE rejects malformed verifier grammar and S256 encodings at the authorization
+  and exchange boundaries. Verifiers/challenges are never whitespace-normalized;
+  valid flow fixtures use the RFC 7636 Appendix B vector. Entropy remains a client
+  generation requirement, not something the provider can establish from format.
+- Provider and verifier share `oidc.ValidateRS256SigningJWKMetadata`; optional
+  `use`/`alg` remains supported and third-party incompatible keys are still filtered.
+  The new helper is included in public-surface and executable consumer probes.
+- The conservative cache invalidation generation handling is retained; the
+  supplied review identifies additional fallback, not stale authorization.
+
+Validation for this working tree:
+
+- Before implementation, new regressions reproduced ambiguous snapshot-commit
+  cache poisoning, weak/normalized PKCE secrets and incompatible provider metadata.
+- Focused package tests passed for PostgreSQL, OIDC/provider/verifier and the
+  consumer probe. Go diagnostics for the edited implementation files are clean.
+- Final `make release-candidate-readiness` with the shared Go cache root passed:
+  formatting, tidy, vet, lint, race/coverage, PostgreSQL/Redis integration, both
+  clean local consumer probes, govulncheck, PostgreSQL backup/restore and the
+  actual HTTPS browser scenario. Browser runtime paths were selected through
+  `GOAUTH_BROWSER_PLAYWRIGHT_MODULE` and `GOAUTH_BROWSER_CHROMIUM_EXECUTABLE`.
+- Coverage thresholds passed: root 84.7%, OIDC provider 87.4%, RBAC 85.8%,
+  PostgreSQL 81.6%, Redis 100%. Govulncheck found zero reachable vulnerabilities;
+  three findings remain in unused code of required modules.
+- Verified source fingerprint:
+  `821cd29a254119f32f3e96e0824008464f70bd5402d28977fa710f7751d34a85`.
+  It is SHA-256 of sorted `path + NUL + SHA256(file bytes) + LF` records for
+  tracked and nonignored files, excluding this notes file to avoid self-reference.
+  It identifies the local working tree, not a commit or published tag.
+- Final diff review found no additional actionable issue in these corrections;
+  whitespace and public-document local-path checks passed. This is scoped local
+  verification, not an independent security audit or hosted CI result.
+
+No release, deployment, GitHub Actions run or new commit is part of this local
+correction. Earlier historical gates do not certify this working tree.
+
 ## 2026-10-01: initial optional-module review corrections (historical validation)
 
 Goal: resolve the current branch review findings while preserving canonical
@@ -45,9 +92,9 @@ Validation completed on the final code snapshot:
   owned-lease renewal/reclaim. Channel-controlled race tests prove that blocked
   invalidation does not block authorization and late read-through fills cannot
   restore revoked grants.
-- Independent static security review of the changed snapshot, followed by
-  re-review of the RBAC correction, found no remaining actionable P1/P2. This is
-  scoped change review, not an independent audit or OIDC certification.
+- Historical static security review and RBAC re-review reported no remaining
+  actionable P1/P2 at that time. The later findings above supersede that verdict;
+  this was scoped review, not an independent audit or OIDC certification.
 - Gitleaks 8.30.1 scanned all fetched branches/tags/PR refs (73 reachable commits,
   28 refs before this commit) with `git --log-opts='--all --full-history'` and
   full redaction. All 29 raw history matches and 32 publication-source matches
@@ -100,8 +147,9 @@ Validation completed on the final follow-up source snapshot:
 - Coverage thresholds passed: root 84.7%, OIDC provider 86.6%, RBAC 85.8%,
   PostgreSQL 81.6%, Redis 100%. Govulncheck found zero reachable vulnerabilities;
   three required-module findings remain in unused code.
-- Independent static security/storage review found no remaining actionable P1/P2
-  in this follow-up delta. Non-integration edited Go files have no gopls diagnostics;
-  build-tagged integration behavior was verified by the compiler and live tests.
+- Historical static security/storage review reported no actionable P1/P2 in that
+  delta; the later snapshot/cache finding on the same SHA supersedes the verdict.
+  Non-integration edited Go files had no gopls diagnostics; build-tagged integration
+  behavior was verified by the compiler and live tests.
 - Final diff and public-facing documentation passed whitespace/local-path checks.
   Hosted CI remains unrun; this is local candidate verification only.

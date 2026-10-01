@@ -276,8 +276,9 @@ deadline and return after clearing the cache. Timeout leaves committed writes
 successful and the cache bypassed; an older completion cannot clear a newer failure.
 Failed cache invalidation bypasses the cache and reads authoritative PostgreSQL
 permissions; successful invalidation restores normal cached reads. An uncertain
-commit returns `ErrOperationOutcomeUnknown` and keeps this cache wrapper bypassed
-for its lifetime. Database read failures still deny authorization.
+RBAC write commit returns `ErrOperationOutcomeUnknown` and keeps this cache wrapper
+bypassed for its lifetime. A read-only snapshot commit error keeps its classification
+without changing cache trust. Database read failures still deny authorization.
 
 Managed `NotificationDelivery.EncryptedEvent` contains the original sealed envelope
 for hosts that forward delivery into durable transports. The native queue remains

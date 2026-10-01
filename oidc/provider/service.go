@@ -228,6 +228,9 @@ func (s *Service) JWKS(ctx context.Context) (oidc.JWKS, error) {
 		return oidc.JWKS{}, fmt.Errorf("get jwks: %w", err)
 	}
 	for _, key := range keys {
+		if err := oidc.ValidateRS256SigningJWKMetadata(key); err != nil {
+			return oidc.JWKS{}, fmt.Errorf("invalid signing jwk: %w", err)
+		}
 		if _, err := oidc.DecodeRSAPublicKeyJWK(key); err != nil {
 			return oidc.JWKS{}, fmt.Errorf("invalid signing jwk: %w", err)
 		}
@@ -426,7 +429,7 @@ func (s *Service) issueAuthorizationCode(
 		RedirectURI:         input.RedirectURI,
 		Scopes:              oidc.NormalizeScopes(input.Scopes),
 		Nonce:               strings.TrimSpace(input.Nonce),
-		CodeChallenge:       strings.TrimSpace(input.CodeChallenge),
+		CodeChallenge:       input.CodeChallenge,
 		CodeChallengeMethod: strings.TrimSpace(input.CodeChallengeMethod),
 		AuthenticatedAt:     current.AuthenticatedAt,
 		CreatedAt:           now,
@@ -698,11 +701,11 @@ func (s *Service) validateAuthorizeRequest(client oidc.Client, req oidc.Authoriz
 		}
 	}
 
-	if clientRequiresPKCE(client) && strings.TrimSpace(req.CodeChallenge) == "" {
+	if clientRequiresPKCE(client) && req.CodeChallenge == "" {
 		return nil, s.oauthError("invalid_request", "code_challenge is required", http.StatusBadRequest)
 	}
 	if !validPKCEMetadata(clientRequiresPKCE(client),
-		strings.TrimSpace(req.CodeChallenge), strings.TrimSpace(req.CodeChallengeMethod)) {
+		req.CodeChallenge, strings.TrimSpace(req.CodeChallengeMethod)) {
 		return nil, s.oauthError("invalid_request", "code_challenge_method must be S256", http.StatusBadRequest)
 	}
 
@@ -717,7 +720,7 @@ func validPKCEMetadata(required bool, challenge, method string) bool {
 	if challenge == "" {
 		return !required && method == ""
 	}
-	return method == codeChallengeMethodS256
+	return method == codeChallengeMethodS256 && validS256Challenge(challenge)
 }
 
 func supportedClientAuthMethod(method string) bool {
@@ -784,15 +787,37 @@ func (s *Service) oauthError(code, description string, statusCode int) *oidc.OAu
 }
 
 func verifyCodeVerifier(verifier, challenge string) bool {
-	verifier = strings.TrimSpace(verifier)
-	challenge = strings.TrimSpace(challenge)
-	if verifier == "" || challenge == "" {
+	if !validCodeVerifier(verifier) || !validS256Challenge(challenge) {
 		return false
 	}
 
 	sum := sha256.Sum256([]byte(verifier))
 	expected := base64.RawURLEncoding.EncodeToString(sum[:])
 	return subtleStringCompare(expected, challenge)
+}
+
+func validCodeVerifier(verifier string) bool {
+	if len(verifier) < 43 || len(verifier) > 128 {
+		return false
+	}
+	for i := range len(verifier) {
+		c := verifier[i]
+		switch {
+		case c >= 'A' && c <= 'Z', c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+		case c == '-', c == '.', c == '_', c == '~':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func validS256Challenge(challenge string) bool {
+	if len(challenge) != 43 {
+		return false
+	}
+	digest, err := base64.RawURLEncoding.Strict().DecodeString(challenge)
+	return err == nil && len(digest) == sha256.Size
 }
 
 func subtleStringCompare(left, right string) bool {

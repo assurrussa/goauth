@@ -7,7 +7,21 @@ import (
 	"errors"
 	"math"
 	"math/big"
+	"strings"
 )
+
+const jwkKeyTypeRSA = "RSA"
+
+// ValidateRS256SigningJWKMetadata checks compatibility with the RS256 signing
+// profile. Empty use/alg fields are allowed; kid is required. Call
+// DecodeRSAPublicKeyJWK separately to validate the RSA key material.
+func ValidateRS256SigningJWKMetadata(jwk JWK) error {
+	if jwk.Kty != jwkKeyTypeRSA || strings.TrimSpace(jwk.Kid) == "" ||
+		(jwk.Use != "" && jwk.Use != "sig") || (jwk.Alg != "" && jwk.Alg != "RS256") {
+		return errors.New("jwk metadata is incompatible with RS256 signing")
+	}
+	return nil
+}
 
 // ValidateRSAPublicKey checks the RSA signing key profile supported by OIDC.
 func ValidateRSAPublicKey(key *rsa.PublicKey) error {
@@ -33,7 +47,7 @@ func EncodeRSAPublicKeyJWK(keyID string, publicKey crypto.PublicKey) (JWK, error
 	}
 
 	return JWK{
-		Kty: "RSA",
+		Kty: jwkKeyTypeRSA,
 		Use: "sig",
 		Kid: keyID,
 		Alg: "RS256",
@@ -43,7 +57,7 @@ func EncodeRSAPublicKeyJWK(keyID string, publicKey crypto.PublicKey) (JWK, error
 }
 
 func DecodeRSAPublicKeyJWK(jwk JWK) (*rsa.PublicKey, error) {
-	if jwk.Kty != "RSA" {
+	if jwk.Kty != jwkKeyTypeRSA {
 		return nil, errors.New("jwk is not rsa")
 	}
 

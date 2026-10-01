@@ -484,7 +484,8 @@ func (s *rbacStore) Snapshot(ctx context.Context) (rbac.Snapshot, error) {
 	if err != nil {
 		return rbac.Snapshot{}, err
 	}
-	if err := s.finishWrite(tx, true); err != nil {
+	// A failed read-only commit cannot make cached authorization uncertain.
+	if err := commitAuthTransaction(tx); err != nil {
 		return rbac.Snapshot{}, fmt.Errorf("commit RBAC snapshot: %w", err)
 	}
 

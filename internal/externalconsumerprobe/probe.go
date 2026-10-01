@@ -181,6 +181,9 @@ strings.NewReader("{\"email\":\"http-probe@example.test\",\"password\":\"Probe-P
 
 	_ = oidc.ScopeOpenID
 	_ = oidc.ValidateRSAPublicKey
+	if err := oidc.ValidateRS256SigningJWKMetadata(oidc.JWK{Kty: "RSA", Kid: "probe", Use: "sig", Alg: "RS256"}); err != nil {
+		t.Fatal(err)
+	}
 	_ = rbac.ErrSnapshotTransactionUnsupported
 	var _ oidc.ClientSecretVerifier = oidc.ClientSecretVerifierFunc(nil)
 	_ = provider.Options{ClientSecretVerifier: oidc.ClientSecretVerifierFunc(nil)}

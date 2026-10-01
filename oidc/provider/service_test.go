@@ -48,7 +48,7 @@ func TestAuthorizeUnauthenticatedRedirectsToHostedLogin(t *testing.T) {
 		Scope:               "openid profile email offline_access",
 		State:               "state-1", //nolint:goconst // autofix
 		Nonce:               "nonce-1",
-		CodeChallenge:       codeChallengeFor("verifier-1"),
+		CodeChallenge:       codeChallengeFor(testPKCEVerifier),
 		CodeChallengeMethod: "S256", //nolint:goconst // autofix
 	}, nil)
 	require.NoError(t, err)
@@ -152,7 +152,7 @@ func TestProviderRejectsInvalidProtocolInputs(t *testing.T) {
 		ClientID:            h.client.ID,
 		RedirectURI:         h.client.RedirectURIs[0],
 		Scopes:              []string{oidc.ScopeOpenID},
-		CodeChallenge:       codeChallengeFor("right-verifier"),
+		CodeChallenge:       codeChallengeFor(testPKCEVerifier),
 		CodeChallengeMethod: "S256",
 		AuthenticatedAt:     h.now,
 		CreatedAt:           h.now,
@@ -160,7 +160,7 @@ func TestProviderRejectsInvalidProtocolInputs(t *testing.T) {
 	}))
 	_, err = h.service.ExchangeToken(context.Background(), oidc.TokenRequest{
 		GrantType: grantTypeAuthorizationCode, Code: "wrong-pkce", RedirectURI: h.client.RedirectURIs[0],
-		CodeVerifier: "wrong-verifier", ClientID: h.client.ID,
+		CodeVerifier: "0" + testPKCEVerifier[1:], ClientID: h.client.ID,
 	})
 	requireOAuthError(t, err, "invalid_grant")
 }
@@ -203,7 +203,7 @@ func TestAuthorizationCodeExchangeAndUserInfo(t *testing.T) {
 		Scope:               "openid profile email offline_access",
 		State:               "state-1",
 		Nonce:               "nonce-1",
-		CodeChallenge:       codeChallengeFor("verifier-1"),
+		CodeChallenge:       codeChallengeFor(testPKCEVerifier),
 		CodeChallengeMethod: "S256",
 	}, nil)
 	require.NoError(t, err)
@@ -221,7 +221,7 @@ func TestAuthorizationCodeExchangeAndUserInfo(t *testing.T) {
 		GrantType:    grantTypeAuthorizationCode,
 		Code:         "code-1", //nolint:goconst // autofix
 		RedirectURI:  h.client.RedirectURIs[0],
-		CodeVerifier: "verifier-1",
+		CodeVerifier: testPKCEVerifier,
 		ClientID:     h.client.ID,
 	})
 	require.NoError(t, err)
@@ -308,7 +308,7 @@ func TestAuthorizationCodeConsumeIsAtomic(t *testing.T) {
 		ClientID:            h.client.ID,
 		RedirectURI:         h.client.RedirectURIs[0],
 		Scopes:              []string{oidc.ScopeOpenID},
-		CodeChallenge:       codeChallengeFor("concurrent-verifier"),
+		CodeChallenge:       codeChallengeFor(testPKCEVerifier),
 		CodeChallengeMethod: "S256",
 		AuthenticatedAt:     h.now.Add(-time.Minute),
 		CreatedAt:           h.now,
@@ -329,7 +329,7 @@ func TestAuthorizationCodeConsumeIsAtomic(t *testing.T) {
 				GrantType:    grantTypeAuthorizationCode,
 				Code:         concurrentAuthorizationCode,
 				RedirectURI:  h.client.RedirectURIs[0],
-				CodeVerifier: "concurrent-verifier",
+				CodeVerifier: testPKCEVerifier,
 				ClientID:     h.client.ID,
 			})
 			if err == nil {
@@ -360,7 +360,7 @@ func TestAuthorizationChallengeConsumeIsAtomic(t *testing.T) {
 		RedirectURI:         h.client.RedirectURIs[0],
 		State:               "state",
 		Scopes:              []string{oidc.ScopeOpenID},
-		CodeChallenge:       codeChallengeFor("concurrent-verifier"),
+		CodeChallenge:       codeChallengeFor(testPKCEVerifier),
 		CodeChallengeMethod: "S256",
 		RequestedAt:         h.now,
 		ExpiresAt:           h.now.Add(time.Minute),
@@ -509,7 +509,7 @@ func TestAuthorizationCodeFlowSupportsAPIScope(t *testing.T) {
 		ResponseType:        "code",
 		Scope:               "openid offline_access api:read",
 		State:               "state-api",
-		CodeChallenge:       codeChallengeFor("verifier-api"),
+		CodeChallenge:       codeChallengeFor(testPKCEVerifier),
 		CodeChallengeMethod: "S256",
 	}, nil)
 	require.NoError(t, err)
@@ -527,7 +527,7 @@ func TestAuthorizationCodeFlowSupportsAPIScope(t *testing.T) {
 		GrantType:    grantTypeAuthorizationCode,
 		Code:         "code-1",
 		RedirectURI:  h.client.RedirectURIs[0],
-		CodeVerifier: "verifier-api",
+		CodeVerifier: testPKCEVerifier,
 		ClientID:     h.client.ID,
 	})
 	require.NoError(t, err)
@@ -549,7 +549,7 @@ func TestAuthorizeRejectsScopeOutsideClientPolicy(t *testing.T) {
 		ResponseType:        "code",
 		Scope:               "openid api:read",
 		State:               "state-1",
-		CodeChallenge:       codeChallengeFor("verifier-1"),
+		CodeChallenge:       codeChallengeFor(testPKCEVerifier),
 		CodeChallengeMethod: "S256",
 	}, nil)
 	require.NoError(t, err)
