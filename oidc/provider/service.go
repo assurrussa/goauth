@@ -18,6 +18,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/assurrussa/goauth"
+	"github.com/assurrussa/goauth/internal/authclock"
 	"github.com/assurrussa/goauth/internal/generate_token"
 	"github.com/assurrussa/goauth/oidc"
 )
@@ -559,7 +560,7 @@ func (s *Service) refreshToken(ctx context.Context, req oidc.TokenRequest) (*oid
 		return nil, err
 	}
 	if nextRecord.Token != "" {
-		if err := s.refreshTokens.Rotate(ctx, record.Token, nextRecord, s.now()); err != nil {
+		if err := s.refreshTokens.Rotate(authclock.With(ctx, s.now), record.Token, nextRecord, s.now()); err != nil {
 			if errors.Is(err, oidc.ErrRefreshTokenNotFound) || errors.Is(err, oidc.ErrRefreshTokenReplay) {
 				return nil, s.oauthError("invalid_grant", "refresh token was already rotated", http.StatusBadRequest)
 			}
@@ -680,7 +681,8 @@ func (s *Service) authenticateClient(ctx context.Context, clientID, clientSecret
 		}
 		return oidc.Client{}, s.oauthError("invalid_client", "invalid client credentials", http.StatusUnauthorized)
 	}
-	if subtleStringCompare(client.Secret, strings.TrimSpace(clientSecret)) {
+	// Explicit confidential methods must not authenticate an unconfigured static secret.
+	if strings.TrimSpace(client.Secret) != "" && subtleStringCompare(client.Secret, strings.TrimSpace(clientSecret)) {
 		return client, nil
 	}
 
