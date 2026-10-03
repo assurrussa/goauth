@@ -73,6 +73,8 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = verifier.AccessTokenProfileGoAuth
 	_ = verifier.AccessTokenProfile("")
 	_ = goauth.NotificationDeliveryDisabled
+	_ = goauth.ErrNotificationRejected
+	_ = (*postgres.Runtime).ExpireNotifications
 	_ = goauth.ErrNotificationDeliveryDisabled
 	_ = goauth.Config{NotificationDelivery: goauth.NotificationDeliveryDisabled}
 	_ = (*postgres.Runtime).InAuthTransaction

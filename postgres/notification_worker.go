@@ -63,10 +63,11 @@ func (c NotificationWorkerConfig) withDefaults() (NotificationWorkerConfig, erro
 }
 
 type NotificationQueueStats struct {
-	Pending        int64
-	Leased         int64
-	Blocked        int64
-	Delivered      int64
+	Pending   int64
+	Leased    int64
+	Blocked   int64
+	Delivered int64
+	// Exhausted includes an exhausted retry budget or explicit terminal sender rejection.
 	Exhausted      int64
 	Expired        int64
 	OldestQueuedAt *time.Time
@@ -212,6 +213,13 @@ func (r *Runtime) deliverNotification(ctx context.Context, claim notificationCla
 		ID: claim.event.ID, Notification: notification, ValidUntil: claim.event.ValidUntil, EncryptedEvent: claim.event,
 	})
 	cancel()
+	if errors.Is(err, goauth.ErrNotificationRejected) {
+		// A definitive negative outcome survives worker shutdown. Use a bounded
+		// completion context; the original lease CAS still fences expiry/reclaim.
+		completionCtx, complete := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer complete()
+		return r.store.finishNotification(completionCtx, claim, notificationExhausted, "sender_rejected", time.Time{})
+	}
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}

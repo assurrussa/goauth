@@ -10,7 +10,11 @@ import (
 	"fmt"
 )
 
-const schemaVersion = 4
+const schemaVersion = 5
+
+const localIdentitySchemaVersion = 4
+
+const notificationExpirySchemaVersion = 5
 
 const notificationSchemaVersion = 3
 
@@ -54,7 +58,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	switch state {
-	case schemaStateV4:
+	case schemaStateV5:
 		// No schema change is needed, but still finish the transaction to release
 		// the lock before reporting a successful verification.
 	case schemaStateFuture:
@@ -76,6 +80,14 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 			return err
 		}
 		if err := applyLocalIdentityMigration(ctx, tx); err != nil {
+			return err
+		}
+		fallthrough
+	case schemaStateV4:
+		if err := verifyLocalIdentitySchema(ctx, tx); err != nil {
+			return err
+		}
+		if err := applyNotificationExpiryMigration(ctx, tx); err != nil {
 			return err
 		}
 	default:
@@ -140,13 +152,16 @@ func verifySchema(ctx context.Context, db queryRower) error {
 	if state == schemaStateFuture {
 		return ErrFutureSchema
 	}
-	if state != schemaStateV4 {
+	if state != schemaStateV5 {
 		return ErrSchemaNeedsMigration
 	}
 	if err := verifyNotificationSchema(ctx, db); err != nil {
 		return err
 	}
-	return verifyLocalIdentitySchema(ctx, db)
+	if err := verifyLocalIdentitySchema(ctx, db); err != nil {
+		return err
+	}
+	return verifyNotificationExpirySchema(ctx, db)
 }
 
 func verifyNotificationSchema(ctx context.Context, db queryRower) error {
@@ -259,6 +274,7 @@ const (
 	schemaStateV2
 	schemaStateV3
 	schemaStateV4
+	schemaStateV5
 	schemaStateFuture
 )
 
@@ -286,7 +302,7 @@ func detectSchema(ctx context.Context, db queryRower) (schemaState, error) {
 	if version > schemaVersion {
 		return schemaStateFuture, nil
 	}
-	if version != 2 && version != notificationSchemaVersion && version != schemaVersion {
+	if version != 2 && version != notificationSchemaVersion && version != localIdentitySchemaVersion && version != schemaVersion {
 		return schemaStateLegacy, nil
 	}
 
@@ -304,6 +320,9 @@ WHERE table_schema = 'public'
 	}
 
 	if version == schemaVersion {
+		return schemaStateV5, nil
+	}
+	if version == localIdentitySchemaVersion {
 		return schemaStateV4, nil
 	}
 	if version == notificationSchemaVersion {

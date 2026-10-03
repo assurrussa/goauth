@@ -109,7 +109,12 @@ func AuthSender(
 			},
 		})
 		if err != nil {
-			return err // This pinned SDK returns bounded, sanitized confidential errors.
+			var outcome *notifyhub.ConfidentialEmailError
+			if errors.As(err, &outcome) &&
+				(outcome.Outcome == notifyhub.OutcomeRejected || outcome.Outcome == notifyhub.OutcomeSimulated) {
+				return goauth.ErrNotificationRejected // Known terminal non-delivery; never nil.
+			}
+			return err // Retryable, not-sent and ambiguous outcomes retain ordinary error semantics.
 		}
 		if receipt.Status != notifyhub.StatusAccepted {
 			return notifyhub.ErrConfidentialOutcomeUnknown
@@ -140,14 +145,21 @@ particular, `simulated`, `dispatching`, and `unknown` are not success.
   redispatch. Never create a new key, reissue a credential, revoke a valid
   credential, or fall back to another transport merely because of this result.
 - `OutcomeRejected` is terminal provider rejection. `OutcomeSimulated` is
-  dry-run without real handoff. `OutcomeNotSent` covers validation, expiry,
+  dry-run without real handoff. Map only these positively known terminal
+  non-delivery outcomes to `goauth.ErrNotificationRejected`. The managed worker
+  stops retries, records `exhausted` / `sender_rejected`, scrubs the envelope,
+  and leaves `delivered_at` NULL. Never return nil for either outcome.
+- `OutcomeNotSent` covers validation, expiry,
   pre-I/O cancellation, and definitive pre-admission rejection. Fix invalid
   configuration or authorization rather than creating a replacement operation.
 - An idempotency conflict means the operation changed under its key. Investigate
   renderer/configuration drift; do not work around it with a new key.
 
-The managed GoAuth worker treats every non-nil sender error as unsuccessful and
-applies its configured backoff, attempt limit, and expiry. It does not interpret
+The managed GoAuth worker recognizes `goauth.ErrNotificationRejected` (including
+wrapped errors) as an explicit terminal non-delivery disposition. Every other
+non-nil sender error keeps the configured backoff, attempt limit, and expiry.
+Never map `OutcomeRetryable`, `OutcomeUnknown`, a timeout, cancellation, or a
+lost/untrusted response to this sentinel. The worker does not itself interpret
 GoNotify's outcomes or `RetryAfter`. The current worker cannot honor a dynamic
 per-delivery retry deadline without explicit worker support. Do not implement a
 sender-side not-before gate that simply returns an error: the worker reserves
@@ -159,9 +171,10 @@ Configure the native `RetryMin`, `RetryMax`, and `MaxAttempts` conservatively fo
 the provider's expected delays and credential validity; longer provider delays
 may still outlast that budget. Record terminal/unknown outcomes for operators
 without acknowledging them as accepted.
-The sketch deliberately has no retry loop or alternate transport. Returning an
-error can lead to another identical worker attempt; Hub's retained outcome
-prevents a terminal or ambiguous operation from being blindly redispatched.
+The sketch deliberately has no retry loop or alternate transport. Returning a
+generic error can lead to another identical worker attempt; Hub's retained
+outcome prevents an ambiguous operation from being blindly redispatched. An
+explicit terminal rejection stops further managed sender calls.
 
 ## Production checks and operations
 
@@ -173,7 +186,9 @@ prevents a terminal or ambiguous operation from being blindly redispatched.
   errors out of host/Hub/proxy logs and traces. Use delivery ID and bounded
   machine outcomes; never put a secret in an event name or idempotency key.
 - Supervise and join `RunNotifications`; honor context cancellation, schedule
-  `auth.Cleanup`, and monitor `NotificationStats` plus
+  queue-only `auth.ExpireNotifications(ctx, limit)` under a bounded host timeout
+  when only notification expiry is intended (see [outcome and expiry semantics](notification-outcomes.md));
+  use broad `auth.Cleanup` only with an explicit host retention policy. Monitor `NotificationStats` plus
   `NotificationWorkerConfig.OnBlocked`. Alert on exhausted, expired, blocked,
   simulated, and unresolved unknown deliveries without logging their payloads.
 - For rollout or rollback, stop and join the old worker before switching senders.

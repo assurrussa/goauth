@@ -18,10 +18,10 @@ func applyLocalIdentityMigration(ctx context.Context, tx *sql.Tx) error {
 	}
 	checksum := sha256.Sum256(data)
 	if _, err := tx.ExecContext(ctx, `INSERT INTO goauth_migration_history (version, checksum) VALUES ($1, $2)`,
-		schemaVersion, hex.EncodeToString(checksum[:])); err != nil {
+		localIdentitySchemaVersion, hex.EncodeToString(checksum[:])); err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO goauth_schema_version (version) VALUES ($1)`, schemaVersion)
+	_, err = tx.ExecContext(ctx, `INSERT INTO goauth_schema_version (version) VALUES ($1)`, localIdentitySchemaVersion)
 	return err
 }
 
@@ -33,7 +33,7 @@ func verifyLocalIdentitySchema(ctx context.Context, db queryRower) error {
 	checksum := sha256.Sum256(data)
 	var recorded string
 	if err := db.QueryRowContext(ctx,
-		`SELECT checksum FROM goauth_migration_history WHERE version = $1`, schemaVersion).Scan(&recorded); err != nil {
+		`SELECT checksum FROM goauth_migration_history WHERE version = $1`, localIdentitySchemaVersion).Scan(&recorded); err != nil {
 		return fmt.Errorf("read local identity migration history: %w", err)
 	}
 	if recorded != hex.EncodeToString(checksum[:]) {
