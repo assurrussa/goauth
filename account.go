@@ -120,7 +120,7 @@ func (r *Runtime) VerifyCredential(ctx context.Context, credential Credential) (
 	if err != nil {
 		return Account{}, ErrInvalidCredentials
 	}
-	allowed, err := r.takeIdentifierRateLimit(ctx, "credential_verify", identifier, r.loginRateLimit)
+	allowed, err := r.takeIdentifierRateLimit(ctx, "credential_verify", identifier, r.credentialVerifyRateLimit)
 	if err != nil {
 		return Account{}, fmt.Errorf("check credential verification rate limit: %w", err)
 	}

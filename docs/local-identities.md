@@ -164,10 +164,12 @@ exists. Notification enqueue refuses invalid/empty destinations.
 
 ## Required follow-ups before replacing an existing Basic authority
 
-- A separate per-request credential-admission policy. `VerifyCredential` and
-  `PrepareCredential` still charge every attempt, including success, to the
-  existing login policy (normally ten per 15 minutes). Do not disable all auth
-  rate limits or claim this is ready for continuous Basic traffic.
+- Explicitly configure a bounded per-request credential-admission policy with
+  `CredentialVerificationRateLimit`, alongside host project/client ingress limits.
+  `VerifyCredential` and `PrepareCredential` count every attempt, including
+  success. Zero still inherits the login policy (normally ten per 15 minutes).
+  See [credential admission](credential-admission.md); browser login, password
+  change and recovery keep their existing independent policies.
 - A supported privileged operator password-set path preserving status,
   security-version advancement, local/OIDC revocation and mandatory audit. Current
   `ChangePassword` needs the old password; email recovery cannot cover email-less

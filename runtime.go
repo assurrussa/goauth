@@ -78,9 +78,15 @@ type Config struct {
 	ResetResponseFloor          time.Duration
 	IdentityLinkAuthMaxAge      time.Duration
 	LoginRateLimit              RateLimitPolicy
-	PasswordResetRateLimit      RateLimitPolicy
-	Now                         func() time.Time
-	Random                      io.Reader
+
+	// CredentialVerificationRateLimit bounds VerifyCredential and PostgreSQL
+	// PrepareCredential separately from browser login. Zero inherits LoginRateLimit.
+	// Every verification attempt, including success, still consumes admission.
+	CredentialVerificationRateLimit RateLimitPolicy
+
+	PasswordResetRateLimit RateLimitPolicy
+	Now                    func() time.Time
+	Random                 io.Reader
 }
 
 type Runtime struct {
@@ -112,6 +118,7 @@ type Runtime struct {
 	resetResponseFloor          time.Duration
 	identityLinkAuthMaxAge      time.Duration
 	loginRateLimit              RateLimitPolicy
+	credentialVerifyRateLimit   RateLimitPolicy
 	passwordResetRateLimit      RateLimitPolicy
 	now                         func() time.Time
 	random                      io.Reader
@@ -193,6 +200,7 @@ func NewRuntime(config Config) (*Runtime, error) {
 		resetResponseFloor:          config.ResetResponseFloor,
 		identityLinkAuthMaxAge:      config.IdentityLinkAuthMaxAge,
 		loginRateLimit:              config.LoginRateLimit,
+		credentialVerifyRateLimit:   config.CredentialVerificationRateLimit,
 		passwordResetRateLimit:      config.PasswordResetRateLimit,
 		now:                         config.Now,
 		random:                      config.Random,
@@ -242,6 +250,9 @@ func applyRuntimeDefaults(config Config) Config {
 	if config.LoginRateLimit == (RateLimitPolicy{}) {
 		config.LoginRateLimit = RateLimitPolicy{Window: defaultLoginRateWindow, Limit: 10}
 	}
+	if config.CredentialVerificationRateLimit == (RateLimitPolicy{}) {
+		config.CredentialVerificationRateLimit = config.LoginRateLimit
+	}
 	if config.PasswordResetRateLimit == (RateLimitPolicy{}) {
 		config.PasswordResetRateLimit = RateLimitPolicy{Window: defaultPasswordResetRateWindow, Limit: 5}
 	}
@@ -287,6 +298,9 @@ func validateRuntimeConfig(config Config) error {
 	}
 	if err := config.LoginRateLimit.Validate(); err != nil {
 		return fmt.Errorf("login rate limit: %w", err)
+	}
+	if err := config.CredentialVerificationRateLimit.Validate(); err != nil {
+		return fmt.Errorf("credential verification rate limit: %w", err)
 	}
 	if err := config.PasswordResetRateLimit.Validate(); err != nil {
 		return fmt.Errorf("password reset rate limit: %w", err)
