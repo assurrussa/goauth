@@ -44,6 +44,7 @@ func (s *Store) InAuthTransaction(ctx context.Context, fn func(context.Context) 
 	s.accounts = working.accounts
 	s.identifiers = working.identifiers
 	s.passwords = working.passwords
+	s.passwordPolicies = working.passwordPolicies
 	s.links = working.links
 	s.sessions = working.sessions
 	s.families = working.families
@@ -99,6 +100,7 @@ func (s *Store) snapshot() *Store {
 	}
 	c.identifiers = maps.Clone(s.identifiers)
 	c.passwords = maps.Clone(s.passwords)
+	c.passwordPolicies = maps.Clone(s.passwordPolicies)
 	c.links = maps.Clone(s.links)
 	c.sessions = maps.Clone(s.sessions)
 	c.families = copyPointers(s.families)

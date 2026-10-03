@@ -20,7 +20,7 @@ func (identifierPolicyResolver) NormalizeIdentifier(
 func TestRuntimeRejectsUnsupportedIdentifierBeforeDatabaseAccess(t *testing.T) {
 	t.Parallel()
 	runtime, err := NewRuntime(Config{Runtime: goauth.Config{
-		IdentifierResolvers: map[goauth.IdentifierScheme]goauth.IdentifierResolver{"username": identifierPolicyResolver{}},
+		IdentifierResolvers: map[goauth.IdentifierScheme]goauth.IdentifierResolver{"INVALID": identifierPolicyResolver{}},
 	}})
 	if runtime != nil || !errors.Is(err, goauth.ErrInvalidIdentifierScheme) {
 		t.Fatalf("expected identifier preflight before missing-DB validation, got runtime=%v err=%v", runtime, err)
@@ -34,6 +34,7 @@ func TestRuntimeIdentifierPolicyPreservesEmailAndIgnoredNilResolvers(t *testing.
 		{},
 		{goauth.IdentifierSchemeEmail: identifierPolicyResolver{}},
 		{"username": nil},
+		{"username": identifierPolicyResolver{}},
 	} {
 		if err := validateRuntimeIdentifierSchemes(resolvers); err != nil {
 			t.Fatal(err)

@@ -60,6 +60,9 @@ type Config struct {
 	URLBuilder                  URLBuilder
 	AuditSink                   AuditSink
 	PasswordHasher              PasswordHasher
+	// EnableLegacyBytes256 opts into two sequential, equal-profile verification jobs.
+	// Requires the built-in hasher and a profile preflight; see docs/local-identities.md.
+	EnableLegacyBytes256 bool
 	// Zero defaults to four concurrent hashes/verifications per shared Runtime.
 	// Excess work fails immediately with ErrPasswordHashOverloaded.
 	MaxConcurrentPasswordHashes int
@@ -93,13 +96,12 @@ type Runtime struct {
 	autoLinkIssuers             []string
 	managedNotificationDelivery bool
 	audit                       AuditSink
-	hasher                      PasswordHasher
+	hasher                      *boundedPasswordHasher
 	passwordPolicy              PasswordPolicy
 	realms                      map[Realm]struct{}
 	secretCodec                 *secretCodec
 	envelopes                   *envelopeCipher
 	jwt                         *jwtIssuer
-	dummyPasswordPHC            string
 	accessTTL                   time.Duration
 	sessionTTL                  time.Duration
 	refreshTTL                  time.Duration
@@ -139,13 +141,19 @@ func NewRuntime(config Config) (*Runtime, error) {
 		config.PasswordPolicy.Blocklist == nil && !config.PasswordPolicy.DisableBlocklist {
 		config.PasswordPolicy = DefaultPasswordPolicy()
 	}
-	config.PasswordHasher = &boundedPasswordHasher{
+	boundedHasher := &boundedPasswordHasher{
 		delegate: config.PasswordHasher,
 		active:   make(chan struct{}, config.MaxConcurrentPasswordHashes),
 	}
-	dummyPHC, err := config.PasswordHasher.HashPassword("goauth-enumeration-dummy-password")
+	dummyPHC, err := boundedHasher.HashPassword("goauth-enumeration-dummy-password")
 	if err != nil {
 		return nil, fmt.Errorf("create enumeration-safe password hash: %w", err)
+	}
+	boundedHasher.dummyPHC = dummyPHC
+	if config.EnableLegacyBytes256 {
+		if err := boundedHasher.enableLegacyCompatibility(config.Random); err != nil {
+			return nil, err
+		}
 	}
 	identifierResolvers, err := runtimeIdentifierResolvers(config.IdentifierResolvers)
 	if err != nil {
@@ -169,13 +177,12 @@ func NewRuntime(config Config) (*Runtime, error) {
 		autoLinkIssuers:             append([]string(nil), config.AutoLinkVerifiedEmailIssuers...),
 		managedNotificationDelivery: config.ManagedNotificationDelivery,
 		audit:                       config.AuditSink,
-		hasher:                      config.PasswordHasher,
+		hasher:                      boundedHasher,
 		passwordPolicy:              config.PasswordPolicy,
 		realms:                      realms,
 		secretCodec:                 newSecretCodec(config.TokenHMACKeys, config.Random),
 		envelopes:                   newEnvelopeCipher(config.OutboxAEADKeys, config.Random, config.Now),
 		jwt:                         jwt,
-		dummyPasswordPHC:            dummyPHC,
 		accessTTL:                   config.AccessTTL,
 		sessionTTL:                  config.SessionTTL,
 		refreshTTL:                  config.RefreshTTL,
@@ -387,10 +394,12 @@ func (r *Runtime) Login(ctx context.Context, request LoginRequest) (LoginResult,
 	}
 	record, lookupErr := r.store.FindLocalAccount(ctx, identifier)
 	passwordPHC := record.PasswordPHC
+	inputPolicy := record.PasswordInputPolicy
 	if lookupErr != nil || record.Account.IsZero() || passwordPHC == "" {
-		passwordPHC = r.dummyPasswordPHC
+		passwordPHC = ""
+		inputPolicy = PasswordInputPolicyUnicode
 	}
-	passwordErr := r.hasher.VerifyPassword(passwordPHC, request.Credential.Password)
+	passwordErr := r.hasher.verifyCredential(passwordPHC, request.Credential.Password, inputPolicy)
 	if lookupErr != nil && !errors.Is(lookupErr, ErrAccountNotFound) {
 		return LoginResult{}, fmt.Errorf("find local credential: %w", lookupErr)
 	}

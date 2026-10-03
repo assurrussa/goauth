@@ -142,7 +142,7 @@ FOR UPDATE`, request.Selector).Scan(&subjectID, &keyID, &digest, &expiresAt, &co
 
 	credentialUpdate, err := tx.ExecContext(ctx, `
 UPDATE auth_local_credentials
-SET password_phc = $2, updated_at = $3
+SET password_phc = $2, updated_at = $3, password_input_policy = 'unicode_v1'
 WHERE subject_id = $1`, subjectID, request.PasswordPHC, request.Now)
 	if err != nil {
 		return goauth.PasswordResetConsumeResult{}, fmt.Errorf("update local credential: %w", err)

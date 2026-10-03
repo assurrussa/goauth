@@ -10,7 +10,9 @@ import (
 	"fmt"
 )
 
-const schemaVersion = 3
+const schemaVersion = 4
+
+const notificationSchemaVersion = 3
 
 // ResetConfirmation is intentionally a distinct type so destructive schema
 // resets cannot receive an arbitrary runtime string by accident.
@@ -52,7 +54,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	switch state {
-	case schemaStateV3:
+	case schemaStateV4:
 		// No schema change is needed, but still finish the transaction to release
 		// the lock before reporting a successful verification.
 	case schemaStateFuture:
@@ -66,6 +68,14 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		fallthrough
 	case schemaStateV2:
 		if err := applyNotificationMigration(ctx, tx); err != nil {
+			return err
+		}
+		fallthrough
+	case schemaStateV3:
+		if err := verifyNotificationSchema(ctx, tx); err != nil {
+			return err
+		}
+		if err := applyLocalIdentityMigration(ctx, tx); err != nil {
 			return err
 		}
 	default:
@@ -101,17 +111,18 @@ func applyNotificationMigration(ctx context.Context, tx *sql.Tx) error {
 		return fmt.Errorf("apply notification migration: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO goauth_migration_history (version, checksum) VALUES ($1, $2)`,
-		schemaVersion, hex.EncodeToString(checksum[:])); err != nil {
+		notificationSchemaVersion, hex.EncodeToString(checksum[:])); err != nil {
 		return fmt.Errorf("record notification migration checksum: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO goauth_schema_version (version) VALUES ($1)`, schemaVersion); err != nil {
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO goauth_schema_version (version) VALUES ($1)`, notificationSchemaVersion); err != nil {
 		return fmt.Errorf("record notification schema version: %w", err)
 	}
 	return nil
 }
 
-// VerifySchema checks the schema version, notification migration checksum,
-// required tables, and notification queue column names without changing the
+// VerifySchema checks the schema version, additive migration checksums,
+// required tables, credential-policy and notification queue columns without changing the
 // database. It does not compare every type, index, foreign key, or constraint.
 // Callers with AutoMigrate disabled get this check at Runtime construction.
 func VerifySchema(ctx context.Context, db *sql.DB) error {
@@ -129,9 +140,16 @@ func verifySchema(ctx context.Context, db queryRower) error {
 	if state == schemaStateFuture {
 		return ErrFutureSchema
 	}
-	if state != schemaStateV3 {
+	if state != schemaStateV4 {
 		return ErrSchemaNeedsMigration
 	}
+	if err := verifyNotificationSchema(ctx, db); err != nil {
+		return err
+	}
+	return verifyLocalIdentitySchema(ctx, db)
+}
+
+func verifyNotificationSchema(ctx context.Context, db queryRower) error {
 	var historyTable, queueTable sql.NullString
 	if err := db.QueryRowContext(ctx, `
 SELECT to_regclass('public.goauth_migration_history')::text,
@@ -148,7 +166,7 @@ SELECT to_regclass('public.goauth_migration_history')::text,
 	checksum := sha256.Sum256(sqlBytes)
 	var recorded string
 	if err := db.QueryRowContext(ctx, `SELECT checksum FROM goauth_migration_history WHERE version = $1`,
-		schemaVersion).Scan(&recorded); err != nil {
+		notificationSchemaVersion).Scan(&recorded); err != nil {
 		return fmt.Errorf("read goauth migration history: %w", err)
 	}
 	if recorded != hex.EncodeToString(checksum[:]) {
@@ -240,6 +258,7 @@ const (
 	schemaStateLegacy
 	schemaStateV2
 	schemaStateV3
+	schemaStateV4
 	schemaStateFuture
 )
 
@@ -267,7 +286,7 @@ func detectSchema(ctx context.Context, db queryRower) (schemaState, error) {
 	if version > schemaVersion {
 		return schemaStateFuture, nil
 	}
-	if version != 2 && version != schemaVersion {
+	if version != 2 && version != notificationSchemaVersion && version != schemaVersion {
 		return schemaStateLegacy, nil
 	}
 
@@ -285,6 +304,9 @@ WHERE table_schema = 'public'
 	}
 
 	if version == schemaVersion {
+		return schemaStateV4, nil
+	}
+	if version == notificationSchemaVersion {
 		return schemaStateV3, nil
 	}
 	return schemaStateV2, nil

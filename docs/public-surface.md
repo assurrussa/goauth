@@ -36,3 +36,9 @@ different database handle cannot join. It also proves opaque credential proof
 revalidation fails after a security-version change and reset receipt callbacks
 commit or roll back reset, encrypted enqueue, audit and host correlation together.
 No internal imports or additional supported packages are needed.
+
+Email-less local provisioning/import lives in the existing root, PostgreSQL and
+testkit packages; no package or host-support import is added. Public symbol and
+runnable consumer checks cover the optional LocalIdentityStore contract, persisted
+credential input policy, create-only import and managed host transaction/proof.
+See `local-identities.md` for compatibility and required follow-ups.
