@@ -74,6 +74,8 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = verifier.AccessTokenProfile("")
 	_ = goauth.NotificationDeliveryDisabled
 	_ = goauth.ErrNotificationRejected
+	_ = postgres.RateLimitCleanupRequest{Before: time.Time{}, Limit: 1}
+	_ = (*postgres.Runtime).CleanupRateLimitEvents
 	_ = (*postgres.Runtime).ExpireNotifications
 	_ = goauth.ErrNotificationDeliveryDisabled
 	_ = goauth.Config{NotificationDelivery: goauth.NotificationDeliveryDisabled}

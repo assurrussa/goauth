@@ -222,6 +222,7 @@ func TestPostgresLocalIdentityMigrationPreservesV3(t *testing.T) {
 	_, err = db.Exec(`ALTER TABLE auth_subjects DROP COLUMN retired_at;
 ALTER TABLE auth_local_credentials DROP COLUMN password_input_policy;
 DROP INDEX auth_notification_deliveries_expiry_idx;
+DROP INDEX auth_rate_limit_events_retention_idx;
 DELETE FROM goauth_migration_history WHERE version >= 4;
 DELETE FROM goauth_schema_version WHERE version >= 4`)
 	require.NoError(t, err)

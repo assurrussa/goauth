@@ -77,3 +77,13 @@ root/testkit retirement, managed PostgreSQL rollback/receipt and fresh-subject
 login reuse while retaining every earlier local-identity/admission/password/
 rename/notification-outcome probe. No new supported package or host-support
 exception is introduced.
+
+## Bounded rate-event maintenance
+
+`postgres.RateLimitCleanupRequest` and
+`postgres.Runtime.CleanupRateLimitEvents(ctx, request) (int64, error)` are
+supported in the existing PostgreSQL package, without changing root store
+interfaces or adding a package. The API deletes one bounded candidate batch in
+its own transaction and reports counts only for confirmed commits. See
+[rate-event maintenance](rate-event-maintenance.md) for retention, managed-scope
+rejection and schema 7 compatibility.

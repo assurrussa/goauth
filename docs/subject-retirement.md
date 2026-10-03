@@ -110,6 +110,11 @@ version; otherwise restore a compatible backup preserving tombstones, current
 revocations and host source mappings, with host reconciliation. The CHECK is a
 compatibility fence, not protection against a DBA deliberately clearing markers.
 
+The later [rate-event maintenance upgrade](rate-event-maintenance.md) advances
+the database to schema 7 without changing migration 6. After that upgrade,
+rollback requires a schema-7-compatible binary; schema-6-only binaries refuse
+the newer schema at startup.
+
 ## Security scope still outstanding
 
 Retirement invalidates local proofs, local security state, existing OIDC families

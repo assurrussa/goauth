@@ -91,12 +91,13 @@ func TestOptionalModuleTemplatesRemainRunnableAndPublic(t *testing.T) {
 			"TestDisabledDeliveryRuntimeExternalConsumer", "TestCredentialAdmissionExternalConsumer",
 			"TestTrustedLocalPasswordExternalConsumer", "TestLocalIdentityRenameExternalConsumer",
 			"TestSubjectRetirementExternalConsumer", "TestNotificationOutcomeSurfaceExternalConsumer",
+			"TestRateEventCleanupSurfaceExternalConsumer",
 		}},
 		{"postgres", cfg.BuildPostgresProbeTest, []string{
 			"TestManagedHostTransactionExternalConsumer", "TestCredentialProofExternalConsumer",
 			"TestPasswordResetReceiptExternalConsumer", "TestDisabledDeliveryPostgresExternalConsumer",
 			"TestTrustedLocalPasswordManagedExternalConsumer", "TestLocalIdentityRenameManagedExternalConsumer",
-			"TestSubjectRetirementManagedExternalConsumer",
+			"TestSubjectRetirementManagedExternalConsumer", "TestRateEventCleanupManagedExternalConsumer",
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {

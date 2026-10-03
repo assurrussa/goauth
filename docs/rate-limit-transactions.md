@@ -63,6 +63,16 @@ Go memory. This preserves reduced-limit behavior and counts same-time attempts
 separately. The exact cutoff remains inclusive; admission requires moving beyond
 that boundary, and HTTP retry hints round upward to whole seconds.
 
+## Rate-event maintenance
+
+Hosts can schedule independent, bounded `postgres.Runtime.CleanupRateLimitEvents`
+calls outside managed auth transactions. A batch bounds oldest candidates before
+skipping locks, so a zero count does not prove an empty backlog. Preserve the
+longest window used by all consumers sharing the table, including direct Store
+callers with windows longer than the Runtime's 24-hour cap, plus clock skew and
+request latency. See [the maintenance contract](rate-event-maintenance.md) for
+cutoffs, confirmed-commit counts and the explicit schema 7 upgrade.
+
 ## Verification
 
 Regressions cover rejection before database I/O, single-/multi-connection nested
