@@ -24,6 +24,8 @@ Existing tags remain immutable.
 - [Runnable quickstart](examples/nethttp/README.md): browser and JSON API wiring.
 - [Notification outcomes and bounded expiry](docs/notification-outcomes.md): explicit
   terminal non-delivery and queue-only, transaction-aware maintenance.
+- [Bounded rate-event maintenance](docs/rate-event-maintenance.md): independent
+  cleanup batches, shared-consumer retention and the schema 7 upgrade.
 - [Production notification delivery](docs/notification-delivery.md): host sender
   contract and optional confidential NotifyHub integration.
 - [Project contract](docs/project-contract.md) and
@@ -187,8 +189,12 @@ must honor context cancellation and set network timeouts so shutdown can join
 the worker. `NotificationWorkerConfig.OnBlocked` reports a delivery ID and safe
 reason when decryption fails; alert on this signal without logging payloads.
 Run `auth.RunNotifications(ctx)` in a supervised worker, cancel and join it on
-shutdown, schedule `auth.Cleanup(ctx, postgres.CleanupPolicy{})`, and close the
-Runtime when the process stops. The host chooses how to serve the Fiber app.
+shutdown, and close the Runtime when the process stops. Schedule broad
+`auth.Cleanup(ctx, postgres.CleanupPolicy{})` only with a host retention policy.
+For rate-event-only maintenance, use bounded `auth.CleanupRateLimitEvents` calls
+outside managed transactions; preserve the longest window across all shared
+consumers plus clock skew and request latency. See [the maintenance contract](docs/rate-event-maintenance.md).
+The host chooses how to serve the Fiber app.
 The queue checks one-time state before sending; an account change during an
 in-flight external send can still reach the provider. Token validity is always
 enforced by the Runtime when the recipient acts on the message.

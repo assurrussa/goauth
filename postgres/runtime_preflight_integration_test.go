@@ -21,6 +21,7 @@ func TestInvalidRuntimeConfigDoesNotMigrateSchema(t *testing.T) {
 	_, err := db.ExecContext(ctx, `
 DROP TABLE auth_notification_deliveries;
 DROP TABLE goauth_migration_history;
+DROP INDEX auth_rate_limit_events_retention_idx;
 DELETE FROM goauth_schema_version WHERE version >= 3;
 ALTER TABLE auth_subjects DROP COLUMN retired_at;
 ALTER TABLE auth_local_credentials DROP COLUMN password_input_policy;`)

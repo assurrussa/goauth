@@ -36,7 +36,7 @@ func TestSubjectRetirementMigrationUpgradesAllPublishedSchemas(t *testing.T) {
 			require.NoError(t, postgres.VerifySchema(t.Context(), db))
 			var gotVersion int
 			require.NoError(t, db.QueryRowContext(t.Context(), `SELECT max(version) FROM goauth_schema_version`).Scan(&gotVersion))
-			require.Equal(t, 6, gotVersion)
+			require.Equal(t, 7, gotVersion)
 			if version != 0 {
 				require.Equal(t, before, retirementMigrationSnapshot(t, db, version), "upgrade must preserve preexisting data")
 				var retired int
@@ -261,7 +261,7 @@ func TestSubjectRetirementMigrationRejectsChecksumAndFutureSchema(t *testing.T) 
 	require.NoError(t, err)
 	require.ErrorIs(t, postgres.VerifySchema(t.Context(), db), postgres.ErrSchemaChecksumMismatch)
 	require.ErrorIs(t, postgres.Migrate(t.Context(), db), postgres.ErrSchemaChecksumMismatch)
-	_, err = db.ExecContext(t.Context(), `INSERT INTO goauth_schema_version (version) VALUES (7)`)
+	_, err = db.ExecContext(t.Context(), `INSERT INTO goauth_schema_version (version) VALUES (8)`)
 	require.NoError(t, err)
 	require.ErrorIs(t, postgres.VerifySchema(t.Context(), db), postgres.ErrFutureSchema)
 	require.ErrorIs(t, postgres.Migrate(t.Context(), db), postgres.ErrFutureSchema)

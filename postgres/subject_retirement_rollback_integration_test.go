@@ -65,7 +65,7 @@ func testRetirementOldBinary(t *testing.T, source, expectedChecksum string) {
 	command.Env = append(os.Environ(), "GOWORK=off", "GOPROXY=off", "GOSUMDB=off")
 	output, err := command.CombinedOutput()
 	require.NoError(t, err, "old-binary startup probe: %s", output)
-	require.Contains(t, string(output), "older-schema startup refused schema-v6 in both modes")
+	require.Contains(t, string(output), "older-schema startup refused newer schema in both modes")
 	require.Equal(t, before, retirementMigrationSnapshot(t, db, 6), "rejected rollback must preserve tombstones and all state")
 }
 
@@ -112,6 +112,6 @@ func main() {
     if err := postgres.Migrate(context.Background(), db); !errors.Is(err, postgres.ErrFutureSchema) {
         panic(fmt.Sprintf("Migrate expected ErrFutureSchema, got %v", err))
     }
-    fmt.Println("older-schema startup refused schema-v6 in both modes")
+    fmt.Println("older-schema startup refused newer schema in both modes")
 }
 `

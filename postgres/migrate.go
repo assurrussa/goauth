@@ -10,7 +10,7 @@ import (
 	"fmt"
 )
 
-const schemaVersion = 6
+const schemaVersion = 7
 
 const localIdentitySchemaVersion = 4
 
@@ -58,7 +58,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	switch state {
-	case schemaStateV6:
+	case schemaStateV7:
 		// No schema change is needed, but still finish the transaction to release
 		// the lock before reporting a successful verification.
 	case schemaStateFuture:
@@ -102,6 +102,11 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 			return err
 		}
 		if err := applySubjectRetirementMigration(ctx, tx); err != nil {
+			return err
+		}
+		fallthrough
+	case schemaStateV6:
+		if err := applyRateEventCleanupMigration(ctx, tx); err != nil {
 			return err
 		}
 	default:
@@ -149,8 +154,9 @@ func applyNotificationMigration(ctx context.Context, tx *sql.Tx) error {
 
 // VerifySchema checks the schema version, additive migration checksums,
 // required tables, credential-policy and notification queue columns/index, and
-// the subject-retirement marker and validated disabled-only fence. It does not
-// compare every type, index, foreign key or constraint. AutoMigrate-disabled
+// the subject-retirement marker, validated disabled-only fence, and rate-event
+// retention index. It does not compare every type, index, foreign key or
+// constraint. AutoMigrate-disabled
 // Runtime construction also performs this nonmutating check.
 func VerifySchema(ctx context.Context, db *sql.DB) error {
 	if db == nil {
@@ -167,7 +173,7 @@ func verifySchema(ctx context.Context, db queryRower) error {
 	if state == schemaStateFuture {
 		return ErrFutureSchema
 	}
-	if state != schemaStateV6 {
+	if state != schemaStateV7 {
 		return ErrSchemaNeedsMigration
 	}
 	if err := verifyNotificationSchema(ctx, db); err != nil {
@@ -179,7 +185,10 @@ func verifySchema(ctx context.Context, db queryRower) error {
 	if err := verifyNotificationExpirySchema(ctx, db); err != nil {
 		return err
 	}
-	return verifySubjectRetirementSchema(ctx, db)
+	if err := verifySubjectRetirementSchema(ctx, db); err != nil {
+		return err
+	}
+	return verifyRateEventCleanupSchema(ctx, db)
 }
 
 func verifyNotificationSchema(ctx context.Context, db queryRower) error {
@@ -294,6 +303,7 @@ const (
 	schemaStateV4
 	schemaStateV5
 	schemaStateV6
+	schemaStateV7
 	schemaStateFuture
 )
 
@@ -322,7 +332,7 @@ func detectSchema(ctx context.Context, db queryRower) (schemaState, error) {
 		return schemaStateFuture, nil
 	}
 	if version != 2 && version != notificationSchemaVersion && version != localIdentitySchemaVersion &&
-		version != notificationExpirySchemaVersion && version != schemaVersion {
+		version != notificationExpirySchemaVersion && version != subjectRetirementSchemaVersion && version != schemaVersion {
 		return schemaStateLegacy, nil
 	}
 
@@ -340,6 +350,9 @@ WHERE table_schema = 'public'
 	}
 
 	if version == schemaVersion {
+		return schemaStateV7, nil
+	}
+	if version == subjectRetirementSchemaVersion {
 		return schemaStateV6, nil
 	}
 	if version == notificationExpirySchemaVersion {
