@@ -148,9 +148,17 @@ particular, `simulated`, `dispatching`, and `unknown` are not success.
 
 The managed GoAuth worker treats every non-nil sender error as unsuccessful and
 applies its configured backoff, attempt limit, and expiry. It does not interpret
-GoNotify's outcomes or `RetryAfter`. A production host should add a metadata-only
-per-ID not-before gate when `RetryAfter` exceeds the native backoff, and record
-terminal/unknown outcomes for operators without acknowledging them as accepted.
+GoNotify's outcomes or `RetryAfter`. The current worker cannot honor a dynamic
+per-delivery retry deadline without explicit worker support. Do not implement a
+sender-side not-before gate that simply returns an error: the worker reserves
+and increments an attempt before calling the sender, so each gated call still
+consumes the attempt budget and can exhaust it before the delay ends. Any delay
+inside the sender must honor its context, whose deadline is bounded by
+`SendTimeout` and the original expiry.
+Configure the native `RetryMin`, `RetryMax`, and `MaxAttempts` conservatively for
+the provider's expected delays and credential validity; longer provider delays
+may still outlast that budget. Record terminal/unknown outcomes for operators
+without acknowledging them as accepted.
 The sketch deliberately has no retry loop or alternate transport. Returning an
 error can lead to another identical worker attempt; Hub's retained outcome
 prevents a terminal or ambiguous operation from being blindly redispatched.
