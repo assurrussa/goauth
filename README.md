@@ -22,6 +22,8 @@ Existing tags remain immutable.
 ## Documentation
 
 - [Runnable quickstart](examples/nethttp/README.md): browser and JSON API wiring.
+- [Production notification delivery](docs/notification-delivery.md): host sender
+  contract and optional confidential NotifyHub integration.
 - [Project contract](docs/project-contract.md) and
   [auth invariants](AUTH_INVARIANTS.md): ownership and security boundaries.
 - [PostgreSQL Runtime](docs/v0.2-runtime.md): canonical storage and lifecycle.
