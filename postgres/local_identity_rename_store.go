@@ -119,8 +119,11 @@ func (s *Store) RenameLocalIdentity(
 		return goauth.LocalIdentityView{}, errors.New("local identity security version overflow")
 	}
 	now := securityTime(ctx, request.Now, started)
-	if _, err := tx.ExecContext(ctx, `UPDATE auth_identifiers SET display_value=$2,normalized_value=$3,updated_at=$4 WHERE id=$1`,
-		identifier.ID, request.NewDisplayValue, request.NewNormalizedValue, now); err != nil {
+	if err := tx.QueryRowContext(ctx, `
+UPDATE auth_identifiers SET display_value=$2,normalized_value=$3,updated_at=$4 WHERE id=$1
+RETURNING display_value,normalized_value,updated_at`,
+		identifier.ID, request.NewDisplayValue, request.NewNormalizedValue, now,
+	).Scan(&identifier.DisplayValue, &identifier.NormalizedValue, &identifier.UpdatedAt); err != nil {
 		return goauth.LocalIdentityView{}, transformWriteError("rename local identifier", err)
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE auth_subjects SET security_version=security_version+1,updated_at=$2 WHERE id=$1`,
@@ -137,9 +140,6 @@ func (s *Store) RenameLocalIdentity(
 	if err != nil {
 		return goauth.LocalIdentityView{}, err
 	}
-	identifier.DisplayValue = request.NewDisplayValue
-	identifier.NormalizedValue = request.NewNormalizedValue
-	identifier.UpdatedAt = now
 	if err := finishWrite(tx, owned); err != nil {
 		return goauth.LocalIdentityView{}, fmt.Errorf("commit local identity rename: %w", err)
 	}

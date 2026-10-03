@@ -375,10 +375,60 @@ func TestPostgresLocalIdentityRenameStoreRejectsMalformedRequests(t *testing.T) 
 
 func assertRenameIdentifierPersisted(t *testing.T, expected, actual goauth.Identifier) {
 	t.Helper()
-	// PostgreSQL timestamps have microsecond precision; compare all other
-	// fields exactly, including the unchanged identifier creation timestamp.
-	require.True(t, expected.UpdatedAt.Truncate(time.Microsecond).Equal(actual.UpdatedAt),
-		"returned update time must equal the stored PostgreSQL microsecond value")
-	expected.UpdatedAt = actual.UpdatedAt
+	// Return the exact stored row, including PostgreSQL's timestamp precision.
 	require.Equal(t, expected, actual)
+}
+
+func TestPostgresLocalIdentityRenameReturnsPersistedIdentifier(t *testing.T) {
+	for _, serverRounding := range []bool{false, true} {
+		t.Run(map[bool]string{false: "driver precision", true: "server rounding"}[serverRounding], func(t *testing.T) {
+			db := integrationDB(t)
+			resetSchema(t, db)
+			now := time.Date(2026, time.October, 3, 19, 0, 0, 123456789, time.UTC)
+			runtime := renamePostgresRuntime(t, db, func(config *goauth.Config) {
+				config.Now = func() time.Time { return now }
+			})
+			account := provisionRenameIdentity(t, db, runtime, "TimestampOriginal")
+			before, err := runtime.GetLocalIdentifier(t.Context(), account.Subject.ID, postgresIdentityScheme)
+			require.NoError(t, err)
+			now = now.Add(time.Second)
+			if serverRounding {
+				installRenameTimestampRoundingFixture(t, db, account.Subject.ID, now)
+			}
+			view, err := runtime.RenameLocalIdentity(t.Context(), renameRequest(account, "TimestampOriginal", "TimestampRenamed"))
+			require.NoError(t, err)
+			persisted, err := runtime.GetLocalIdentifier(t.Context(), account.Subject.ID, postgresIdentityScheme)
+			require.NoError(t, err)
+			require.Equal(t, persisted, view.Identifier, "successful rename must return exactly what the getter reads")
+			require.Equal(t, before.CreatedAt, view.Identifier.CreatedAt)
+			var databaseUpdatedAt time.Time
+			require.NoError(t, db.QueryRowContext(t.Context(),
+				`SELECT updated_at FROM auth_identifiers WHERE id=$1`, view.Identifier.ID).Scan(&databaseUpdatedAt))
+			require.Equal(t, databaseUpdatedAt, view.Identifier.UpdatedAt)
+			if serverRounding {
+				require.Equal(t, 123457000, databaseUpdatedAt.Nanosecond(), "PostgreSQL must round the full-precision fixture value")
+			}
+		})
+	}
+}
+
+func installRenameTimestampRoundingFixture(t *testing.T, db *sql.DB, id goauth.SubjectID, now time.Time) {
+	t.Helper()
+	// pgx truncates Go time.Time arguments before sending them. This owned,
+	// row-scoped fixture passes the same nanosecond clock value as text, so the
+	// database must round it. RETURNING must follow stored data in either case.
+	_, err := db.ExecContext(t.Context(), `
+CREATE FUNCTION rename_timestamp_rounding_fixture() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN NEW.updated_at := TG_ARGV[0]::timestamptz; RETURN NEW; END $$`)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, err := db.Exec(`DROP TRIGGER IF EXISTS rename_timestamp_rounding ON auth_identifiers;
+DROP FUNCTION rename_timestamp_rounding_fixture()`)
+		require.NoError(t, err)
+	})
+	// The interpolated values are generated fixture UUID/time values, not input.
+	_, err = db.ExecContext(t.Context(), `CREATE TRIGGER rename_timestamp_rounding
+BEFORE UPDATE ON auth_identifiers FOR EACH ROW WHEN (NEW.subject_id = '`+id.String()+`')
+EXECUTE FUNCTION rename_timestamp_rounding_fixture('`+now.Format(time.RFC3339Nano)+`')`)
+	require.NoError(t, err)
 }
