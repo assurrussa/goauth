@@ -87,10 +87,14 @@ func TestOptionalModuleTemplatesRemainRunnableAndPublic(t *testing.T) {
 		build func() (string, error)
 		tests []string
 	}{
-		{"memory", cfg.BuildProbeTest, []string{"TestDisabledDeliveryRuntimeExternalConsumer"}},
+		{"memory", cfg.BuildProbeTest, []string{
+			"TestDisabledDeliveryRuntimeExternalConsumer", "TestCredentialAdmissionExternalConsumer",
+			"TestTrustedLocalPasswordExternalConsumer",
+		}},
 		{"postgres", cfg.BuildPostgresProbeTest, []string{
 			"TestManagedHostTransactionExternalConsumer", "TestCredentialProofExternalConsumer",
 			"TestPasswordResetReceiptExternalConsumer", "TestDisabledDeliveryPostgresExternalConsumer",
+			"TestTrustedLocalPasswordManagedExternalConsumer",
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {

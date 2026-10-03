@@ -361,4 +361,6 @@ Privileged hosts can provision or import canonical local identities using a
 registered non-email login scheme, without fabricating email. See
 [the local identity contract](docs/local-identities.md) for create-only imports,
 transactional host mappings, narrowly bounded legacy password compatibility,
-schema-4 migration, and the required admission/password-administration follow-ups.
+schema-4 migration, privileged `SetTrustedLocalPassword`, and host admission/SSO integration steps.
+The privileged setter preserves subject status, advances security version even for
+identical plaintext, and joins managed host transactions with mandatory audit.

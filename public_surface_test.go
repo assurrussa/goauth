@@ -95,6 +95,16 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = goauth.MaxAccessTokenTTL
 	_ = goauth.ErrReservedAccessTokenClaim
 	_ = goauth.ChangePasswordRequest{}
+	_ = goauth.SetTrustedLocalPasswordRequest{}
+	_ = goauth.TrustedLocalPasswordStoreRequest{}
+	_ = goauth.ErrTrustedLocalPasswordUnsupported
+	_ = goauth.SecurityEventTrustedLocalPasswordSet
+	_ = (*goauth.Runtime).SetTrustedLocalPassword
+	_ = (*postgres.Runtime).SetTrustedLocalPassword
+	var trustedLocalPasswordStore goauth.TrustedLocalPasswordStore = (*postgres.Store)(nil)
+	_ = trustedLocalPasswordStore
+	var testkitTrustedLocalPasswordStore goauth.TrustedLocalPasswordStore = (*testkit.Store)(nil)
+	_ = testkitTrustedLocalPasswordStore
 	_ = goauth.PendingEmailChange{}
 	_ = goauth.EmailChangeRecord{}
 	_ = goauth.PasswordResetRecord{ExpectedNormalizedEmail: "", ExpectedSecurityVersion: 1}

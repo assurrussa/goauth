@@ -24,7 +24,7 @@
 - Realm and scope are persisted in the session and included in access claims.
   HTTP middleware authenticates server-side session state by default. Admin and
   custom realms recheck the host membership gate. Offline JWT verification is explicit.
-- Suspending, disabling, resetting or changing a password, or confirming an
+- Suspending, disabling, resetting, changing or privileged-setting a password, or confirming an
   email change increments security version and revokes sessions and refresh
   families in one PostgreSQL transaction.
   Offline access tokens never live longer than five minutes.
@@ -84,7 +84,7 @@
   verification policy for the exact documented Argon2id profile. Runtime legacy
   verification is separately opt-in and executes both supported profiles sequentially
   in one shared slot for known and missing accounts; unsupported profiles deny. All new passwords
-  retain the standard issuance policy; password change/reset clears the marker.
+  retain the standard issuance policy; password change/reset/trusted-set clears the marker.
   See `docs/local-identities.md` for the privileged transaction and retry contract.
 - Refresh and reset tokens are selector plus HMAC-protected secret. Email codes
   are stored only as HMAC digests.

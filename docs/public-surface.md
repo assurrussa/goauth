@@ -42,3 +42,9 @@ testkit packages; no package or host-support import is added. Public symbol and
 runnable consumer checks cover the optional LocalIdentityStore contract, persisted
 credential input policy, create-only import and managed host transaction/proof.
 See `local-identities.md` for compatibility and required follow-ups.
+
+Privileged password replacement uses the additive `TrustedLocalPasswordStore`
+capability and `Runtime.SetTrustedLocalPassword`, promoted by `postgres.Runtime`.
+The external consumer exercises same-password version advancement on a disabled
+account and atomic email-less host event/audit commit or rollback. No public
+transport or new import package is added.
