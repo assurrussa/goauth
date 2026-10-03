@@ -5,6 +5,11 @@ native encrypted notification worker, and hourly retention cleanup. This is a
 runnable development host, not a deployment template. It uses Go 1.27 and the
 repository's existing dependencies.
 
+For production, supply a host-owned sender following the
+[notification delivery contract](../../docs/notification-delivery.md), including
+the optional confidential NotifyHub integration. This example keeps its
+localhost-only SMTP catcher and does not add a GoNotify dependency.
+
 From the repository root:
 
 ```sh
