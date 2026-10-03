@@ -64,7 +64,8 @@ func (c Config) BuildProbeTest() (string, error) {
 	}
 
 	source := runnableProbeTest + disabledDeliveryProbeTest + localIdentityProbeTest +
-		credentialAdmissionProbeTest + trustedLocalPasswordProbeTest + localIdentityRenameProbeTest
+		credentialAdmissionProbeTest + trustedLocalPasswordProbeTest +
+		localIdentityRenameProbeTest + notificationOutcomeProbeTest
 	content := strings.ReplaceAll(source, "GOAUTH_MODULE", cfg.ModulePath)
 	for _, pkg := range externalconsumer.SupportedPackages {
 		resolved := strings.Replace(pkg, DefaultModulePath, cfg.ModulePath, 1)

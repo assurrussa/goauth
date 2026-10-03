@@ -63,10 +63,11 @@ func (c NotificationWorkerConfig) withDefaults() (NotificationWorkerConfig, erro
 }
 
 type NotificationQueueStats struct {
-	Pending        int64
-	Leased         int64
-	Blocked        int64
-	Delivered      int64
+	Pending   int64
+	Leased    int64
+	Blocked   int64
+	Delivered int64
+	// Exhausted includes an exhausted retry budget or explicit terminal sender rejection.
 	Exhausted      int64
 	Expired        int64
 	OldestQueuedAt *time.Time
@@ -217,6 +218,9 @@ func (r *Runtime) deliverNotification(ctx context.Context, claim notificationCla
 	}
 	if err == nil {
 		return r.store.finishNotification(ctx, claim, notificationDelivered, "", time.Time{})
+	}
+	if errors.Is(err, goauth.ErrNotificationRejected) {
+		return r.store.finishNotification(ctx, claim, notificationExhausted, "sender_rejected", time.Time{})
 	}
 	// A successful reservation counted this attempt before calling the sender.
 	claim.attempts++

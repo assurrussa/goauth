@@ -59,3 +59,11 @@ Runtime method. Clean external-consumer probes execute read/rename/CAS in testki
 and read/rename/host-rollback composition on PostgreSQL. Existing local identity,
 admission and trusted-password consumer templates remain included. See
 [local identity semantics](local-identities.md#read-and-rename-a-primary-custom-login).
+
+## Managed notification outcomes
+
+`goauth.ErrNotificationRejected` explicitly stops retries only for confirmed terminal
+non-delivery. `postgres.Runtime.ExpireNotifications(ctx, limit)` performs bounded
+queue-only expiry using the Runtime clock and managed transaction scope. Neither
+operation claims inbox delivery; ordinary sender errors keep their retry behavior.
+See [notification outcomes](notification-outcomes.md).

@@ -2,8 +2,17 @@ package goauth
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrNotificationRejected is an explicit terminal non-delivery disposition from a
+// NotificationSender. Return it, optionally wrapped, only when the transport has
+// definitively rejected or simulated the operation without accepting real mail.
+// Never use it for timeouts, lost responses or unknown provider outcomes.
+// PostgreSQL records an unsuccessful terminal receipt (exhausted/sender_rejected),
+// scrubs the envelope, and leaves delivered_at NULL. Ordinary errors keep retrying.
+var ErrNotificationRejected = errors.New("notification permanently rejected")
 
 // NotificationDelivery may be sent more than once before it is accepted,
 // expires, or exhausts the attempt limit. A sender must use ID as its

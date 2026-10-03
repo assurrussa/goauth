@@ -22,6 +22,8 @@ Existing tags remain immutable.
 ## Documentation
 
 - [Runnable quickstart](examples/nethttp/README.md): browser and JSON API wiring.
+- [Notification outcomes and bounded expiry](docs/notification-outcomes.md): explicit
+  terminal non-delivery and queue-only, transaction-aware maintenance.
 - [Production notification delivery](docs/notification-delivery.md): host sender
   contract and optional confidential NotifyHub integration.
 - [Project contract](docs/project-contract.md) and
