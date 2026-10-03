@@ -346,6 +346,16 @@ func TestPostgresTrustedLocalPasswordRollbackPreservesSecurityState(t *testing.T
 			runtime, _, _ := integrationRuntime(t, db)
 			registered := register(t, runtime, "rollback-state.set@example.test")
 			id := registered.Account.Subject.ID
+			// Keep rollback assertions intact, then remove only this fixture's
+			// account and audit so the following public consumer sees an idle queue.
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_, err := db.ExecContext(ctx, `DELETE FROM auth_security_audit_events WHERE subject_id=$1`, id)
+				require.NoError(t, err)
+				_, err = db.ExecContext(ctx, `DELETE FROM auth_subjects WHERE id=$1`, id)
+				require.NoError(t, err)
+			})
 			require.NoError(t, runtime.SendEmailChallenge(t.Context(), id, goauth.EmailChallengePurposeVerification))
 			require.NoError(t, runtime.RequestEmailChange(t.Context(), id, "rollback-pending.set@example.test"))
 			require.NoError(t, runtime.RequestPasswordReset(t.Context(), registered.Account.PrimaryEmail.DisplayValue))
