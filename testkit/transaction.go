@@ -55,6 +55,7 @@ func (s *Store) InAuthTransaction(ctx context.Context, fn func(context.Context) 
 	}
 	s.audits = working.audits
 	s.accounts = working.accounts
+	s.retired = working.retired
 	s.identifiers = working.identifiers
 	s.localIdentifiers = working.localIdentifiers
 	s.passwords = working.passwords
@@ -115,6 +116,7 @@ func (s *Store) snapshot() *Store {
 	for k, v := range s.accounts {
 		c.accounts[k] = cloneAccount(v)
 	}
+	c.retired = maps.Clone(s.retired)
 	c.identifiers = maps.Clone(s.identifiers)
 	for k, v := range s.localIdentifiers {
 		c.localIdentifiers[k] = cloneLocalIdentifier(v)

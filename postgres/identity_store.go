@@ -49,7 +49,8 @@ func (s *Store) CreateSSOAccount(
 	record goauth.SSOAccountRecord,
 ) (goauth.Account, goauth.IdentityLink, error) {
 	account := record.Account
-	if account.Subject.IsZero() || account.PrimaryEmail.ID == "" || record.Link.ID == "" {
+	if account.Subject.IsZero() || account.PrimaryEmail.ID == "" || record.Link.ID == "" ||
+		record.Link.SubjectID != account.Subject.ID {
 		return goauth.Account{}, goauth.IdentityLink{}, errors.New("invalid SSO account record")
 	}
 	tx, owned, err := s.beginWrite(ctx)
@@ -111,10 +112,20 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 }
 
 func (s *Store) LinkIdentity(ctx context.Context, link goauth.IdentityLink) (goauth.IdentityLink, error) {
-	if err := insertIdentityLink(ctx, s.notificationExecer(ctx), link); err != nil {
+	tx, owned, err := s.beginWrite(ctx)
+	if err != nil {
+		return goauth.IdentityLink{}, fmt.Errorf("begin identity link: %w", err)
+	}
+	defer rollbackWrite(tx, owned)
+	if _, err := lockUnretiredSubject(ctx, tx, link.SubjectID); err != nil {
 		return goauth.IdentityLink{}, err
 	}
-
+	if err := insertIdentityLink(ctx, tx, link); err != nil {
+		return goauth.IdentityLink{}, err
+	}
+	if err := finishWrite(tx, owned); err != nil {
+		return goauth.IdentityLink{}, fmt.Errorf("commit identity link: %w", err)
+	}
 	return link, nil
 }
 

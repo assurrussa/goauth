@@ -248,13 +248,17 @@ func (s *Store) ChangePassword(
 	defer rollbackWrite(tx, owned)
 
 	var currentPHC, status string
+	var retired sql.NullTime
 	err = tx.QueryRowContext(ctx, `
-	SELECT status FROM auth_subjects WHERE id = $1 FOR UPDATE`, request.SubjectID).Scan(&status)
+	SELECT status,retired_at FROM auth_subjects WHERE id = $1 FOR UPDATE`, request.SubjectID).Scan(&status, &retired)
 	if errors.Is(err, sql.ErrNoRows) {
 		return goauth.PasswordChangeStoreResult{Status: goauth.PasswordChangeStoreMissing}, nil
 	}
 	if err != nil {
 		return goauth.PasswordChangeStoreResult{}, fmt.Errorf("lock password change subject: %w", err)
+	}
+	if retired.Valid {
+		return goauth.PasswordChangeStoreResult{}, goauth.ErrSubjectRetired
 	}
 	err = tx.QueryRowContext(ctx, `
 	SELECT password_phc FROM auth_local_credentials WHERE subject_id = $1 FOR UPDATE`,

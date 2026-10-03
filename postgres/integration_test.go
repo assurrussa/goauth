@@ -36,7 +36,7 @@ func TestMigrationFreshSchemaDownUpAndLegacyRefusal(t *testing.T) {
 
 	var version int
 	require.NoError(t, db.QueryRow(`SELECT max(version) FROM goauth_schema_version`).Scan(&version))
-	require.Equal(t, 5, version)
+	require.Equal(t, 6, version)
 	var requiredTables int
 	require.NoError(t, db.QueryRow(`
 SELECT count(*)

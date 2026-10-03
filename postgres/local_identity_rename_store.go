@@ -84,14 +84,9 @@ func (s *Store) RenameLocalIdentity(
 		return goauth.LocalIdentityView{}, fmt.Errorf("begin local identity rename: %w", err)
 	}
 	defer rollbackWrite(tx, owned)
-	var version int64
-	err = tx.QueryRowContext(ctx, `SELECT security_version FROM auth_subjects WHERE id=$1 FOR UPDATE`,
-		request.SubjectID).Scan(&version)
-	if errors.Is(err, sql.ErrNoRows) {
-		return goauth.LocalIdentityView{}, goauth.ErrAccountNotFound
-	}
+	version, err := lockUnretiredSubject(ctx, tx, request.SubjectID)
 	if err != nil {
-		return goauth.LocalIdentityView{}, fmt.Errorf("lock local identity subject: %w", err)
+		return goauth.LocalIdentityView{}, err
 	}
 	if version != request.ExpectedSecurityVersion {
 		return goauth.LocalIdentityView{}, goauth.ErrSecurityVersionMismatch

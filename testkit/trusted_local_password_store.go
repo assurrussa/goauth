@@ -22,6 +22,9 @@ func (s *Store) SetTrustedLocalPassword(
 	if !found {
 		return goauth.Account{}, goauth.ErrAccountNotFound
 	}
+	if _, retired := s.retired[key]; retired {
+		return goauth.Account{}, goauth.ErrSubjectRetired
+	}
 	current, found := s.passwords[key]
 	if !found {
 		return goauth.Account{}, goauth.ErrAccountNotFound

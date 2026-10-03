@@ -3,7 +3,7 @@
 ## Canonical identity
 
 - `auth_subjects` contains only canonical ID, `active|suspended|disabled`
-  status, security version, and timestamps.
+  status, security version, timestamps, and an optional terminal retirement marker.
 - Identifiers, basic profile, local credentials, memberships, identity links,
   sessions, and RBAC assignments are separate relations keyed by canonical
   `subject_id`.
@@ -16,6 +16,14 @@
   subject/status/credential/profile, advances once for every real display or identity
   edit, and atomically invalidates canonical security state with mandatory audit.
   Old login reuse creates a fresh subject; aliases are never promoted or merged.
+- Terminal subject retirement requires an exact primary custom login and positive
+  subject-version CAS. It disables the entire subject, advances once, releases only
+  that login and removes local credentials with mandatory audit/invalidation.
+  UUID/profile/audit/RBAC and other identifier/external bindings remain reserved;
+  retained email ownership can block reuse and never silently links a replacement.
+  Retired subjects cannot reactivate or receive credentials/identity links. The
+  separate optional lifecycle view preserves the public Subject layout and reads
+  account plus marker from one snapshot. See `docs/subject-retirement.md`.
 - Email uniqueness is `(scheme, normalized_value)`. Display spelling is stored
   separately; built-in email normalization is lowercase after validation.
 

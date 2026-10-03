@@ -451,8 +451,9 @@ func (s *Store) SetSubjectStatus(
 
 	var subject goauth.Subject
 	var storedStatus string
+	var retired sql.NullTime
 	err = tx.QueryRowContext(ctx, `
-SELECT id, status, security_version, created_at, updated_at
+SELECT id, status, security_version, created_at, updated_at, retired_at
 FROM auth_subjects
 WHERE id = $1
 FOR UPDATE`, subjectID).Scan(
@@ -461,12 +462,16 @@ FOR UPDATE`, subjectID).Scan(
 		&subject.SecurityVersion,
 		&subject.CreatedAt,
 		&subject.UpdatedAt,
+		&retired,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return goauth.Subject{}, goauth.ErrAccountNotFound
 	}
 	if err != nil {
 		return goauth.Subject{}, fmt.Errorf("lock auth subject: %w", err)
+	}
+	if retired.Valid {
+		return goauth.Subject{}, goauth.ErrSubjectRetired
 	}
 	subject.Status = goauth.SubjectStatus(storedStatus)
 	if subject.Status == status {
