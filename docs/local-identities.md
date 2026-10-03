@@ -162,6 +162,58 @@ email-less accounts cannot request email challenges or change an absent email.
 Password changes retain mandatory audit and send no email when no primary email
 exists. Notification enqueue refuses invalid/empty destinations.
 
+## Privileged operator password replacement
+
+`Runtime.SetTrustedLocalPassword(ctx, SetTrustedLocalPasswordRequest{SubjectID,
+NewPassword})` is also available through `postgres.Runtime`. It replaces only an
+existing local credential, without requiring the previous password. The host must
+explicitly authorize and rate-limit the operator and record its own actor/project
+audit. Do not expose this API as public recovery or bind an unauthenticated HTTP
+request to it. GoAuth adds mandatory `password.trusted_set` security audit without
+passwords, PHCs or other secrets. No new HTTP endpoint is provided.
+
+Active, suspended and disabled subjects are all supported; status, identity,
+email and profile remain unchanged. A missing subject or an SSO-only subject
+returns `ErrAccountNotFound` and never gains a credential. New passwords always
+use current Unicode issuance policy and the configured blocklist. The legacy
+input marker is cleared. Setting identical plaintext deliberately hashes anew,
+advances `security_version` and invalidates state on every successful call; this
+API does not return `ErrPasswordUnchanged` or compare the old password.
+
+The optional `TrustedLocalPasswordStore` capability leaves `RuntimeStore`
+unchanged; unsupported stores return `ErrTrustedLocalPasswordUnsupported`.
+Implementations must compare the expected PHC, input policy and security version
+under the canonical subject lock, then the local credential lock. A changed
+version returns `ErrSecurityVersionMismatch`; a changed PHC or input policy
+returns `ErrPasswordChangeConflict`. The Runtime does not retry conflicts.
+
+Hashing uses the single Runtime-wide bounded hash budget before acquiring new
+locks. The API does not consume credential-attempt admission because the host
+has already authorized this privileged action and must apply operator throttling.
+It can therefore join `InAuthTransaction`. Call it before acquiring host project
+locks; add project/event outbox and actor audit writes afterward, through that
+managed context's `SQLExecutor`. Host SQL continues to write host tables only.
+
+One transaction replaces the credential, increments security version, revokes
+local sessions and local/OIDC refresh families, consumes outstanding password
+resets and email changes, exhausts unverified email challenges, and records audit.
+Existing version-bound OIDC codes become stale. When notification delivery is
+required and a primary email exists, it also enqueues the existing
+`password_changed` notification. Email-less accounts and explicitly disabled
+delivery enqueue nothing and retain mandatory audit. No destination is invented;
+enqueue or audit failure rolls back the replacement and its invalidation effects.
+
+Nested calls join without committing. Propagate any setter error out of the outer
+callback; nested auth operations do not provide an independent savepoint. A
+returned account is provisional until the outer `InAuthTransaction` returns
+success. Outer rollback cancels auth, audit,
+notification and participating host changes. Commit failure, including
+`ErrOperationOutcomeUnknown`, never returns a successful account from a standalone
+call. Persist a host operation/idempotency record with the project event in the
+same transaction and reconcile it after an unknown outcome before retrying. An
+unconditional retry can legitimately advance the version and emit another event,
+even when the plaintext is identical. The API supplies no implicit idempotency.
+
 ## Required follow-ups before replacing an existing Basic authority
 
 - Explicitly configure a bounded per-request credential-admission policy with
@@ -170,10 +222,6 @@ exists. Notification enqueue refuses invalid/empty destinations.
   success. Zero still inherits the login policy (normally ten per 15 minutes).
   See [credential admission](credential-admission.md); browser login, password
   change and recovery keep their existing independent policies.
-- A supported privileged operator password-set path preserving status,
-  security-version advancement, local/OIDC revocation and mandatory audit. Current
-  `ChangePassword` needs the old password; email recovery cannot cover email-less
-  accounts. Preserve the existing host operator capability until this is supplied.
 - Explicit trusted email-less SSO account/realm policy and local membership before
   enabling SSO consumers. No fake email or `email_verified` assertion is permitted.
 

@@ -63,7 +63,8 @@ func (c Config) BuildProbeTest() (string, error) {
 		return "", err
 	}
 
-	source := runnableProbeTest + disabledDeliveryProbeTest + localIdentityProbeTest + credentialAdmissionProbeTest
+	source := runnableProbeTest + disabledDeliveryProbeTest + localIdentityProbeTest +
+		credentialAdmissionProbeTest + trustedLocalPasswordProbeTest
 	content := strings.ReplaceAll(source, "GOAUTH_MODULE", cfg.ModulePath)
 	for _, pkg := range externalconsumer.SupportedPackages {
 		resolved := strings.Replace(pkg, DefaultModulePath, cfg.ModulePath, 1)
@@ -82,7 +83,8 @@ func (c Config) BuildPostgresProbeTest() (string, error) {
 	}
 
 	return strings.ReplaceAll(
-		postgresProbeTest+managedHostProbeTest+localIdentityPostgresProbeTest, "GOAUTH_MODULE", cfg.ModulePath), nil
+		postgresProbeTest+managedHostProbeTest+localIdentityPostgresProbeTest+trustedLocalPasswordPostgresProbeTest,
+		"GOAUTH_MODULE", cfg.ModulePath), nil
 }
 
 const runnableProbeTest = `package probe
