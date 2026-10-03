@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -33,7 +32,7 @@ p.family_name`
 
 const accountFrom = `
 FROM auth_subjects s
-JOIN auth_identifiers i
+LEFT JOIN auth_identifiers i
   ON i.subject_id = s.id
  AND i.scheme = 'email'
  AND i.is_primary = true
@@ -43,7 +42,21 @@ func (s *Store) CreateLocalAccount(
 	ctx context.Context,
 	record goauth.LocalAccountRecord,
 ) (goauth.Account, error) {
-	if record.Account.Subject.IsZero() || record.Account.PrimaryEmail.ID == "" || record.PasswordPHC == "" {
+	return s.createLocalAccount(ctx, record, record.Account.PrimaryEmail)
+}
+
+func (s *Store) CreateLocalIdentity(ctx context.Context, record goauth.LocalIdentityRecord) (goauth.Account, error) {
+	if record.Identifier.SubjectID != record.Account.Subject.ID || record.Identifier.Scheme == "" ||
+		record.Identifier.Scheme == goauth.IdentifierSchemeEmail || record.Account.PrimaryEmail.ID != "" {
+		return goauth.Account{}, errors.New("invalid local identity record")
+	}
+	return s.createLocalAccount(ctx, record.LocalAccountRecord, record.Identifier)
+}
+
+func (s *Store) createLocalAccount(
+	ctx context.Context, record goauth.LocalAccountRecord, identifier goauth.Identifier,
+) (goauth.Account, error) {
+	if record.Account.Subject.IsZero() || identifier.ID == "" || record.PasswordPHC == "" {
 		return goauth.Account{}, errors.New("invalid local account record")
 	}
 	tx, owned, err := s.beginWrite(ctx)
@@ -53,6 +66,9 @@ func (s *Store) CreateLocalAccount(
 	defer rollbackWrite(tx, owned)
 
 	account := record.Account
+	if record.PasswordInputPolicy == "" {
+		record.PasswordInputPolicy = goauth.PasswordInputPolicyUnicode
+	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO auth_subjects (id, status, security_version, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5)`,
@@ -70,14 +86,14 @@ INSERT INTO auth_identifiers (
     is_primary, verified_at, created_at, updated_at
 )
 VALUES ($1, $2, $3, $4, $5, true, $6, $7, $8)`,
-		account.PrimaryEmail.ID,
+		identifier.ID,
 		account.Subject.ID,
-		account.PrimaryEmail.Scheme,
-		account.PrimaryEmail.DisplayValue,
-		account.PrimaryEmail.NormalizedValue,
-		account.PrimaryEmail.VerifiedAt,
-		account.PrimaryEmail.CreatedAt,
-		account.PrimaryEmail.UpdatedAt,
+		identifier.Scheme,
+		identifier.DisplayValue,
+		identifier.NormalizedValue,
+		identifier.VerifiedAt,
+		identifier.CreatedAt,
+		identifier.UpdatedAt,
 	); err != nil {
 		return goauth.Account{}, transformWriteError("insert auth identifier", err)
 	}
@@ -97,12 +113,13 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		return goauth.Account{}, transformWriteError("insert basic profile", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
-INSERT INTO auth_local_credentials (subject_id, password_phc, created_at, updated_at)
-VALUES ($1, $2, $3, $4)`,
+INSERT INTO auth_local_credentials (subject_id, password_phc, created_at, updated_at, password_input_policy)
+VALUES ($1, $2, $3, $4, $5)`,
 		account.Subject.ID,
 		record.PasswordPHC,
 		account.Subject.CreatedAt,
 		account.Subject.UpdatedAt,
+		record.PasswordInputPolicy,
 	); err != nil {
 		return goauth.Account{}, transformWriteError("insert local credential", err)
 	}
@@ -117,12 +134,13 @@ func (s *Store) FindLocalAccount(
 	ctx context.Context,
 	identifier goauth.IdentifierInput,
 ) (goauth.LocalAccountRecord, error) {
-	query := `SELECT ` + accountColumns + `, c.password_phc ` + accountFrom + `
+	query := `SELECT ` + accountColumns + `, c.password_phc, c.password_input_policy ` + accountFrom + `
 JOIN auth_local_credentials c ON c.subject_id = s.id
-WHERE i.scheme = $1 AND i.normalized_value = $2
+JOIN auth_identifiers lookup ON lookup.subject_id = s.id AND lookup.is_primary = true
+WHERE lookup.scheme = $1 AND lookup.normalized_value = $2
 LIMIT 1`
-	row := s.queryer(ctx).QueryRowContext(ctx, query, identifier.Scheme, strings.TrimSpace(identifier.Value))
-	account, passwordPHC, err := scanLocalAccount(row)
+	row := s.queryer(ctx).QueryRowContext(ctx, query, identifier.Scheme, identifier.Value)
+	record, err := scanLocalAccount(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return goauth.LocalAccountRecord{}, goauth.ErrAccountNotFound
 	}
@@ -130,18 +148,18 @@ LIMIT 1`
 		return goauth.LocalAccountRecord{}, fmt.Errorf("find local account: %w", err)
 	}
 
-	return goauth.LocalAccountRecord{Account: account, PasswordPHC: passwordPHC}, nil
+	return record, nil
 }
 
 func (s *Store) GetLocalAccount(
 	ctx context.Context,
 	subjectID goauth.SubjectID,
 ) (goauth.LocalAccountRecord, error) {
-	query := `SELECT ` + accountColumns + `, c.password_phc ` + accountFrom + `
+	query := `SELECT ` + accountColumns + `, c.password_phc, c.password_input_policy ` + accountFrom + `
 JOIN auth_local_credentials c ON c.subject_id = s.id
 WHERE s.id = $1
 LIMIT 1`
-	account, passwordPHC, err := scanLocalAccount(s.queryer(ctx).QueryRowContext(ctx, query, subjectID))
+	record, err := scanLocalAccount(s.queryer(ctx).QueryRowContext(ctx, query, subjectID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return goauth.LocalAccountRecord{}, goauth.ErrAccountNotFound
 	}
@@ -149,7 +167,7 @@ LIMIT 1`
 		return goauth.LocalAccountRecord{}, fmt.Errorf("get local account: %w", err)
 	}
 
-	return goauth.LocalAccountRecord{Account: account, PasswordPHC: passwordPHC}, nil
+	return record, nil
 }
 
 func (s *Store) FindAccount(
@@ -157,13 +175,14 @@ func (s *Store) FindAccount(
 	identifier goauth.IdentifierInput,
 ) (goauth.Account, error) {
 	query := `SELECT ` + accountColumns + ` ` + accountFrom + `
-WHERE i.scheme = $1 AND i.normalized_value = $2
+JOIN auth_identifiers lookup ON lookup.subject_id = s.id AND lookup.is_primary = true
+WHERE lookup.scheme = $1 AND lookup.normalized_value = $2
 LIMIT 1`
 	account, err := scanAccount(s.queryer(ctx).QueryRowContext(
 		ctx,
 		query,
 		identifier.Scheme,
-		strings.TrimSpace(identifier.Value),
+		identifier.Value,
 	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return goauth.Account{}, goauth.ErrAccountNotFound
@@ -254,7 +273,7 @@ func (s *Store) ChangePassword(
 	}
 	updated, err := tx.ExecContext(ctx, `
 UPDATE auth_local_credentials
-SET password_phc = $2, updated_at = $3
+SET password_phc = $2, updated_at = $3, password_input_policy = 'unicode_v1'
 WHERE subject_id = $1 AND password_phc = $4`,
 		request.SubjectID,
 		request.NewPasswordPHC,
@@ -315,80 +334,55 @@ type scanner interface {
 	Scan(destinations ...any) error
 }
 
-func scanAccount(row scanner) (goauth.Account, error) {
-	var account goauth.Account
-	var status string
-	var scheme string
-	var verifiedAt sql.NullTime
-	err := row.Scan(
-		&account.Subject.ID,
-		&status,
-		&account.Subject.SecurityVersion,
-		&account.Subject.CreatedAt,
-		&account.Subject.UpdatedAt,
-		&account.PrimaryEmail.ID,
-		&scheme,
-		&account.PrimaryEmail.DisplayValue,
-		&account.PrimaryEmail.NormalizedValue,
-		&verifiedAt,
-		&account.PrimaryEmail.CreatedAt,
-		&account.PrimaryEmail.UpdatedAt,
-		&account.Profile.Username,
-		&account.Profile.DisplayName,
-		&account.Profile.GivenName,
-		&account.Profile.FamilyName,
-	)
-	if err != nil {
-		return goauth.Account{}, err
-	}
-	account.Subject.Status = goauth.SubjectStatus(status)
-	account.PrimaryEmail.SubjectID = account.Subject.ID
-	account.PrimaryEmail.Scheme = goauth.IdentifierScheme(scheme)
-	if verifiedAt.Valid {
-		value := verifiedAt.Time
-		account.PrimaryEmail.VerifiedAt = &value
-	}
-
-	return account, nil
+// accountScanner preserves a genuinely absent email as a zero Identifier.
+type accountScanner struct {
+	account                         goauth.Account
+	status                          string
+	id, scheme, display, normalized sql.NullString
+	verified, created, updated      sql.NullTime
 }
 
-func scanLocalAccount(row scanner) (goauth.Account, string, error) {
-	var account goauth.Account
-	var status string
-	var scheme string
-	var verifiedAt sql.NullTime
-	var passwordPHC string
-	err := row.Scan(
-		&account.Subject.ID,
-		&status,
-		&account.Subject.SecurityVersion,
-		&account.Subject.CreatedAt,
-		&account.Subject.UpdatedAt,
-		&account.PrimaryEmail.ID,
-		&scheme,
-		&account.PrimaryEmail.DisplayValue,
-		&account.PrimaryEmail.NormalizedValue,
-		&verifiedAt,
-		&account.PrimaryEmail.CreatedAt,
-		&account.PrimaryEmail.UpdatedAt,
-		&account.Profile.Username,
-		&account.Profile.DisplayName,
-		&account.Profile.GivenName,
-		&account.Profile.FamilyName,
-		&passwordPHC,
-	)
-	if err != nil {
-		return goauth.Account{}, "", err
+func (s *accountScanner) destinations() []any {
+	return []any{
+		&s.account.Subject.ID, &s.status, &s.account.Subject.SecurityVersion,
+		&s.account.Subject.CreatedAt, &s.account.Subject.UpdatedAt,
+		&s.id, &s.scheme, &s.display, &s.normalized, &s.verified, &s.created, &s.updated,
+		&s.account.Profile.Username, &s.account.Profile.DisplayName, &s.account.Profile.GivenName, &s.account.Profile.FamilyName,
 	}
-	account.Subject.Status = goauth.SubjectStatus(status)
-	account.PrimaryEmail.SubjectID = account.Subject.ID
-	account.PrimaryEmail.Scheme = goauth.IdentifierScheme(scheme)
-	if verifiedAt.Valid {
-		value := verifiedAt.Time
-		account.PrimaryEmail.VerifiedAt = &value
-	}
+}
 
-	return account, passwordPHC, nil
+func (s *accountScanner) result() goauth.Account {
+	s.account.Subject.Status = goauth.SubjectStatus(s.status)
+	if s.id.Valid {
+		s.account.PrimaryEmail = goauth.Identifier{
+			ID: s.id.String, SubjectID: s.account.Subject.ID,
+			Scheme: goauth.IdentifierScheme(s.scheme.String), DisplayValue: s.display.String,
+			NormalizedValue: s.normalized.String, CreatedAt: s.created.Time, UpdatedAt: s.updated.Time,
+		}
+		if s.verified.Valid {
+			s.account.PrimaryEmail.VerifiedAt = &s.verified.Time
+		}
+	}
+	return s.account
+}
+
+func scanAccount(row scanner) (goauth.Account, error) {
+	var scan accountScanner
+	if err := row.Scan(scan.destinations()...); err != nil {
+		return goauth.Account{}, err
+	}
+	return scan.result(), nil
+}
+
+func scanLocalAccount(row scanner) (goauth.LocalAccountRecord, error) {
+	var scan accountScanner
+	var record goauth.LocalAccountRecord
+	destinations := append(scan.destinations(), &record.PasswordPHC, &record.PasswordInputPolicy)
+	if err := row.Scan(destinations...); err != nil {
+		return goauth.LocalAccountRecord{}, err
+	}
+	record.Account = scan.result()
+	return record, nil
 }
 
 func transformWriteError(operation string, err error) error {

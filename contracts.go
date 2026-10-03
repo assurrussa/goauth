@@ -11,8 +11,9 @@ type SecretDigest struct {
 }
 
 type LocalAccountRecord struct {
-	Account     Account
-	PasswordPHC string
+	Account             Account
+	PasswordPHC         string
+	PasswordInputPolicy PasswordInputPolicy
 }
 
 type AccountStore interface {

@@ -150,7 +150,8 @@ type BasicProfile struct {
 }
 
 type Account struct {
-	Subject      Subject
+	Subject Subject
+	// PrimaryEmail is zero for deliberately provisioned email-less identities.
 	PrimaryEmail Identifier
 	Profile      BasicProfile
 }
@@ -246,19 +247,21 @@ func (p EmailChallengePurpose) Validate() error {
 type SecurityEventType string
 
 const (
-	SecurityEventLoginFailed          SecurityEventType = "login.failed"
-	SecurityEventRefreshReplay        SecurityEventType = "refresh.replay"
-	SecurityEventPasswordResetIssued  SecurityEventType = "password_reset.issued"
-	SecurityEventPasswordResetUsed    SecurityEventType = "password_reset.used"
-	SecurityEventPasswordChanged      SecurityEventType = "password.changed"
-	SecurityEventEmailChallengeIssued SecurityEventType = "email_challenge.issued"
-	SecurityEventEmailVerified        SecurityEventType = "email.verified"
-	SecurityEventEmailChangeIssued    SecurityEventType = "email_change.issued"
-	SecurityEventEmailChanged         SecurityEventType = "email.changed"
-	SecurityEventSessionRevoked       SecurityEventType = "session.revoked"
-	SecurityEventSessionsRevoked      SecurityEventType = "sessions.revoked"
-	SecurityEventSubjectStatusChanged SecurityEventType = "subject.status_changed"
-	SecurityEventIdentityLinked       SecurityEventType = "identity.linked"
+	SecurityEventLocalIdentityProvisioned SecurityEventType = "local_identity.provisioned"
+	SecurityEventLocalIdentityImported    SecurityEventType = "local_identity.imported"
+	SecurityEventLoginFailed              SecurityEventType = "login.failed"
+	SecurityEventRefreshReplay            SecurityEventType = "refresh.replay"
+	SecurityEventPasswordResetIssued      SecurityEventType = "password_reset.issued"
+	SecurityEventPasswordResetUsed        SecurityEventType = "password_reset.used"
+	SecurityEventPasswordChanged          SecurityEventType = "password.changed"
+	SecurityEventEmailChallengeIssued     SecurityEventType = "email_challenge.issued"
+	SecurityEventEmailVerified            SecurityEventType = "email.verified"
+	SecurityEventEmailChangeIssued        SecurityEventType = "email_change.issued"
+	SecurityEventEmailChanged             SecurityEventType = "email.changed"
+	SecurityEventSessionRevoked           SecurityEventType = "session.revoked"
+	SecurityEventSessionsRevoked          SecurityEventType = "sessions.revoked"
+	SecurityEventSubjectStatusChanged     SecurityEventType = "subject.status_changed"
+	SecurityEventIdentityLinked           SecurityEventType = "identity.linked"
 )
 
 type SecurityEvent struct {

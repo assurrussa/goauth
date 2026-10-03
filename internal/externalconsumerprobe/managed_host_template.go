@@ -26,6 +26,11 @@ func newHostProbeRuntime(t *testing.T, disabled bool) *postgres.Runtime {
 			Issuer: "https://auth.example.test", Audience: "host-probe", Keys: keyRing("host-jwt", 1),
 		},
 		TokenHMACKeys: keyRing("host-token", 2), ResetResponseFloor: time.Nanosecond,
+  IdentifierResolvers: map[goauth.IdentifierScheme]goauth.IdentifierResolver{
+   "probe_login": goauth.IdentifierResolverFunc(func(
+ _ context.Context, input goauth.IdentifierInput,
+ ) (goauth.IdentifierInput, error) { return input, nil }),
+  },
 	}}
 	if disabled {
 		config.Runtime.NotificationDelivery = goauth.NotificationDeliveryDisabled

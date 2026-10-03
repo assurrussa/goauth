@@ -118,6 +118,10 @@ func (h *Argon2idHasher) VerifyPassword(phc, password string) error {
 	if !validPasswordInput(password) {
 		return ErrInvalidCredentials
 	}
+	return verifyArgon2idPassword(phc, password)
+}
+
+func verifyArgon2idPassword(phc, password string) error {
 	params, salt, expected, err := parseArgon2idPHC(phc)
 	if err != nil {
 		return ErrInvalidCredentials

@@ -53,6 +53,9 @@ func (r *Runtime) requestEmailChange(
 	if account.Subject.Status != SubjectStatusActive {
 		return ErrAccountUnavailable
 	}
+	if account.PrimaryEmail.ID == "" || account.PrimaryEmail.Scheme != IdentifierSchemeEmail {
+		return ErrInvalidIdentifier
+	}
 	if account.PrimaryEmail.NormalizedValue == normalized.Value {
 		return ErrEmailChangeSameValue
 	}

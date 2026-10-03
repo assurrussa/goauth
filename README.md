@@ -348,3 +348,11 @@ holds the canonical subject row lock through outer commit and checks active
 status, security version and normalized primary email. It creates no session and
 does not bypass durable rate admission. Fresh trusted provisioning can remain
 inside the transaction.
+
+## Email-less local identity foundation
+
+Privileged hosts can provision or import canonical local identities using a
+registered non-email login scheme, without fabricating email. See
+[the local identity contract](docs/local-identities.md) for create-only imports,
+transactional host mappings, narrowly bounded legacy password compatibility,
+schema-4 migration, and the required admission/password-administration follow-ups.

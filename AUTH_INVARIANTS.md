@@ -9,6 +9,9 @@
   `subject_id`.
 - Host `users` and `administrations` rows are projections or memberships. Host
   numeric IDs and public IDs never substitute for canonical `subject_id`.
+- Privileged local identity provisioning/import may omit email and use an explicitly
+  registered non-email identifier scheme. A missing PrimaryEmail is the zero
+  Identifier, never a fabricated or verified email.
 - Email uniqueness is `(scheme, normalized_value)`. Display spelling is stored
   separately; built-in email normalization is lowercase after validation.
 
@@ -77,6 +80,10 @@
 - Passwords use versioned Argon2id PHC strings with at least 19 MiB, two
   iterations, and one lane. Runtime policy is 8-128 Unicode code points plus a
   common-password deny list.
+- An explicitly imported legacy credential may carry the bounded `legacy_bytes_256`
+  verification policy for the exact documented Argon2id profile. All new passwords
+  retain the standard issuance policy; password change/reset clears the marker.
+  See `docs/local-identities.md` for the privileged transaction and retry contract.
 - Refresh and reset tokens are selector plus HMAC-protected secret. Email codes
   are stored only as HMAC digests.
 - JWT, token-HMAC, and outbox-AEAD key rings are distinct and versioned. Runtime

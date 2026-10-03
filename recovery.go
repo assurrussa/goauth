@@ -69,7 +69,8 @@ func (r *Runtime) RequestPasswordResetWithReceipt(
 		}
 		return fmt.Errorf("lookup password reset account: %w", err)
 	}
-	if record.Account.IsZero() || record.Account.Subject.Status != SubjectStatusActive {
+	if record.Account.IsZero() || record.Account.Subject.Status != SubjectStatusActive ||
+		record.Account.PrimaryEmail.ID == "" || record.Account.PrimaryEmail.Scheme != IdentifierSchemeEmail {
 		return nil
 	}
 	token, digest, err := r.secretCodec.Generate(passwordResetSecretPurpose)
@@ -401,6 +402,9 @@ func (r *Runtime) enqueueNotification(
 	notification Notification,
 	metadata ...notificationMetadata,
 ) error {
+	if _, err := NormalizeEmail(notification.To); err != nil {
+		return ErrInvalidIdentifier
+	}
 	var (
 		payload []byte
 		err     error

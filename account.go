@@ -129,10 +129,12 @@ func (r *Runtime) VerifyCredential(ctx context.Context, credential Credential) (
 	}
 	record, lookupErr := r.store.FindLocalAccount(ctx, identifier)
 	passwordPHC := record.PasswordPHC
+	inputPolicy := record.PasswordInputPolicy
 	if lookupErr != nil || record.Account.IsZero() || passwordPHC == "" {
 		passwordPHC = r.dummyPasswordPHC
+		inputPolicy = PasswordInputPolicyUnicode
 	}
-	passwordErr := r.hasher.VerifyPassword(passwordPHC, credential.Password)
+	passwordErr := r.hasher.verifyCredential(passwordPHC, credential.Password, inputPolicy)
 	if lookupErr != nil && !errors.Is(lookupErr, ErrAccountNotFound) {
 		return Account{}, fmt.Errorf("find local credential: %w", lookupErr)
 	}
@@ -188,13 +190,13 @@ func (r *Runtime) ChangePassword(ctx context.Context, request ChangePasswordRequ
 	if err := r.limitPasswordChange(ctx, request.SubjectID); err != nil {
 		return Account{}, fmt.Errorf("check password change rate limit: %w", err)
 	}
-	if err := r.hasher.VerifyPassword(record.PasswordPHC, request.CurrentPassword); err != nil {
+	if err := r.hasher.verifyCredential(record.PasswordPHC, request.CurrentPassword, record.PasswordInputPolicy); err != nil {
 		if isPasswordVerificationFailure(err) {
 			return Account{}, fmt.Errorf("verify current password: %w", err)
 		}
 		return Account{}, ErrCurrentPasswordInvalid
 	}
-	passwordErr := r.hasher.VerifyPassword(record.PasswordPHC, request.NewPassword)
+	passwordErr := r.hasher.verifyCredential(record.PasswordPHC, request.NewPassword, record.PasswordInputPolicy)
 	if passwordErr == nil {
 		return Account{}, ErrPasswordUnchanged
 	}
@@ -227,7 +229,7 @@ func (r *Runtime) ChangePassword(ctx context.Context, request ChangePasswordRequ
 			outcomeErr = ErrPasswordChangeConflict
 			return nil
 		}
-		if r.notificationDelivery == NotificationDeliveryRequired {
+		if r.notificationDelivery == NotificationDeliveryRequired && result.Account.PrimaryEmail.ID != "" {
 			if err := r.enqueueNotification(txCtx, "password_changed", result.Account, Notification{
 				Template: "password_changed",
 				To:       result.Account.PrimaryEmail.DisplayValue,

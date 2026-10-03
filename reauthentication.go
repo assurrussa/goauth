@@ -44,7 +44,7 @@ func (r *Runtime) RequestEmailChangeWithPassword(ctx context.Context, request Pa
 	if err := r.limitPasswordChange(ctx, request.SubjectID); err != nil {
 		return fmt.Errorf("check email change reauthentication limit: %w", err)
 	}
-	if err := r.hasher.VerifyPassword(record.PasswordPHC, request.CurrentPassword); err != nil {
+	if err := r.hasher.verifyCredential(record.PasswordPHC, request.CurrentPassword, record.PasswordInputPolicy); err != nil {
 		if isPasswordVerificationFailure(err) {
 			return fmt.Errorf("verify email change password: %w", err)
 		}

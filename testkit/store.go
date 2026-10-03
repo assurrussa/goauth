@@ -13,19 +13,20 @@ import (
 )
 
 type Store struct {
-	audits       []goauth.SecurityEvent
-	mu           sync.Mutex
-	accounts     map[string]goauth.Account
-	identifiers  map[string]string
-	passwords    map[string]string
-	links        map[string]goauth.IdentityLink
-	sessions     map[string]goauth.Session
-	families     map[string]*refreshFamily
-	refresh      map[string]*refreshToken
-	resets       map[string]*passwordReset
-	challenges   map[string][]*emailChallenge
-	emailChanges map[string][]*emailChange
-	rateEvents   map[string][]time.Time
+	audits           []goauth.SecurityEvent
+	mu               sync.Mutex
+	accounts         map[string]goauth.Account
+	identifiers      map[string]string
+	passwords        map[string]string
+	passwordPolicies map[string]goauth.PasswordInputPolicy
+	links            map[string]goauth.IdentityLink
+	sessions         map[string]goauth.Session
+	families         map[string]*refreshFamily
+	refresh          map[string]*refreshToken
+	resets           map[string]*passwordReset
+	challenges       map[string][]*emailChallenge
+	emailChanges     map[string][]*emailChange
+	rateEvents       map[string][]time.Time
 }
 
 type refreshFamily struct {
@@ -64,17 +65,18 @@ type emailChange struct {
 
 func NewStore() *Store {
 	return &Store{
-		accounts:     make(map[string]goauth.Account),
-		identifiers:  make(map[string]string),
-		passwords:    make(map[string]string),
-		links:        make(map[string]goauth.IdentityLink),
-		sessions:     make(map[string]goauth.Session),
-		families:     make(map[string]*refreshFamily),
-		refresh:      make(map[string]*refreshToken),
-		resets:       make(map[string]*passwordReset),
-		challenges:   make(map[string][]*emailChallenge),
-		emailChanges: make(map[string][]*emailChange),
-		rateEvents:   make(map[string][]time.Time),
+		accounts:         make(map[string]goauth.Account),
+		identifiers:      make(map[string]string),
+		passwords:        make(map[string]string),
+		passwordPolicies: make(map[string]goauth.PasswordInputPolicy),
+		links:            make(map[string]goauth.IdentityLink),
+		sessions:         make(map[string]goauth.Session),
+		families:         make(map[string]*refreshFamily),
+		refresh:          make(map[string]*refreshToken),
+		resets:           make(map[string]*passwordReset),
+		challenges:       make(map[string][]*emailChallenge),
+		emailChanges:     make(map[string][]*emailChange),
+		rateEvents:       make(map[string][]time.Time),
 	}
 }
 
@@ -160,11 +162,23 @@ func (s *Store) CreateLocalAccount(
 	ctx context.Context,
 	record goauth.LocalAccountRecord,
 ) (goauth.Account, error) {
+	return s.createLocalAccount(ctx, record, record.Account.PrimaryEmail)
+}
+
+func (s *Store) CreateLocalIdentity(ctx context.Context, record goauth.LocalIdentityRecord) (goauth.Account, error) {
+	return s.createLocalAccount(ctx, record.LocalAccountRecord, record.Identifier)
+}
+
+func (s *Store) createLocalAccount(
+	ctx context.Context, record goauth.LocalAccountRecord, identifier goauth.Identifier,
+) (goauth.Account, error) {
 	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	identifierKey := identifierKey(record.Account.PrimaryEmail.Scheme, record.Account.PrimaryEmail.NormalizedValue)
+	if _, exists := s.accounts[record.Account.Subject.ID.String()]; exists {
+		return goauth.Account{}, goauth.ErrIdentifierAlreadyExists
+	}
+	identifierKey := identifierKey(identifier.Scheme, identifier.NormalizedValue)
 	if _, exists := s.identifiers[identifierKey]; exists {
 		return goauth.Account{}, goauth.ErrIdentifierAlreadyExists
 	}
@@ -173,6 +187,7 @@ func (s *Store) CreateLocalAccount(
 	s.accounts[subjectKey] = account
 	s.identifiers[identifierKey] = subjectKey
 	s.passwords[subjectKey] = record.PasswordPHC
+	s.passwordPolicies[subjectKey] = record.PasswordInputPolicy
 
 	return cloneAccount(account), nil
 }
@@ -194,7 +209,9 @@ func (s *Store) FindLocalAccount(
 		return goauth.LocalAccountRecord{}, goauth.ErrAccountNotFound
 	}
 
-	return goauth.LocalAccountRecord{Account: cloneAccount(s.accounts[subjectKey]), PasswordPHC: password}, nil
+	return goauth.LocalAccountRecord{
+		Account: cloneAccount(s.accounts[subjectKey]), PasswordPHC: password, PasswordInputPolicy: s.passwordPolicies[subjectKey],
+	}, nil
 }
 
 func (s *Store) GetLocalAccount(
@@ -215,7 +232,9 @@ func (s *Store) GetLocalAccount(
 		return goauth.LocalAccountRecord{}, goauth.ErrAccountNotFound
 	}
 
-	return goauth.LocalAccountRecord{Account: cloneAccount(account), PasswordPHC: password}, nil
+	return goauth.LocalAccountRecord{
+		Account: cloneAccount(account), PasswordPHC: password, PasswordInputPolicy: s.passwordPolicies[subjectKey],
+	}, nil
 }
 
 func (s *Store) GetAccount(ctx context.Context, subjectID goauth.SubjectID) (goauth.Account, error) {
@@ -277,6 +296,7 @@ func (s *Store) ChangePassword(
 		return goauth.PasswordChangeStoreResult{}, goauth.ErrAccountUnavailable
 	}
 	s.passwords[key] = request.NewPasswordPHC
+	s.passwordPolicies[key] = goauth.PasswordInputPolicyUnicode
 	account.Subject.SecurityVersion++
 	account.Subject.UpdatedAt = request.Now
 	s.accounts[key] = account
@@ -581,6 +601,7 @@ func (s *Store) ConsumePasswordReset(
 		return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetExpired}, nil
 	}
 	s.passwords[record.SubjectID.String()] = request.PasswordPHC
+	s.passwordPolicies[record.SubjectID.String()] = goauth.PasswordInputPolicyUnicode
 	value := request.Now
 	record.ConsumedAt = &value
 	account.Subject.SecurityVersion++

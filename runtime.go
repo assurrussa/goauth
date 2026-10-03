@@ -93,7 +93,7 @@ type Runtime struct {
 	autoLinkIssuers             []string
 	managedNotificationDelivery bool
 	audit                       AuditSink
-	hasher                      PasswordHasher
+	hasher                      *boundedPasswordHasher
 	passwordPolicy              PasswordPolicy
 	realms                      map[Realm]struct{}
 	secretCodec                 *secretCodec
@@ -139,11 +139,11 @@ func NewRuntime(config Config) (*Runtime, error) {
 		config.PasswordPolicy.Blocklist == nil && !config.PasswordPolicy.DisableBlocklist {
 		config.PasswordPolicy = DefaultPasswordPolicy()
 	}
-	config.PasswordHasher = &boundedPasswordHasher{
+	boundedHasher := &boundedPasswordHasher{
 		delegate: config.PasswordHasher,
 		active:   make(chan struct{}, config.MaxConcurrentPasswordHashes),
 	}
-	dummyPHC, err := config.PasswordHasher.HashPassword("goauth-enumeration-dummy-password")
+	dummyPHC, err := boundedHasher.HashPassword("goauth-enumeration-dummy-password")
 	if err != nil {
 		return nil, fmt.Errorf("create enumeration-safe password hash: %w", err)
 	}
@@ -169,7 +169,7 @@ func NewRuntime(config Config) (*Runtime, error) {
 		autoLinkIssuers:             append([]string(nil), config.AutoLinkVerifiedEmailIssuers...),
 		managedNotificationDelivery: config.ManagedNotificationDelivery,
 		audit:                       config.AuditSink,
-		hasher:                      config.PasswordHasher,
+		hasher:                      boundedHasher,
 		passwordPolicy:              config.PasswordPolicy,
 		realms:                      realms,
 		secretCodec:                 newSecretCodec(config.TokenHMACKeys, config.Random),
@@ -387,10 +387,12 @@ func (r *Runtime) Login(ctx context.Context, request LoginRequest) (LoginResult,
 	}
 	record, lookupErr := r.store.FindLocalAccount(ctx, identifier)
 	passwordPHC := record.PasswordPHC
+	inputPolicy := record.PasswordInputPolicy
 	if lookupErr != nil || record.Account.IsZero() || passwordPHC == "" {
 		passwordPHC = r.dummyPasswordPHC
+		inputPolicy = PasswordInputPolicyUnicode
 	}
-	passwordErr := r.hasher.VerifyPassword(passwordPHC, request.Credential.Password)
+	passwordErr := r.hasher.verifyCredential(passwordPHC, request.Credential.Password, inputPolicy)
 	if lookupErr != nil && !errors.Is(lookupErr, ErrAccountNotFound) {
 		return LoginResult{}, fmt.Errorf("find local credential: %w", lookupErr)
 	}
