@@ -213,14 +213,18 @@ func (r *Runtime) deliverNotification(ctx context.Context, claim notificationCla
 		ID: claim.event.ID, Notification: notification, ValidUntil: claim.event.ValidUntil, EncryptedEvent: claim.event,
 	})
 	cancel()
+	if errors.Is(err, goauth.ErrNotificationRejected) {
+		// A definitive negative outcome survives worker shutdown. Use a bounded
+		// completion context; the original lease CAS still fences expiry/reclaim.
+		completionCtx, complete := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer complete()
+		return r.store.finishNotification(completionCtx, claim, notificationExhausted, "sender_rejected", time.Time{})
+	}
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 	if err == nil {
 		return r.store.finishNotification(ctx, claim, notificationDelivered, "", time.Time{})
-	}
-	if errors.Is(err, goauth.ErrNotificationRejected) {
-		return r.store.finishNotification(ctx, claim, notificationExhausted, "sender_rejected", time.Time{})
 	}
 	// A successful reservation counted this attempt before calling the sender.
 	claim.attempts++

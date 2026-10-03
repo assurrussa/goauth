@@ -154,3 +154,29 @@ func testNotificationBatchExpiryLateCompletion(t *testing.T, senderErr error) {
 	require.Equal(t, "expired", state)
 	require.True(t, undelivered)
 }
+
+func TestManagedNotificationRejectionSurvivesWorkerShutdown(t *testing.T) {
+	db := integrationDB(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	var calls atomic.Int32
+	runtime := managedNotificationRuntime(t, db, goauth.NotificationSenderFunc(func(context.Context, goauth.NotificationDelivery) error {
+		calls.Add(1)
+		cancel()
+		return goauth.ErrNotificationRejected
+	}))
+	registered := register(t, runtime, "shutdown-rejected@example.test")
+	require.NoError(t, runtime.SendEmailChallenge(t.Context(), registered.Account.Subject.ID, goauth.EmailChallengePurposeVerification))
+	id := managedNotificationID(t, db, registered.Account.Subject.ID)
+	require.NoError(t, runtime.RunNotifications(ctx))
+	var state, failure string
+	var safe bool
+	require.NoError(t, db.QueryRow(`SELECT state,last_failure,ciphertext IS NULL AND delivered_at IS NULL
+ FROM auth_notification_deliveries WHERE id=$1`, id).Scan(&state, &failure, &safe))
+	require.Equal(t, "exhausted", state)
+	require.Equal(t, "sender_rejected", failure)
+	require.True(t, safe)
+	startManagedNotificationWorker(t, runtime)
+	time.Sleep(150 * time.Millisecond)
+	require.EqualValues(t, 1, calls.Load())
+}

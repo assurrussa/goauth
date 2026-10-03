@@ -62,3 +62,19 @@ func TestManagedSenderRejectionCannotOverwriteReclaimedLease(t *testing.T) {
 	require.Equal(t, notificationLeased, d.deliveries[0].state)
 	require.Equal(t, "new-owner", d.deliveries[0].token)
 }
+
+func TestManagedSenderRejectionSettlesAfterParentCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	d := &deadlineDriver{deliveries: []deadlineDelivery{{event: deadlineEvent(t, "shutdown-rejected", time.Now().Add(time.Hour))}}}
+	r := deadlineRuntime(t, d, goauth.NotificationSenderFunc(func(context.Context, goauth.NotificationDelivery) error {
+		cancel()
+		return errors.Join(goauth.ErrNotificationRejected, errors.New("private-provider-detail"))
+	}))
+	claim, err := r.store.claimNotification(ctx, time.Now(), time.Minute)
+	require.NoError(t, err)
+	require.NoError(t, r.deliverNotification(ctx, claim))
+	require.ErrorIs(t, ctx.Err(), context.Canceled)
+	require.Equal(t, notificationExhausted, d.deliveries[0].state)
+	require.Empty(t, d.deliveries[0].token)
+}
