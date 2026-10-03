@@ -110,6 +110,7 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = notificationTransaction
 	_ = (*goauth.Runtime).ProvisionLocalIdentity
 	_ = (*goauth.Runtime).ImportLocalIdentity
+	_ = goauth.Config{EnableLegacyBytes256: true}
 	_ = goauth.ProvisionLocalIdentityRequest{}
 	_ = goauth.ImportLocalIdentityRequest{}
 	_ = goauth.LocalIdentityRecord{}

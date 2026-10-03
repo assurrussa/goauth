@@ -46,7 +46,8 @@ type ProvisionLocalIdentityRequest struct {
 
 // ImportLocalIdentityRequest imports one existing email-less local identity.
 // SubjectID is assigned by the host's durable migration mapping. Status must be
-// explicit. Only canonical, bounded Argon2id PHC strings are accepted.
+// explicit. PHCs must be canonical and match the configured current profile, or
+// the fixed legacy profile when EnableLegacyBytes256 is enabled.
 type ImportLocalIdentityRequest struct {
 	SubjectID           SubjectID
 	Identifier          IdentifierInput
@@ -95,7 +96,7 @@ func (r *Runtime) ImportLocalIdentity(ctx context.Context, request ImportLocalId
 	if request.PasswordInputPolicy == "" {
 		request.PasswordInputPolicy = PasswordInputPolicyUnicode
 	}
-	if err := validateImportedCredential(request.PasswordPHC, request.PasswordInputPolicy); err != nil {
+	if err := r.hasher.validateImport(request.PasswordPHC, request.PasswordInputPolicy); err != nil {
 		return Account{}, err
 	}
 	record, err := r.prepareLocalIdentity(ctx, request.SubjectID, request.Identifier, request.Profile, request.Status)

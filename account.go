@@ -131,7 +131,7 @@ func (r *Runtime) VerifyCredential(ctx context.Context, credential Credential) (
 	passwordPHC := record.PasswordPHC
 	inputPolicy := record.PasswordInputPolicy
 	if lookupErr != nil || record.Account.IsZero() || passwordPHC == "" {
-		passwordPHC = r.dummyPasswordPHC
+		passwordPHC = ""
 		inputPolicy = PasswordInputPolicyUnicode
 	}
 	passwordErr := r.hasher.verifyCredential(passwordPHC, credential.Password, inputPolicy)

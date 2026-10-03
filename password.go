@@ -258,8 +258,10 @@ func validPasswordInput(password string) bool {
 // Each Runtime shares one budget across every hash and verification. Admission
 // is immediate, so distinct identifiers cannot create an unbounded work queue.
 type boundedPasswordHasher struct {
-	delegate PasswordHasher
-	active   chan struct{}
+	delegate      PasswordHasher
+	active        chan struct{}
+	dummyPHC      string
+	compatibility *legacyPasswordCompatibility
 }
 
 func (h *boundedPasswordHasher) HashPassword(password string) (string, error) {

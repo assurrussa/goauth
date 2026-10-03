@@ -73,19 +73,87 @@ only to a schema-4-compatible build; preserve canonical state and mappings.
 
 ## Narrow legacy password compatibility
 
-`PasswordInputPolicyLegacyBytes256` is an explicit per-credential import marker.
-Only Argon2id v19, `m=65536,t=3,p=1`, 16-byte salt, 32-byte digest, canonical PHC
-encoding is accepted with it. Verification accepts at most 256 original bytes,
-including invalid UTF-8, without rewriting or normalizing them. It uses the same
-Runtime-wide bounded concurrent hash budget as standard passwords. Unknown
-markers, nonstandard profiles and unsupported custom verifiers fail closed.
+`Config.EnableLegacyBytes256` is **off by default**. Enable it deliberately on
+all runtimes that import or verify marked legacy identities, only after the
+profile preflight below. It requires the built-in Argon2id hasher. Existing
+strict-only consumers keep their original verification costs and historical
+profile support with this option off.
+
+`PasswordInputPolicyLegacyBytes256` is additionally required on each imported
+credential. Only Argon2id v19, `m=65536,t=3,p=1`, 16-byte salt, 32-byte digest,
+canonical PHC encoding is accepted with it. The marker permits at most 256
+original bytes, including invalid UTF-8, without rewriting or normalizing them.
+Enabling compatibility does not grant these input permissions to strict records.
+A strict credential may use either supported cost profile and still accepts only
+valid UTF-8 with at most 128 code points.
+
+An enabled mixed-profile Runtime supports exactly two verification profiles:
+its configured built-in current profile (including salt/digest lengths), and the
+fixed legacy profile. For every input within either supported input bound, it
+performs both profiles sequentially, substituting a dummy for any unused slot.
+Known current, known legacy, missing, malformed, unknown-policy and unsupported-
+profile records therefore perform the same bounded work schedule. Invalid Unicode
+or 129-code-point input also gets both jobs; a strict record still denies it.
+Inputs outside both bounds deny before hashing. Dummy matches never authenticate
+missing, malformed, unsupported, or otherwise denied records.
+
+The complete two-job attempt holds one shared Runtime hash-budget slot. There is
+no parallel second hash, second concurrency budget, or unbounded work queue.
+This deliberately costs more CPU per attempt. Capacity planning must include
+both Argon2 allocations plus runtime/GC headroom: sequential execution does not
+promise that Go reclaims the first allocation before the next. Both jobs use the
+same original bounded input, including in dummy slots; only real-slot selection
+can authorize it. Even if the configured current profile equals the legacy
+profile, the schedule remains two sequential jobs. Rate limits are not
+removed or relaxed.
+
+New Unicode imports must match the configured current profile with compatibility
+off, or one of the two supported profiles with it on. Legacy-marker imports need
+the opt-in and exact legacy profile. This prevents the new import API introducing
+unmatched work costs into strict-only runtimes. An enabled mixed Runtime refuses
+any existing credential at another cost after the same two dummy jobs; it does
+not silently hash that profile, widen its limits, or pretend it was verified.
+
+### Deployment profile preflight
+
+Before enabling mixed mode, the operator must check every existing local
+credential's profile against the configured current profile and the fixed legacy
+profile. This read-only migration query shows bounded profile metadata and
+counts, without returning any PHC, salt, digest or password contents:
+
+```sql
+SELECT password_input_policy,
+       CASE WHEN split_part(password_phc, '$', 2) = 'argon2id'
+            THEN 'argon2id' ELSE 'invalid' END AS algorithm,
+       CASE WHEN split_part(password_phc, '$', 3) = 'v=19'
+            THEN 'v=19' ELSE 'invalid' END AS version,
+       CASE WHEN split_part(password_phc, '$', 4)
+                      ~ '^m=[0-9]{1,7},t=[0-9]{1,2},p=[0-9]{1,2}$'
+            THEN split_part(password_phc, '$', 4) ELSE 'invalid' END AS parameters,
+       length(split_part(password_phc, '$', 5)) AS salt_encoded_length,
+       length(split_part(password_phc, '$', 6)) AS digest_encoded_length,
+       count(*)
+FROM auth_local_credentials
+GROUP BY 1, 2, 3, 4, 5, 6;
+```
+
+For the default current profile, expect `argon2id`, `v=19`,
+`m=19456,t=2,p=1`, salt length 22 and digest length 43 in unpadded Base64. The legacy
+profile has `m=65536,t=3,p=1` and the same encoded lengths. Use the actual configured
+current parameters and lengths if customized. A legacy marker must always have
+the exact legacy profile. This grouping detects unsupported cost/length groups;
+it does not replace the Runtime's bounded PHC parser and cryptographic checks.
+Investigate malformed/noncanonical groups and any unmatched historical profile
+before enabling. Do not enable mixed mode over unexplained groups, rewrite PHCs,
+reset everybody's passwords, or create a second credential authority to make the
+preflight pass. Keep an explicit compatible rollout plan for historical profiles.
 
 `VerifyCredential`, PostgreSQL `PrepareCredential`, login, password-change and
-email-change reauthentication all read the marker. A new password always uses
-current Unicode issuance rules (8–128 code points and the configured blocklist);
-password change/reset clears the marker, advances security version and revokes
-security state through the existing atomic path. Imports do not need plaintext
-or a mass reset, and no second password authority remains after host migration.
+email-change reauthentication all honor the marker and mode. A new password
+always uses current Unicode issuance rules (8–128 code points and the configured
+blocklist); password change/reset clears the marker, advances security version
+and revokes security state through the existing atomic path. Imports do not need
+plaintext or a mass reset.
 
 Default browser and admin realm security is unchanged. An email-less user login
 can obtain only confirmation scope; admin/custom realms still require verified

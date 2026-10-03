@@ -3,6 +3,7 @@ package externalconsumerprobe
 const localIdentityProbeTest = `
 func TestEmailLessIdentityExternalConsumer(t *testing.T) {
 	fixture, err := testkit.NewRuntime(func(config *goauth.Config) {
+		config.EnableLegacyBytes256 = true
 		config.IdentifierResolvers = map[goauth.IdentifierScheme]goauth.IdentifierResolver{
 			"probe_login": goauth.IdentifierResolverFunc(func(
 				_ context.Context, input goauth.IdentifierInput,
@@ -56,7 +57,7 @@ func TestEmailLessIdentityExternalConsumer(t *testing.T) {
 
 const localIdentityPostgresProbeTest = `
 func TestEmailLessManagedImportExternalConsumer(t *testing.T) {
-	runtime := newHostProbeRuntime(t, true)
+	runtime := newHostProbeRuntimeConfig(t, true, true)
 	projection := hostProbeProjection(t, runtime.Database())
 	hasher, err := goauth.NewArgon2idHasher(goauth.Argon2idConfig{})
 	if err != nil {

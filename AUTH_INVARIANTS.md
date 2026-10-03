@@ -81,7 +81,9 @@
   iterations, and one lane. Runtime policy is 8-128 Unicode code points plus a
   common-password deny list.
 - An explicitly imported legacy credential may carry the bounded `legacy_bytes_256`
-  verification policy for the exact documented Argon2id profile. All new passwords
+  verification policy for the exact documented Argon2id profile. Runtime legacy
+  verification is separately opt-in and executes both supported profiles sequentially
+  in one shared slot for known and missing accounts; unsupported profiles deny. All new passwords
   retain the standard issuance policy; password change/reset clears the marker.
   See `docs/local-identities.md` for the privileged transaction and retry contract.
 - Refresh and reset tokens are selector plus HMAC-protected secret. Email codes

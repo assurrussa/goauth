@@ -25,6 +25,7 @@ const postgresIdentityScheme goauth.IdentifierScheme = "hub_login"
 func identityPostgresRuntime(t *testing.T, db *sql.DB) *postgres.Runtime {
 	t.Helper()
 	config := runtimeConfig(t)
+	config.EnableLegacyBytes256 = true
 	config.IdentifierResolvers = map[goauth.IdentifierScheme]goauth.IdentifierResolver{
 		postgresIdentityScheme: goauth.IdentifierResolverFunc(func(
 			_ context.Context, input goauth.IdentifierInput,

@@ -60,6 +60,9 @@ type Config struct {
 	URLBuilder                  URLBuilder
 	AuditSink                   AuditSink
 	PasswordHasher              PasswordHasher
+	// EnableLegacyBytes256 opts into two sequential, equal-profile verification jobs.
+	// Requires the built-in hasher and a profile preflight; see docs/local-identities.md.
+	EnableLegacyBytes256 bool
 	// Zero defaults to four concurrent hashes/verifications per shared Runtime.
 	// Excess work fails immediately with ErrPasswordHashOverloaded.
 	MaxConcurrentPasswordHashes int
@@ -99,7 +102,6 @@ type Runtime struct {
 	secretCodec                 *secretCodec
 	envelopes                   *envelopeCipher
 	jwt                         *jwtIssuer
-	dummyPasswordPHC            string
 	accessTTL                   time.Duration
 	sessionTTL                  time.Duration
 	refreshTTL                  time.Duration
@@ -147,6 +149,12 @@ func NewRuntime(config Config) (*Runtime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create enumeration-safe password hash: %w", err)
 	}
+	boundedHasher.dummyPHC = dummyPHC
+	if config.EnableLegacyBytes256 {
+		if err := boundedHasher.enableLegacyCompatibility(config.Random); err != nil {
+			return nil, err
+		}
+	}
 	identifierResolvers, err := runtimeIdentifierResolvers(config.IdentifierResolvers)
 	if err != nil {
 		return nil, err
@@ -175,7 +183,6 @@ func NewRuntime(config Config) (*Runtime, error) {
 		secretCodec:                 newSecretCodec(config.TokenHMACKeys, config.Random),
 		envelopes:                   newEnvelopeCipher(config.OutboxAEADKeys, config.Random, config.Now),
 		jwt:                         jwt,
-		dummyPasswordPHC:            dummyPHC,
 		accessTTL:                   config.AccessTTL,
 		sessionTTL:                  config.SessionTTL,
 		refreshTTL:                  config.RefreshTTL,
@@ -389,7 +396,7 @@ func (r *Runtime) Login(ctx context.Context, request LoginRequest) (LoginResult,
 	passwordPHC := record.PasswordPHC
 	inputPolicy := record.PasswordInputPolicy
 	if lookupErr != nil || record.Account.IsZero() || passwordPHC == "" {
-		passwordPHC = r.dummyPasswordPHC
+		passwordPHC = ""
 		inputPolicy = PasswordInputPolicyUnicode
 	}
 	passwordErr := r.hasher.verifyCredential(passwordPHC, request.Credential.Password, inputPolicy)

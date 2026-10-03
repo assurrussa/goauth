@@ -4,6 +4,10 @@ const managedHostProbeTest = `
 const hostProbePassword = "Probe-Host-Passphrase-123"
 
 func newHostProbeRuntime(t *testing.T, disabled bool) *postgres.Runtime {
+ return newHostProbeRuntimeConfig(t, disabled, false)
+}
+
+func newHostProbeRuntimeConfig(t *testing.T, disabled, legacy bool) *postgres.Runtime {
 	t.Helper()
 	dsn := strings.TrimSpace(os.Getenv("GOAUTH_TEST_POSTGRES_DSN"))
 	if dsn == "" {
@@ -26,6 +30,7 @@ func newHostProbeRuntime(t *testing.T, disabled bool) *postgres.Runtime {
 			Issuer: "https://auth.example.test", Audience: "host-probe", Keys: keyRing("host-jwt", 1),
 		},
 		TokenHMACKeys: keyRing("host-token", 2), ResetResponseFloor: time.Nanosecond,
+ EnableLegacyBytes256: legacy,
   IdentifierResolvers: map[goauth.IdentifierScheme]goauth.IdentifierResolver{
    "probe_login": goauth.IdentifierResolverFunc(func(
  _ context.Context, input goauth.IdentifierInput,

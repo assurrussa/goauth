@@ -27,6 +27,7 @@ const localIdentityScheme goauth.IdentifierScheme = "hub_login"
 func localIdentityFixture(t *testing.T, options ...testkit.RuntimeOption) *testkit.Fixture {
 	t.Helper()
 	options = append([]testkit.RuntimeOption{func(c *goauth.Config) {
+		c.EnableLegacyBytes256 = true
 		c.IdentifierResolvers = map[goauth.IdentifierScheme]goauth.IdentifierResolver{
 			localIdentityScheme: goauth.IdentifierResolverFunc(func(
 				_ context.Context, input goauth.IdentifierInput,
@@ -234,7 +235,10 @@ func TestLocalIdentityUnsupportedCapabilitiesFailClosed(t *testing.T) {
 	require.ErrorIs(t, err, goauth.ErrLocalIdentityUnsupported)
 	h, err := goauth.NewArgon2idHasher(goauth.Argon2idConfig{})
 	require.NoError(t, err)
-	f = localIdentityFixture(t, func(c *goauth.Config) { c.PasswordHasher = localIdentityCustomHasher{PasswordHasher: h} })
+	f = localIdentityFixture(t, func(c *goauth.Config) {
+		c.EnableLegacyBytes256 = false
+		c.PasswordHasher = localIdentityCustomHasher{PasswordHasher: h}
+	})
 	_, err = f.Runtime.ImportLocalIdentity(t.Context(), request)
 	require.ErrorIs(t, err, goauth.ErrLocalIdentityUnsupported)
 }
@@ -283,13 +287,14 @@ func TestLocalIdentityPersistedLegacyPolicyRejectsCustomVerifier(t *testing.T) {
 		c.Store = f.Store
 		c.AuthTransaction = f.Store
 		c.AuditSink = f.Store
+		c.EnableLegacyBytes256 = false
 		c.PasswordHasher = localIdentityCustomHasher{PasswordHasher: hasher}
 	})
 	_, err = custom.Runtime.VerifyCredential(t.Context(), goauth.Credential{
 		Identifier: request.Identifier,
 		Password:   localIdentityLegacyPassword,
 	})
-	require.ErrorIs(t, err, goauth.ErrPasswordVerificationUnavailable)
+	require.ErrorIs(t, err, goauth.ErrInvalidCredentials)
 }
 
 type localIdentityUnknownTransaction struct{ base goauth.AuthTransaction }
@@ -388,6 +393,7 @@ func TestExistingRootCustomStoreRetainsItsIdentifierContract(t *testing.T) {
 	for _, value := range []string{strings.Repeat("x", 257), "custom\x00value", string([]byte{'p', 0xff})} {
 		expected := goauth.IdentifierInput{Scheme: localIdentityScheme, Value: value}
 		f := localIdentityFixture(t, func(c *goauth.Config) {
+			c.EnableLegacyBytes256 = false
 			c.Store = localIdentityCustomLookupStore{RuntimeStore: c.Store, expected: expected, record: record}
 		})
 		found, err := f.Runtime.FindAccount(t.Context(), expected)
@@ -399,4 +405,112 @@ func TestExistingRootCustomStoreRetainsItsIdentifierContract(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, record.Account.Subject.ID, verified.Subject.ID)
 	}
+}
+
+func TestLegacyPasswordCompatibilityRequiresExplicitOptIn(t *testing.T) {
+	f := localIdentityFixture(t, func(c *goauth.Config) { c.EnableLegacyBytes256 = false })
+	request := localIdentityImport(localIdentityLegacyPassword)
+	_, err := f.Runtime.ImportLocalIdentity(t.Context(), request)
+	require.ErrorIs(t, err, goauth.ErrLocalIdentityUnsupported)
+	hasher, err := goauth.NewArgon2idHasher(goauth.Argon2idConfig{})
+	require.NoError(t, err)
+	_, err = testkit.NewRuntime(func(c *goauth.Config) {
+		c.EnableLegacyBytes256 = true
+		c.PasswordHasher = localIdentityCustomHasher{PasswordHasher: hasher}
+	})
+	require.ErrorIs(t, err, goauth.ErrLocalIdentityUnsupported)
+}
+
+func TestMixedPasswordRuntimeKnownAndMissingInputBoundaries(t *testing.T) {
+	f := localIdentityFixture(t)
+	input := goauth.IdentifierInput{Scheme: localIdentityScheme, Value: "mixed-strict"}
+	_, err := f.Runtime.ProvisionLocalIdentity(t.Context(), goauth.ProvisionLocalIdentityRequest{
+		Identifier: input, Password: localIdentityStrictPassword,
+	})
+	require.NoError(t, err)
+	legacy := localIdentityImport(localIdentityLegacyPassword)
+	_, err = f.Runtime.ImportLocalIdentity(t.Context(), legacy)
+	require.NoError(t, err)
+	for _, identifier := range []goauth.IdentifierInput{input, legacy.Identifier, {Scheme: localIdentityScheme, Value: "missing"}} {
+		for _, password := range []string{
+			"Wrong-Mixed-Passphrase-42", strings.Repeat("x", 129), string([]byte{0xff, 'p'}),
+			"goauth-enumeration-dummy-password", "goauth-compatibility-dummy-password",
+		} {
+			credential := goauth.Credential{Identifier: identifier, Password: password}
+			account, err := f.Runtime.VerifyCredential(t.Context(), credential)
+			require.ErrorIs(t, err, goauth.ErrInvalidCredentials)
+			require.Zero(t, account)
+			result, err := f.Runtime.Login(t.Context(), goauth.LoginRequest{Credential: credential})
+			require.ErrorIs(t, err, goauth.ErrInvalidCredentials)
+			require.Empty(t, result.Tokens.AccessToken)
+		}
+	}
+}
+
+func TestMixedPasswordRuntimeRejectsUnmatchedExistingProfile(t *testing.T) {
+	hasher, err := goauth.NewArgon2idHasher(goauth.Argon2idConfig{Iterations: 4})
+	require.NoError(t, err)
+	phc, err := hasher.HashPassword(localIdentityStrictPassword)
+	require.NoError(t, err)
+	input := goauth.IdentifierInput{Scheme: localIdentityScheme, Value: "historical-profile"}
+	record := goauth.LocalAccountRecord{
+		Account: goauth.Account{Subject: goauth.Subject{
+			ID: goauth.NewSubjectID(), Status: goauth.SubjectStatusActive, SecurityVersion: 1,
+		}},
+		PasswordPHC: phc, PasswordInputPolicy: goauth.PasswordInputPolicyUnicode,
+	}
+	for _, enabled := range []bool{false, true} {
+		f := localIdentityFixture(t, func(c *goauth.Config) {
+			c.EnableLegacyBytes256 = enabled
+			c.Store = localIdentityCustomLookupStore{RuntimeStore: c.Store, expected: input, record: record}
+		})
+		account, err := f.Runtime.VerifyCredential(t.Context(), goauth.Credential{
+			Identifier: input, Password: localIdentityStrictPassword,
+		})
+		if enabled {
+			require.ErrorIs(t, err, goauth.ErrInvalidCredentials)
+			require.Zero(t, account)
+		} else {
+			require.NoError(t, err)
+			require.Equal(t, record.Account.Subject.ID, account.Subject.ID)
+		}
+	}
+	f := localIdentityFixture(t)
+	_, err = f.Runtime.ImportLocalIdentity(t.Context(), goauth.ImportLocalIdentityRequest{
+		SubjectID: goauth.NewSubjectID(), Identifier: input, Status: goauth.SubjectStatusActive,
+		PasswordPHC: phc, PasswordInputPolicy: goauth.PasswordInputPolicyUnicode,
+	})
+	require.ErrorIs(t, err, goauth.ErrInvalidPassword)
+}
+
+func TestStrictOnlyImportRejectsDifferentCostWithoutNarrowingHistoricalVerification(t *testing.T) {
+	f := localIdentityFixture(t, func(c *goauth.Config) { c.EnableLegacyBytes256 = false })
+	request := localIdentityImport(localIdentityLegacyPassword)
+	request.PasswordInputPolicy = goauth.PasswordInputPolicyUnicode
+	_, err := f.Runtime.ImportLocalIdentity(t.Context(), request)
+	require.ErrorIs(t, err, goauth.ErrInvalidPassword)
+	hasher, err := goauth.NewArgon2idHasher(goauth.Argon2idConfig{})
+	require.NoError(t, err)
+	request.PasswordPHC, err = hasher.HashPassword(localIdentityStrictPassword)
+	require.NoError(t, err)
+	account, err := f.Runtime.ImportLocalIdentity(t.Context(), request)
+	require.NoError(t, err)
+	verified, err := f.Runtime.VerifyCredential(t.Context(), goauth.Credential{
+		Identifier: request.Identifier, Password: localIdentityStrictPassword,
+	})
+	require.NoError(t, err)
+	require.Equal(t, account.Subject.ID, verified.Subject.ID)
+}
+
+func TestMixedPasswordStrictMarkerAtLegacyCost(t *testing.T) {
+	f := localIdentityFixture(t)
+	request := localIdentityImport(localIdentityLegacyPassword)
+	request.PasswordInputPolicy = goauth.PasswordInputPolicyUnicode
+	account, err := f.Runtime.ImportLocalIdentity(t.Context(), request)
+	require.NoError(t, err)
+	verified, err := f.Runtime.VerifyCredential(t.Context(), goauth.Credential{
+		Identifier: request.Identifier, Password: localIdentityLegacyPassword,
+	})
+	require.NoError(t, err)
+	require.Equal(t, account.Subject.ID, verified.Subject.ID)
 }
