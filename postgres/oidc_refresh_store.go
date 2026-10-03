@@ -149,6 +149,7 @@ func (s *OIDCRefreshTokenStore) Rotate(
 	next oidc.RefreshToken,
 	rotatedAt time.Time,
 ) error {
+	started := time.Now()
 	selector, err := oidcRefreshSelector(currentRaw)
 	if err != nil {
 		return oidc.ErrRefreshTokenNotFound
@@ -176,6 +177,7 @@ func (s *OIDCRefreshTokenStore) Rotate(
 	if err != nil {
 		return err
 	}
+	rotatedAt = securityTime(ctx, rotatedAt, started)
 	if locked.consumedAt.Valid {
 		if err := markOIDCRefreshReplay(ctx, tx, locked, rotatedAt.UTC()); err != nil {
 			return err
@@ -185,7 +187,8 @@ func (s *OIDCRefreshTokenStore) Rotate(
 		}
 		return oidc.ErrRefreshTokenReplay
 	}
-	if locked.revokedAt.Valid || locked.replayedAt.Valid || !rotatedAt.Before(locked.tokenExpiresAt) {
+	if locked.revokedAt.Valid || locked.replayedAt.Valid ||
+		refreshLifetimeExpired(rotatedAt, locked.tokenExpiresAt, next.ExpiresAt) {
 		return oidc.ErrRefreshTokenNotFound
 	}
 	if nextSubjectID != locked.subjectID || next.ClientID != locked.clientID ||

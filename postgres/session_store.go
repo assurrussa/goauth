@@ -101,6 +101,7 @@ func (s *Store) rotateRefresh(
 	request goauth.RefreshRotationRequest,
 	peek bool,
 ) (goauth.RefreshRotationResult, error) {
+	started := time.Now()
 	if request.CurrentSelector == "" || len(request.CurrentDigest.Digest) != 32 {
 		return goauth.RefreshRotationResult{Status: goauth.RefreshRotationInvalid}, nil
 	}
@@ -198,6 +199,8 @@ FOR UPDATE OF rt, f, sess, sub`, request.CurrentSelector).Scan(
 		result.Status = goauth.RefreshRotationInvalid
 		return result, nil
 	}
+	// Re-read the configured clock only after all storage locks and reads.
+	request.Now = securityTime(ctx, request.Now, started)
 	if tokenConsumedAt.Valid {
 		if peek {
 			result.Status = goauth.RefreshRotationReplayed
@@ -205,7 +208,7 @@ FOR UPDATE OF rt, f, sess, sub`, request.CurrentSelector).Scan(
 		}
 		return revokeRefreshReplay(ctx, tx, owned, result, request.Now)
 	}
-	if !request.Now.Before(tokenExpiresAt) || !request.Now.Before(session.ExpiresAt) {
+	if refreshLifetimeExpired(request.Now, tokenExpiresAt, session.ExpiresAt) {
 		result.Status = goauth.RefreshRotationExpired
 		return result, nil
 	}
@@ -226,6 +229,10 @@ FOR UPDATE OF rt, f, sess, sub`, request.CurrentSelector).Scan(
 	}
 	if request.NextSelector == "" || len(request.NextDigest.Digest) != 32 {
 		result.Status = goauth.RefreshRotationInvalid
+		return result, nil
+	}
+	if !request.Now.Before(request.NextExpiresAt) {
+		result.Status = goauth.RefreshRotationExpired
 		return result, nil
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -546,4 +553,14 @@ func refreshSnapshotMatches(request goauth.RefreshRotationRequest, account goaut
 		(account.Subject.SecurityVersion == request.ExpectedSecurityVersion &&
 			account.PrimaryEmail.NormalizedValue == request.ExpectedNormalizedEmail &&
 			account.EmailVerified() == request.ExpectedEmailVerified)
+}
+
+// refreshLifetimeExpired checks every bound using one post-lock clock sample.
+func refreshLifetimeExpired(now time.Time, expiresAt ...time.Time) bool {
+	for _, expiry := range expiresAt {
+		if !now.Before(expiry) {
+			return true
+		}
+	}
+	return false
 }

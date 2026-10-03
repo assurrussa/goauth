@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/assurrussa/goauth/internal/authclock"
 )
 
 const (
@@ -415,6 +417,7 @@ func (r *Runtime) Login(ctx context.Context, request LoginRequest) (LoginResult,
 }
 
 func (r *Runtime) Refresh(ctx context.Context, rawRefreshToken string) (TokenPair, error) {
+	ctx = authclock.With(ctx, r.now)
 	current, digest, err := r.secretCodec.Parse(strings.TrimSpace(rawRefreshToken), "refresh")
 	if err != nil {
 		return TokenPair{}, ErrInvalidToken

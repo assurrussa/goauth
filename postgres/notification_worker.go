@@ -180,14 +180,17 @@ func (r *Runtime) deliverNotification(ctx context.Context, claim notificationCla
 		}
 		return nil
 	}
-	deadline := time.Now().Add(r.notificationWorker.SendTimeout)
-	if claim.event.ValidUntil.Before(deadline) {
-		deadline = claim.event.ValidUntil
+	// ValidUntil belongs to the configured clock, which may be fixed or offset
+	// from wall time. Translate its remaining validity to a relative timeout.
+	now = r.notificationNow().UTC()
+	remaining := claim.event.ValidUntil.Sub(now)
+	if remaining <= 0 {
+		return r.store.finishNotification(ctx, claim, notificationExpired, "stale", time.Time{})
 	}
-	sendCtx, cancel := context.WithDeadline(ctx, deadline)
+	sendCtx, cancel := context.WithTimeout(ctx, min(r.notificationWorker.SendTimeout, remaining))
 	defer cancel()
 	reserved, err := r.store.reserveNotificationSend(sendCtx, claim, r.notificationWorker.MaxAttempts,
-		r.notificationNow().UTC(), r.notificationWorker.LeaseDuration)
+		now, r.notificationWorker.LeaseDuration)
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
