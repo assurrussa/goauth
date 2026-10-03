@@ -67,3 +67,13 @@ non-delivery. `postgres.Runtime.ExpireNotifications(ctx, limit)` performs bounde
 queue-only expiry using the Runtime clock and managed transaction scope. Neither
 operation claims inbox delivery; ordinary sender errors keep their retry behavior.
 See [notification outcomes](notification-outcomes.md).
+
+## Terminal subject retirement
+
+The optional `SubjectLifecycleReader` and `LocalIdentityRetirementStore`
+capabilities and root/PostgreSQL Runtime lifecycle methods are supported without
+changing `Subject` or required store interfaces. The clean consumer includes
+root/testkit retirement, managed PostgreSQL rollback/receipt and fresh-subject
+login reuse while retaining every earlier local-identity/admission/password/
+rename/notification-outcome probe. No new supported package or host-support
+exception is introduced.

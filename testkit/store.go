@@ -16,6 +16,7 @@ type Store struct {
 	audits           []goauth.SecurityEvent
 	mu               sync.Mutex
 	accounts         map[string]goauth.Account
+	retired          map[string]time.Time
 	identifiers      map[string]string
 	localIdentifiers map[string]goauth.Identifier
 	passwords        map[string]string
@@ -67,6 +68,7 @@ type emailChange struct {
 func NewStore() *Store {
 	return &Store{
 		accounts:         make(map[string]goauth.Account),
+		retired:          make(map[string]time.Time),
 		identifiers:      make(map[string]string),
 		localIdentifiers: make(map[string]goauth.Identifier),
 		passwords:        make(map[string]string),
@@ -119,10 +121,16 @@ func (s *Store) CreateSSOAccount(
 	ctx context.Context,
 	record goauth.SSOAccountRecord,
 ) (goauth.Account, goauth.IdentityLink, error) {
+	if record.Link.SubjectID != record.Account.Subject.ID {
+		return goauth.Account{}, goauth.IdentityLink{}, errors.New("SSO identity link must belong to the created subject")
+	}
 	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if _, exists := s.accounts[record.Account.Subject.ID.String()]; exists {
+		return goauth.Account{}, goauth.IdentityLink{}, goauth.ErrIdentifierAlreadyExists
+	}
 	identifier := identifierKey(record.Account.PrimaryEmail.Scheme, record.Account.PrimaryEmail.NormalizedValue)
 	if _, found := s.identifiers[identifier]; found {
 		return goauth.Account{}, goauth.IdentityLink{}, goauth.ErrIdentifierAlreadyExists
@@ -147,6 +155,9 @@ func (s *Store) LinkIdentity(ctx context.Context, link goauth.IdentityLink) (goa
 
 	if _, found := s.accounts[link.SubjectID.String()]; !found {
 		return goauth.IdentityLink{}, goauth.ErrAccountNotFound
+	}
+	if _, retired := s.retired[link.SubjectID.String()]; retired {
+		return goauth.IdentityLink{}, goauth.ErrSubjectRetired
 	}
 	key := identityKey(link.Issuer, link.ExternalSubject)
 	if existing, found := s.links[key]; found {
@@ -289,6 +300,9 @@ func (s *Store) ChangePassword(
 	account, found := s.accounts[key]
 	if !found {
 		return goauth.PasswordChangeStoreResult{Status: goauth.PasswordChangeStoreMissing}, nil
+	}
+	if _, retired := s.retired[key]; retired {
+		return goauth.PasswordChangeStoreResult{}, goauth.ErrSubjectRetired
 	}
 	current, found := s.passwords[key]
 	if !found {
@@ -544,6 +558,9 @@ func (s *Store) SetSubjectStatus(
 	if !found {
 		return goauth.Subject{}, goauth.ErrAccountNotFound
 	}
+	if _, retired := s.retired[subjectID.String()]; retired {
+		return goauth.Subject{}, goauth.ErrSubjectRetired
+	}
 	if account.Subject.Status == status {
 		return account.Subject, nil
 	}
@@ -629,6 +646,10 @@ func (s *Store) IssueEmailChallenge(
 	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if _, retired := s.retired[record.SubjectID.String()]; retired {
+		return goauth.EmailChallengeIssueResult{}, goauth.ErrSubjectRetired
+	}
+
 	if record.ExpectedSecurityVersion > 0 || record.ExpectedNormalizedEmail != "" {
 		account, ok := s.accounts[record.SubjectID.String()]
 		if !ok {
@@ -706,6 +727,9 @@ func (s *Store) VerifyEmailChallenge(
 	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if _, retired := s.retired[request.SubjectID.String()]; retired {
+		return goauth.EmailChallengeVerifyResult{}, goauth.ErrSubjectRetired
+	}
 
 	key := challengeKey(request.SubjectID, request.Purpose)
 	records := s.challenges[key]
@@ -764,6 +788,9 @@ func (s *Store) IssueEmailChange(
 	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if _, retired := s.retired[record.SubjectID.String()]; retired {
+		return goauth.EmailChangeIssueResult{}, goauth.ErrSubjectRetired
+	}
 
 	account, found := s.accounts[record.SubjectID.String()]
 	if !found {
@@ -835,6 +862,9 @@ func (s *Store) VerifyEmailChange(
 	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if _, retired := s.retired[request.SubjectID.String()]; retired {
+		return goauth.EmailChangeVerifyResult{}, goauth.ErrSubjectRetired
+	}
 
 	record := s.latestPendingEmailChangeLocked(request.SubjectID)
 	if record == nil {

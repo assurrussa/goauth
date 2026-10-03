@@ -22,14 +22,9 @@ func (s *Store) SetTrustedLocalPassword(
 	}
 	defer rollbackWrite(tx, owned)
 
-	var version int64
-	err = tx.QueryRowContext(ctx, `SELECT security_version FROM auth_subjects WHERE id=$1 FOR UPDATE`,
-		request.SubjectID).Scan(&version)
-	if errors.Is(err, sql.ErrNoRows) {
-		return goauth.Account{}, goauth.ErrAccountNotFound
-	}
+	version, err := lockUnretiredSubject(ctx, tx, request.SubjectID)
 	if err != nil {
-		return goauth.Account{}, fmt.Errorf("lock trusted local password subject: %w", err)
+		return goauth.Account{}, err
 	}
 	var phc string
 	var policy goauth.PasswordInputPolicy

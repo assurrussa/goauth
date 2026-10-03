@@ -219,7 +219,11 @@ func TestPostgresLocalIdentityMigrationPreservesV3(t *testing.T) {
 	require.NoError(t, err)
 	var previousPHC string
 	require.NoError(t, db.QueryRow(`SELECT password_phc FROM auth_local_credentials WHERE subject_id=$1`, account.Subject.ID).Scan(&previousPHC))
-	_, err = db.Exec(`ALTER TABLE auth_local_credentials DROP COLUMN password_input_policy; DROP INDEX auth_notification_deliveries_expiry_idx; DELETE FROM goauth_migration_history WHERE version>=4; DELETE FROM goauth_schema_version WHERE version>=4`)
+	_, err = db.Exec(`ALTER TABLE auth_subjects DROP COLUMN retired_at;
+ALTER TABLE auth_local_credentials DROP COLUMN password_input_policy;
+DROP INDEX auth_notification_deliveries_expiry_idx;
+DELETE FROM goauth_migration_history WHERE version >= 4;
+DELETE FROM goauth_schema_version WHERE version >= 4`)
 	require.NoError(t, err)
 	require.ErrorIs(t, postgres.VerifySchema(t.Context(), db), postgres.ErrSchemaNeedsMigration)
 	require.NoError(t, postgres.Migrate(t.Context(), db))

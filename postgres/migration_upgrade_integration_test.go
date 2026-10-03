@@ -56,6 +56,7 @@ VALUES ($1, 'upgrade-role', 'Upgrade Role') RETURNING id`, goauth.NewSubjectID()
 DROP TABLE auth_notification_deliveries;
 DROP TABLE goauth_migration_history;
 DELETE FROM goauth_schema_version WHERE version >= 3;
+ALTER TABLE auth_subjects DROP COLUMN retired_at;
 ALTER TABLE auth_local_credentials DROP COLUMN password_input_policy;`)
 	require.NoError(t, err)
 	require.ErrorIs(t, postgres.VerifySchema(ctx, db), postgres.ErrSchemaNeedsMigration)
@@ -82,7 +83,7 @@ ALTER TABLE auth_local_credentials DROP COLUMN password_input_policy;`)
 	require.NoError(t, db.QueryRowContext(ctx,
 		`SELECT checksum FROM goauth_migration_history WHERE version = 3`).Scan(&originalChecksum))
 	t.Cleanup(func() {
-		_, cleanupErr := db.ExecContext(context.Background(), `DELETE FROM goauth_schema_version WHERE version = 6`)
+		_, cleanupErr := db.ExecContext(context.Background(), `DELETE FROM goauth_schema_version WHERE version = 7`)
 		require.NoError(t, cleanupErr)
 		_, cleanupErr = db.ExecContext(context.Background(),
 			`UPDATE goauth_migration_history SET checksum = $1 WHERE version = 3`, originalChecksum)
@@ -92,7 +93,7 @@ ALTER TABLE auth_local_credentials DROP COLUMN password_input_policy;`)
 	require.NoError(t, err)
 	require.ErrorIs(t, postgres.VerifySchema(ctx, db), postgres.ErrSchemaChecksumMismatch)
 	require.ErrorIs(t, postgres.Migrate(ctx, db), postgres.ErrSchemaChecksumMismatch)
-	_, err = db.ExecContext(ctx, `INSERT INTO goauth_schema_version (version) VALUES (6)`)
+	_, err = db.ExecContext(ctx, `INSERT INTO goauth_schema_version (version) VALUES (7)`)
 	require.NoError(t, err)
 	require.True(t, errors.Is(postgres.Migrate(ctx, db), postgres.ErrFutureSchema))
 }

@@ -366,3 +366,8 @@ transactional host mappings, narrowly bounded legacy password compatibility,
 schema-4 migration, privileged `SetTrustedLocalPassword`, and host admission/SSO integration steps.
 The privileged setter preserves subject status, advances security version even for
 identical plaintext, and joins managed host transactions with mandatory audit.
+
+Terminal authentication-subject retirement and scoped custom-login release are
+available through optional lifecycle APIs, with an explicit schema 6 upgrade.
+See [the retirement contract](docs/subject-retirement.md) for retained bindings,
+managed transaction receipts, compatibility and rollback requirements.

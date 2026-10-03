@@ -83,6 +83,9 @@ func (s *Store) RenameLocalIdentity(
 	if !found {
 		return goauth.LocalIdentityView{}, goauth.ErrAccountNotFound
 	}
+	if _, retired := s.retired[key]; retired {
+		return goauth.LocalIdentityView{}, goauth.ErrSubjectRetired
+	}
 	if account.Subject.SecurityVersion != request.ExpectedSecurityVersion {
 		return goauth.LocalIdentityView{}, goauth.ErrSecurityVersionMismatch
 	}

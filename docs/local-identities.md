@@ -70,8 +70,10 @@ v2/v3 upgrades preserve IDs, identifiers, password hashes, status, security
 versions and grants. v0.5.1 rejects schema 4 as a future schema: do not force an
 older binary to use it or drop the version marker. Roll back application code
 only to a build compatible with the database's current schema; preserve canonical
-state and mappings. This revision also applies the additive schema-5 notification
-expiry index ([details](notification-outcomes.md)); schema-4 binaries reject it.
+state and mappings. Schema 5 adds the notification expiry index
+([details](notification-outcomes.md)). The retirement extension advances to schema
+6, so schema-4/5 binaries are not supported rollback targets after that upgrade.
+See [the retirement upgrade contract](subject-retirement.md).
 
 ## Narrow legacy password compatibility
 
@@ -301,3 +303,12 @@ even when the plaintext is identical. The API supplies no implicit idempotency.
 No tag, release, production credential, signing key or deployment is part of this
 foundation. Public consumer and PostgreSQL tests exercise the supported import,
 verification and host transaction boundaries.
+
+## Terminal subject retirement
+
+The additive `RetireLocalIdentity` and `GetSubjectLifecycle` capabilities are
+specified in [Terminal authentication-subject retirement](subject-retirement.md).
+They require explicit schema 6 migration, preserve the public `Subject` layout,
+and retire the entire subject while releasing only the authorized primary custom
+login. Retained email/external bindings remain reserved. This is distinct from
+ordinary reversible status changes and does not finish OIDC final-write guards.

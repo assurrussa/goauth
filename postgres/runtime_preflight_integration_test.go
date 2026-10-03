@@ -22,6 +22,7 @@ func TestInvalidRuntimeConfigDoesNotMigrateSchema(t *testing.T) {
 DROP TABLE auth_notification_deliveries;
 DROP TABLE goauth_migration_history;
 DELETE FROM goauth_schema_version WHERE version >= 3;
+ALTER TABLE auth_subjects DROP COLUMN retired_at;
 ALTER TABLE auth_local_credentials DROP COLUMN password_input_policy;`)
 	require.NoError(t, err)
 	require.ErrorIs(t, postgres.VerifySchema(ctx, db), postgres.ErrSchemaNeedsMigration)

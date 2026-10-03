@@ -97,6 +97,29 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = goauth.MaxAccessTokenTTL
 	_ = goauth.ErrReservedAccessTokenClaim
 	_ = goauth.ChangePasswordRequest{}
+	_ = goauth.SubjectLifecycleView{Account: goauth.Account{}, RetiredAt: nil}
+	_ = goauth.RetireLocalIdentityRequest{
+		SubjectID: goauth.SubjectID{}, ExpectedIdentifier: goauth.IdentifierInput{}, ExpectedSecurityVersion: 1,
+	}
+	_ = goauth.RetireLocalIdentityStoreRequest{
+		SubjectID: goauth.SubjectID{}, Scheme: "custom", ExpectedNormalizedValue: "old", ExpectedSecurityVersion: 1, Now: time.Time{},
+	}
+	_ = goauth.ErrSubjectLifecycleUnsupported
+	_ = goauth.ErrLocalIdentityRetirementUnsupported
+	_ = goauth.ErrSubjectRetired
+	_ = goauth.SecurityEventSubjectRetired
+	_ = (*goauth.Runtime).GetSubjectLifecycle
+	_ = (*goauth.Runtime).RetireLocalIdentity
+	_ = (*postgres.Runtime).GetSubjectLifecycle
+	_ = (*postgres.Runtime).RetireLocalIdentity
+	var lifecycleReader goauth.SubjectLifecycleReader = (*postgres.Store)(nil)
+	var fixtureLifecycleReader goauth.SubjectLifecycleReader = (*testkit.Store)(nil)
+	var retirementStore goauth.LocalIdentityRetirementStore = (*postgres.Store)(nil)
+	var fixtureRetirementStore goauth.LocalIdentityRetirementStore = (*testkit.Store)(nil)
+	_ = lifecycleReader
+	_ = fixtureLifecycleReader
+	_ = retirementStore
+	_ = fixtureRetirementStore
 	_ = goauth.LocalIdentityView{Account: goauth.Account{}, Identifier: goauth.Identifier{}}
 	_ = goauth.RenameLocalIdentityRequest{
 		SubjectID: goauth.SubjectID{}, ExpectedIdentifier: goauth.IdentifierInput{},
