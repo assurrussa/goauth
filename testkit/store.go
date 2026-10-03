@@ -17,6 +17,7 @@ type Store struct {
 	mu               sync.Mutex
 	accounts         map[string]goauth.Account
 	identifiers      map[string]string
+	localIdentifiers map[string]goauth.Identifier
 	passwords        map[string]string
 	passwordPolicies map[string]goauth.PasswordInputPolicy
 	links            map[string]goauth.IdentityLink
@@ -67,6 +68,7 @@ func NewStore() *Store {
 	return &Store{
 		accounts:         make(map[string]goauth.Account),
 		identifiers:      make(map[string]string),
+		localIdentifiers: make(map[string]goauth.Identifier),
 		passwords:        make(map[string]string),
 		passwordPolicies: make(map[string]goauth.PasswordInputPolicy),
 		links:            make(map[string]goauth.IdentityLink),
@@ -188,6 +190,9 @@ func (s *Store) createLocalAccount(
 	s.identifiers[identifierKey] = subjectKey
 	s.passwords[subjectKey] = record.PasswordPHC
 	s.passwordPolicies[subjectKey] = record.PasswordInputPolicy
+	if identifier.Scheme != goauth.IdentifierSchemeEmail {
+		s.localIdentifiers[localIdentifierKey(record.Account.Subject.ID, identifier.Scheme)] = cloneLocalIdentifier(identifier)
+	}
 
 	return cloneAccount(account), nil
 }

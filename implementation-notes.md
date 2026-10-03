@@ -387,3 +387,13 @@ Validation completed on the final follow-up source snapshot:
   behavior was verified by the compiler and live tests.
 - Final diff and public-facing documentation passed whitespace/local-path checks.
   Hosted CI remains unrun; this is local candidate verification only.
+
+## Bounded custom-login read/rename
+
+Added independent optional primary-reader and CAS rename store capabilities.
+Required store interfaces, Subject layout and schema version are unchanged.
+Rename keeps credential policy and status, invalidates canonical security state,
+and records mandatory audit without identifier values. Exact no-op is a typed
+error after CAS; display-only edits advance version. Root/testkit/PostgreSQL and
+external consumers cover transactional rollback and stale state. Retirement and
+OIDC provider final-write fencing remain separate prerequisites.

@@ -95,6 +95,33 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = goauth.MaxAccessTokenTTL
 	_ = goauth.ErrReservedAccessTokenClaim
 	_ = goauth.ChangePasswordRequest{}
+	_ = goauth.LocalIdentityView{Account: goauth.Account{}, Identifier: goauth.Identifier{}}
+	_ = goauth.RenameLocalIdentityRequest{
+		SubjectID: goauth.SubjectID{}, ExpectedIdentifier: goauth.IdentifierInput{},
+		ExpectedSecurityVersion: 1, NewIdentifier: goauth.IdentifierInput{},
+	}
+	_ = goauth.RenameLocalIdentityStoreRequest{
+		SubjectID: goauth.SubjectID{}, Scheme: "custom", ExpectedNormalizedValue: "old",
+		ExpectedSecurityVersion: 1, NewDisplayValue: "new",
+		NewNormalizedValue: "new", Now: time.Time{},
+	}
+	_ = goauth.ErrLocalIdentifierUnsupported
+	_ = goauth.ErrLocalIdentityRenameUnsupported
+	_ = goauth.ErrLocalIdentifierConflict
+	_ = goauth.ErrIdentifierUnchanged
+	_ = goauth.SecurityEventLocalIdentityRenamed
+	_ = (*goauth.Runtime).GetLocalIdentifier
+	_ = (*goauth.Runtime).RenameLocalIdentity
+	_ = (*postgres.Runtime).GetLocalIdentifier
+	_ = (*postgres.Runtime).RenameLocalIdentity
+	var localReader goauth.LocalIdentifierReader = (*postgres.Store)(nil)
+	var fixtureReader goauth.LocalIdentifierReader = (*testkit.Store)(nil)
+	var renameStore goauth.LocalIdentityRenameStore = (*postgres.Store)(nil)
+	var fixtureRenameStore goauth.LocalIdentityRenameStore = (*testkit.Store)(nil)
+	_ = localReader
+	_ = fixtureReader
+	_ = renameStore
+	_ = fixtureRenameStore
 	_ = goauth.SetTrustedLocalPasswordRequest{}
 	_ = goauth.TrustedLocalPasswordStoreRequest{}
 	_ = goauth.ErrTrustedLocalPasswordUnsupported

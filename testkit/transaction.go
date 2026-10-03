@@ -2,6 +2,7 @@ package testkit
 
 import (
 	"context"
+	"errors"
 	"maps"
 
 	"github.com/assurrussa/goauth"
@@ -13,6 +14,15 @@ type (
 	eventScopeKey struct{}
 	eventScope    struct{ original, working *EventSink }
 )
+
+var errForeignStoreTransaction = errors.New("auth transaction belongs to a different testkit store")
+
+func (s *Store) validateTransactionScope(ctx context.Context) error {
+	if scope, ok := ctx.Value(storeScopeKey{}).(storeScope); ok && scope.original != s {
+		return errForeignStoreTransaction
+	}
+	return nil
+}
 
 func (s *Store) scoped(ctx context.Context) *Store {
 	if scope, ok := ctx.Value(storeScopeKey{}).(storeScope); ok && scope.original == s {
@@ -31,6 +41,9 @@ func (s *EventSink) scoped(ctx context.Context) *EventSink {
 // InAuthTransaction serializes store operations and publishes a private snapshot
 // only on success. The fixture additionally enlists its encrypted event sink.
 func (s *Store) InAuthTransaction(ctx context.Context, fn func(context.Context) error) error {
+	if err := s.validateTransactionScope(ctx); err != nil {
+		return err
+	}
 	if s.scoped(ctx) != s {
 		return fn(ctx)
 	}
@@ -43,6 +56,7 @@ func (s *Store) InAuthTransaction(ctx context.Context, fn func(context.Context) 
 	s.audits = working.audits
 	s.accounts = working.accounts
 	s.identifiers = working.identifiers
+	s.localIdentifiers = working.localIdentifiers
 	s.passwords = working.passwords
 	s.passwordPolicies = working.passwordPolicies
 	s.links = working.links
@@ -65,6 +79,9 @@ type fixtureTransaction struct {
 }
 
 func (t *fixtureTransaction) InAuthTransaction(ctx context.Context, fn func(context.Context) error) error {
+	if err := t.store.validateTransactionScope(ctx); err != nil {
+		return err
+	}
 	if t.store.scoped(ctx) != t.store {
 		return fn(ctx)
 	}
@@ -99,6 +116,9 @@ func (s *Store) snapshot() *Store {
 		c.accounts[k] = cloneAccount(v)
 	}
 	c.identifiers = maps.Clone(s.identifiers)
+	for k, v := range s.localIdentifiers {
+		c.localIdentifiers[k] = cloneLocalIdentifier(v)
+	}
 	c.passwords = maps.Clone(s.passwords)
 	c.passwordPolicies = maps.Clone(s.passwordPolicies)
 	c.links = maps.Clone(s.links)
