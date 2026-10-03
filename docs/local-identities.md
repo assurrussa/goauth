@@ -69,7 +69,9 @@ The v2 baseline and v3 notification migration stay byte-for-byte immutable.
 v2/v3 upgrades preserve IDs, identifiers, password hashes, status, security
 versions and grants. v0.5.1 rejects schema 4 as a future schema: do not force an
 older binary to use it or drop the version marker. Roll back application code
-only to a schema-4-compatible build; preserve canonical state and mappings.
+only to a build compatible with the database's current schema; preserve canonical
+state and mappings. This revision also applies the additive schema-5 notification
+expiry index ([details](notification-outcomes.md)); schema-4 binaries reject it.
 
 ## Narrow legacy password compatibility
 
