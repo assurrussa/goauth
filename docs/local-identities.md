@@ -162,6 +162,77 @@ email-less accounts cannot request email challenges or change an absent email.
 Password changes retain mandatory audit and send no email when no primary email
 exists. Notification enqueue refuses invalid/empty destinations.
 
+## Read and rename a primary custom login
+
+`Runtime.GetLocalIdentifier(ctx, subjectID, scheme)` returns the selected primary
+custom `Identifier` by immutable subject ID. It exposes no password, PHC or
+credential policy. Its explicit non-email scheme must be registered on the
+Runtime. It never returns or promotes a secondary alias, and it can read a
+primary identifier even when a subject has no local credential. A missing primary
+returns `ErrLocalIdentifierConflict` (including an absent subject); a zero ID
+returns `ErrAccountNotFound`.
+
+`Runtime.RenameLocalIdentity(ctx, RenameLocalIdentityRequest{SubjectID,
+ExpectedIdentifier, ExpectedSecurityVersion, NewIdentifier})` returns
+`LocalIdentityView{Account, Identifier}`. These methods are also available through
+`postgres.Runtime`. Authorize the exact subject, enforce operator rate limits and
+recent-auth/CSRF policy in the host. GoAuth supplies no HTTP endpoint, notification
+template or host RBAC behavior. Editing `BasicProfile.Username` is unrelated.
+
+Both identifier inputs require the same explicit registered non-email scheme.
+The registered resolver normalizes the expected and new values; display spelling
+is preserved exactly. Display and normalized values must be nonempty, valid UTF-8,
+NUL-free and at most 256 bytes. No implicit case folding, trimming, scheme change,
+account adoption or merge occurs.
+
+Rename requires a local credential and an existing primary custom identifier.
+Under canonical subject → identifier → credential locks, it checks the positive
+expected security version before the expected normalized old identifier. Missing
+subject/credential returns `ErrAccountNotFound`; a missing/mismatching primary
+returns `ErrLocalIdentifierConflict`; stale version returns
+`ErrSecurityVersionMismatch`. A collision with any primary or secondary identifier,
+including the same subject's alias, returns `ErrIdentifierAlreadyExists`.
+
+After CAS, an exact display-and-normalized no-op returns `ErrIdentifierUnchanged`
+without a write or success audit. A display-only edit with equal normalized value
+is a real rename. Every accepted edit increments security version exactly once,
+including A → B → A. Stale snapshots never become current again. Overflow fails
+closed. There is no hidden retry or upsert.
+
+The in-place rename preserves subject ID/status, identifier ID/creation time,
+password PHC/input policy, profile, email verification and external links. Active,
+suspended and ordinary disabled subjects can be renamed without changing status.
+Subject-keyed host memberships and RBAC grants remain attached to that same ID.
+The old login is immediately reusable by a **new** subject, with no inherited
+memberships, grants or old security state.
+
+Identifier/version writes, all local sessions, local/OIDC refresh-family
+revocation, password-reset invalidation, pending email-change/unverified-challenge
+invalidation, and mandatory `local_identity.renamed` audit commit together. Audit
+attributes contain no login, password, PHC, token or code. There is no notification.
+Prepared local credential/login snapshots and already-issued versioned OIDC codes
+become stale. This does **not** close the provider's separately tracked concurrent
+OIDC final-write races or recall already-released offline access tokens.
+
+Compose rename with host receipts/audit using `postgres.Runtime.InAuthTransaction`
+and its scoped `SQLExecutor`, writing only host-owned tables. Call rename before
+host project locks. Nested results and reads are provisional until the outer
+transaction succeeds. Host failure rolls back the rename and its audit. Every method error must escape
+the outer callback; nested calls do not create independent rollback savepoints. An
+`ErrOperationOutcomeUnknown` returns no successful standalone view; reconcile the
+durable host operation receipt before deciding whether to retry with freshly read
+expectations. Do not resolve uncertainty by adopting whoever owns the login now.
+
+Custom stores opt in separately through `LocalIdentifierReader` and
+`LocalIdentityRenameStore`. PostgreSQL and testkit implement both. Required
+`RuntimeStore`, `AccountStore`, `LocalIdentityStore` and the public `Subject` struct
+are unchanged. Unsupported capabilities return `ErrLocalIdentifierUnsupported` or
+`ErrLocalIdentityRenameUnsupported`. Direct store callers supply bounded,
+already-normalized `RenameLocalIdentityStoreRequest` values and join transactional
+audit through the Runtime; stores cannot infer a host's resolver or authorization.
+No schema migration, identifier reservation history or terminal retirement is
+included in this capability.
+
 ## Privileged operator password replacement
 
 `Runtime.SetTrustedLocalPassword(ctx, SetTrustedLocalPasswordRequest{SubjectID,

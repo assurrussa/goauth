@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
+
+	"github.com/assurrussa/goauth/internal/identifierbounds"
 )
 
 // PasswordInputPolicy describes verification of an existing credential, never
@@ -143,7 +143,7 @@ func (r *Runtime) prepareLocalIdentity(ctx context.Context, id SubjectID, input 
 }
 
 func validLocalIdentifier(value string) bool {
-	return len(value) > 0 && len(value) <= 256 && utf8.ValidString(value) && !strings.ContainsRune(value, 0)
+	return identifierbounds.Valid(value)
 }
 
 func (r *Runtime) createLocalIdentity(ctx context.Context, record LocalIdentityRecord, event SecurityEventType) (Account, error) {

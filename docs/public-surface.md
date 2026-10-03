@@ -48,3 +48,14 @@ capability and `Runtime.SetTrustedLocalPassword`, promoted by `postgres.Runtime`
 The external consumer exercises same-password version advancement on a disabled
 account and atomic email-less host event/audit commit or rollback. No public
 transport or new import package is added.
+
+## Custom-login read and rename
+
+The existing root, `postgres` and `testkit` surfaces expose additive
+`LocalIdentifierReader` and `LocalIdentityRenameStore` capabilities. No supported
+package or host-support import was added; `HostSupportPackages` remains empty.
+`public_surface_test.go` compiles every new request/view/interface/error/event and
+Runtime method. Clean external-consumer probes execute read/rename/CAS in testkit
+and read/rename/host-rollback composition on PostgreSQL. Existing local identity,
+admission and trusted-password consumer templates remain included. See
+[local identity semantics](local-identities.md#read-and-rename-a-primary-custom-login).

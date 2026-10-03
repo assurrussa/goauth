@@ -12,6 +12,10 @@
 - Privileged local identity provisioning/import may omit email and use an explicitly
   registered non-email identifier scheme. A missing PrimaryEmail is the zero
   Identifier, never a fabricated or verified email.
+- Primary custom-login rename is subject/version/old-value CAS. It preserves
+  subject/status/credential/profile, advances once for every real display or identity
+  edit, and atomically invalidates canonical security state with mandatory audit.
+  Old login reuse creates a fresh subject; aliases are never promoted or merged.
 - Email uniqueness is `(scheme, normalized_value)`. Display spelling is stored
   separately; built-in email normalization is lowercase after validation.
 
@@ -25,8 +29,8 @@
   HTTP middleware authenticates server-side session state by default. Admin and
   custom realms recheck the host membership gate. Offline JWT verification is explicit.
 - Suspending, disabling, resetting, changing or privileged-setting a password, or confirming an
-  email change increments security version and revokes sessions and refresh
-  families in one PostgreSQL transaction.
+  email change or renaming a primary custom login increments security version and
+  revokes sessions and refresh families in one PostgreSQL transaction.
   Offline access tokens never live longer than five minutes.
 
 ## One-time state

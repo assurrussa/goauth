@@ -255,6 +255,7 @@ const (
 	SecurityEventPasswordResetUsed        SecurityEventType = "password_reset.used"
 	SecurityEventPasswordChanged          SecurityEventType = "password.changed"
 	SecurityEventTrustedLocalPasswordSet  SecurityEventType = "password.trusted_set"
+	SecurityEventLocalIdentityRenamed     SecurityEventType = "local_identity.renamed"
 	SecurityEventEmailChallengeIssued     SecurityEventType = "email_challenge.issued"
 	SecurityEventEmailVerified            SecurityEventType = "email.verified"
 	SecurityEventEmailChangeIssued        SecurityEventType = "email_change.issued"
