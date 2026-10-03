@@ -89,6 +89,12 @@ the required installed browser selection.
 Passwords are bounded before hashing/verification, and each Runtime admits four
 concurrent hash operations by default (`MaxConcurrentPasswordHashes` is configurable).
 Saturation returns `ErrPasswordHashOverloaded` with 503/Retry-After in HTTP adapters.
+
+`CredentialVerificationRateLimit` can set a separate bounded policy for repeated
+`VerifyCredential`/PostgreSQL `PrepareCredential` calls. Zero preserves the current
+`LoginRateLimit` behavior; browser login, password change and recovery keep their
+existing policies. Successful checks still count. See
+[credential admission](docs/credential-admission.md) before using per-request Basic.
 Returned token lifetimes never exceed their canonical absolute session expiry.
 OIDC verifier defaults to the embedded access profile; selecting `zitadel-jwt`
 is explicit and does not enable acceptance of ID tokens.

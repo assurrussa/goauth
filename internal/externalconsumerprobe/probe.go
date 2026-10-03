@@ -63,8 +63,8 @@ func (c Config) BuildProbeTest() (string, error) {
 		return "", err
 	}
 
-	content := strings.ReplaceAll(
-		runnableProbeTest+disabledDeliveryProbeTest+localIdentityProbeTest, "GOAUTH_MODULE", cfg.ModulePath)
+	source := runnableProbeTest + disabledDeliveryProbeTest + localIdentityProbeTest + credentialAdmissionProbeTest
+	content := strings.ReplaceAll(source, "GOAUTH_MODULE", cfg.ModulePath)
 	for _, pkg := range externalconsumer.SupportedPackages {
 		resolved := strings.Replace(pkg, DefaultModulePath, cfg.ModulePath, 1)
 		if !strings.Contains(content, strconv.Quote(resolved)) {
