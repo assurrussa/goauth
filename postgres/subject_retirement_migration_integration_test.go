@@ -36,7 +36,7 @@ func TestSubjectRetirementMigrationUpgradesAllPublishedSchemas(t *testing.T) {
 			require.NoError(t, postgres.VerifySchema(t.Context(), db))
 			var gotVersion int
 			require.NoError(t, db.QueryRowContext(t.Context(), `SELECT max(version) FROM goauth_schema_version`).Scan(&gotVersion))
-			require.Equal(t, 7, gotVersion)
+			require.Equal(t, 8, gotVersion)
 			if version != 0 {
 				require.Equal(t, before, retirementMigrationSnapshot(t, db, version), "upgrade must preserve preexisting data")
 				var retired int
@@ -159,6 +159,9 @@ func retirementMigrationSnapshot(t *testing.T, db *sql.DB, version int) map[stri
 	result := make(map[string]string, len(tables))
 	for _, table := range tables {
 		expression, filter := "to_jsonb(r)", ""
+		if table == "auth_oidc_refresh_families" && version < 8 {
+			expression += " - ARRAY['session_id','authorization_stamp','absolute_expires_at']"
+		}
 		if table == "auth_subjects" && version < 6 {
 			expression += " - 'retired_at'"
 		}
@@ -261,7 +264,7 @@ func TestSubjectRetirementMigrationRejectsChecksumAndFutureSchema(t *testing.T) 
 	require.NoError(t, err)
 	require.ErrorIs(t, postgres.VerifySchema(t.Context(), db), postgres.ErrSchemaChecksumMismatch)
 	require.ErrorIs(t, postgres.Migrate(t.Context(), db), postgres.ErrSchemaChecksumMismatch)
-	_, err = db.ExecContext(t.Context(), `INSERT INTO goauth_schema_version (version) VALUES (8)`)
+	_, err = db.ExecContext(t.Context(), `INSERT INTO goauth_schema_version (version) VALUES (9)`)
 	require.NoError(t, err)
 	require.ErrorIs(t, postgres.VerifySchema(t.Context(), db), postgres.ErrFutureSchema)
 	require.ErrorIs(t, postgres.Migrate(t.Context(), db), postgres.ErrFutureSchema)

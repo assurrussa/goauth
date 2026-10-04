@@ -36,7 +36,7 @@ func TestMigrationFreshSchemaDownUpAndLegacyRefusal(t *testing.T) {
 
 	var version int
 	require.NoError(t, db.QueryRow(`SELECT max(version) FROM goauth_schema_version`).Scan(&version))
-	require.Equal(t, 7, version)
+	require.Equal(t, 8, version)
 	var requiredTables int
 	require.NoError(t, db.QueryRow(`
 SELECT count(*)
@@ -46,11 +46,12 @@ WHERE table_schema = 'public'
       'auth_subjects', 'auth_identifiers', 'auth_basic_profiles', 'auth_local_credentials',
       'auth_sessions', 'auth_refresh_families', 'auth_refresh_tokens',
       'auth_oidc_refresh_families', 'auth_oidc_refresh_tokens',
+      'auth_oidc_authorization_requests', 'auth_oidc_authorization_codes',
       'auth_password_reset_records', 'auth_email_challenges', 'auth_email_change_records',
       'auth_identity_links', 'auth_roles', 'auth_permissions', 'auth_role_permissions',
       'auth_subject_roles', 'auth_rate_limit_events'
   )`).Scan(&requiredTables))
-	require.Equal(t, 18, requiredTables)
+	require.Equal(t, 20, requiredTables)
 	var hierarchyTable sql.NullString
 	require.NoError(t, db.QueryRow(`SELECT to_regclass('public.auth_role_hierarchy')::text`).Scan(&hierarchyTable))
 	require.False(t, hierarchyTable.Valid)

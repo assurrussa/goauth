@@ -524,8 +524,10 @@ func (s *Service) refreshToken(ctx context.Context, req oidc.TokenRequest) (*oid
 	if record.ClientID != client.ID {
 		return nil, s.oauthError("invalid_grant", "refresh token does not belong to the client", http.StatusBadRequest)
 	}
-	if record.RevokedAt != nil || s.now().After(record.ExpiresAt) {
-		_ = s.refreshTokens.Revoke(ctx, record.Token, s.now())
+	if record.RevokedAt != nil || !s.now().Before(record.ExpiresAt) {
+		if err := s.refreshTokens.Revoke(ctx, record.Token, s.now()); err != nil {
+			return nil, fmt.Errorf("revoke inactive refresh token: %w", err)
+		}
 		return nil, s.oauthError("invalid_grant", "refresh token is not active", http.StatusBadRequest)
 	}
 
@@ -535,7 +537,9 @@ func (s *Service) refreshToken(ctx context.Context, req oidc.TokenRequest) (*oid
 	}
 	if subject.IsZero() || subject.Subject.Status != goauth.SubjectStatusActive ||
 		subject.Subject.SecurityVersion != record.SecurityVersion {
-		_ = s.refreshTokens.Revoke(ctx, record.Token, s.now())
+		if err := s.refreshTokens.Revoke(ctx, record.Token, s.now()); err != nil {
+			return nil, fmt.Errorf("revoke inactive refresh token: %w", err)
+		}
 		return nil, s.oauthError("invalid_grant", "refresh token is no longer valid", http.StatusBadRequest)
 	}
 

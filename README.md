@@ -386,3 +386,17 @@ Terminal authentication-subject retirement and scoped custom-login release are
 available through optional lifecycle APIs, with an explicit schema 6 upgrade.
 See [the retirement contract](docs/subject-retirement.md) for retained bindings,
 managed transaction receipts, compatibility and rollback requirements.
+
+## Session-bound confidential OIDC
+
+Hosts with their own opaque SSO sessions can use the additive
+`provider.NewSessionBound` and `postgres.NewSessionOIDCState` integration.
+[The session-bound profile](docs/session-bound-oidc.md) documents owned
+transactions, request-specific reauthentication, client-aware live admission,
+fixed-deadline refresh, project claims and schema 8 rollout. It leaves generic
+realm/email policy and legacy provider DTO layouts unchanged.
+
+`OIDCRefreshTokenStore.Get` is now read-only. A consumed token is reported as an
+inactive snapshot; authenticated replay revocation/audit occurs on the owning
+provider's mutation path. See the compatibility notes before upgrading direct
+adapter consumers.

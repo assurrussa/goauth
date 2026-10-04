@@ -171,3 +171,14 @@ checks, any explicit disposable-data resets, and unperformed/manual smoke
 checks separately. The historical matrix in [docs/compatibility.md](docs/compatibility.md)
 does not prove adoption of v0.5 or a newer release. Do not infer deployment from tags
 or local tests alone.
+
+### Session-bound profile candidate
+
+The additive session-bound OIDC surface and schema 8 require the
+[session-bound compatibility and rollout checks](docs/session-bound-oidc.md).
+Keep schema 1–7 migration bytes frozen. This candidate intentionally removes
+legacy refresh Get replay side effects while preserving source compatibility;
+release notes must call out the inactive snapshot and authenticated mutation
+replacement. Do not publish the schema independently of its API and a verified
+host consumer. Coordinated migration/restart is required; mixed older writers
+are not supported.

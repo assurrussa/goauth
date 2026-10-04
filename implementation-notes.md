@@ -397,3 +397,28 @@ and records mandatory audit without identifier values. Exact no-op is a typed
 error after CAS; display-only edits advance version. Root/testkit/PostgreSQL and
 external consumers cover transactional rollback and stale state. Retirement and
 OIDC provider final-write fencing remain separate prerequisites.
+
+## 2026-10-04: Additive session-bound OIDC candidate
+
+Built from verified schema-7 local source e957485 (tree13d1b210), the accepted
+source-equivalent baseline of public ca604986. The new explicit provider and
+transaction-bound PostgreSQL state retain legacy public DTO layouts and all
+supported import packages. Schema8 adds request/code state and bound-family
+invariants without changing older migration bytes. See
+[the profile contract](docs/session-bound-oidc.md) for the integration surface,
+intentional read-only legacy Get change and coordinated restart requirement.
+
+Focused provider race tests, new PostgreSQL integration/race cases, public
+surface compilation, generated-consumer source checks, full lint and formatting
+passed during development. An actual host HTTP/key/config assembly also compiled
+against the additive API. PostgreSQL tests cover exact request markers,
+concurrent one-time use, direct profile isolation, authenticated owner-only
+legacy replay, seven-day/DST caps, bounded cleanup and lock-order barriers.
+The storage cleanup phase releases its separate transaction before generic
+maintenance to avoid canonical-writer inversion; maintenance is not globally
+atomic. Authentication and replay effects remain single-owned operations.
+
+This is a local source candidate, not a published release or complete product
+acceptance. Full aggregate coverage/consumer gates and independent frozen-tree
+review are still required before release. No production credentials, persisted
+signing keys or deployment were created.

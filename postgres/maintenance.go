@@ -72,13 +72,23 @@ func (r *Runtime) Cleanup(ctx context.Context, policy CleanupPolicy) (CleanupRes
 		return CleanupResult{}, err
 	}
 	expiredBefore := now.Add(-policy.ExpiredRecordRetention)
+	// Release all OIDC code/family/token locks before generic cleanup. Canonical
+	// security writers touch generic sessions before OIDC, and email/reset state
+	// on both sides of that boundary; sharing these cleanup locks can invert them.
+	oidcResult, err := cleanupSessionOIDCBatch(ctx, r.db, expiredBefore)
+	if err != nil {
+		return CleanupResult{}, fmt.Errorf("clean session OIDC state: %w", err)
+	}
+	result := CleanupResult{
+		NotificationsExpired: notificationExpired,
+		OIDCRefreshTokens:    oidcResult.RefreshTokens, OIDCRefreshFamilies: oidcResult.RefreshFamilies,
+	}
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return CleanupResult{}, fmt.Errorf("begin goauth cleanup: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	result := CleanupResult{NotificationsExpired: notificationExpired}
 	deletions := []struct {
 		query string
 		arg   time.Time
@@ -87,9 +97,6 @@ func (r *Runtime) Cleanup(ctx context.Context, policy CleanupPolicy) (CleanupRes
 		{`DELETE FROM auth_password_reset_records WHERE expires_at < $1 OR consumed_at < $1`, expiredBefore, &result.PasswordResets},
 		{`DELETE FROM auth_email_challenges WHERE expires_at < $1 OR verified_at < $1`, expiredBefore, &result.EmailChallenges},
 		{`DELETE FROM auth_email_change_records WHERE expires_at < $1 OR consumed_at < $1`, expiredBefore, &result.EmailChanges},
-		{`DELETE FROM auth_oidc_refresh_tokens WHERE expires_at < $1 OR consumed_at < $1`, expiredBefore, &result.OIDCRefreshTokens},
-		{`DELETE FROM auth_oidc_refresh_families
-WHERE expires_at < $1 OR revoked_at < $1 OR replayed_at < $1`, expiredBefore, &result.OIDCRefreshFamilies},
 		{`DELETE FROM auth_refresh_tokens WHERE expires_at < $1 OR consumed_at < $1`, expiredBefore, &result.RefreshTokens},
 		{`DELETE FROM auth_refresh_families WHERE revoked_at < $1`, expiredBefore, &result.RefreshFamilies},
 		{`DELETE FROM auth_sessions WHERE expires_at < $1 OR revoked_at < $1`, expiredBefore, &result.Sessions},
