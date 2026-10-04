@@ -74,6 +74,14 @@ response parameter `code` is reserved: error callbacks remove every registered
 Ordinary callback query parameters, including repeated values, are preserved.
 Legacy provider and successful authorization response behavior are unchanged.
 
+Registered callback queries must be fully accepted by Go's `url.ParseQuery`.
+Unencoded semicolons and invalid percent escapes reject the entire callback
+locally, even if other query pairs are valid; no partial query is forwarded.
+This check runs before authorization issuance or continuation consumption.
+Percent-encoded semicolons (for example, `tenant=a%3Bb`) and repeated ordinary
+query values are valid and preserved. Host registration validation should
+enforce the same constraint before accepting a callback.
+
 A completed continuation that loses policy admission or its client revision
 returns `access_denied` and the exact stored `state` to the current registered
 callback. The current client ID must still match the request, the client must

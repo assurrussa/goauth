@@ -92,7 +92,8 @@ func TestSessionContinuationDenialPreservesOpaqueState(t *testing.T) {
 		t.Run(state, func(t *testing.T) {
 			t.Parallel()
 			h := newSessionFixture(t)
-			h.admission.Client.RedirectURIs[0] += "?existing=one&existing=two&state=registration&code=old&c%6fde=older"
+			h.admission.Client.RedirectURIs[0] += "?existing=one&existing=two&tenant=a%3Bb&tenant=c%3Bd" +
+				"&state=registration&code=old&c%6fde=older"
 			req, challenge := completedSessionRequest(t, h, func(req *oidc.SessionAuthorizeRequest) { req.State = state })
 			h.admission.Allowed = false
 			result, err := h.service.ContinueAuthorization(t.Context(), challenge, h.browser(), req.BrowserBinding)
@@ -112,7 +113,8 @@ func TestSessionAuthorizeErrorsPreserveOpaqueState(t *testing.T) {
 			t.Run(code+"/"+state, func(t *testing.T) {
 				t.Parallel()
 				h := newSessionFixture(t)
-				h.admission.Client.RedirectURIs[0] += "?existing=one&existing=two&state=registration&code=old&c%6fde=older"
+				h.admission.Client.RedirectURIs[0] += "?existing=one&existing=two&tenant=a%3Bb&tenant=c%3Bd" +
+					"&state=registration&code=old&c%6fde=older"
 				req := h.authorizeRequest()
 				req.State = state
 				if code == invalidScope {

@@ -709,7 +709,14 @@ func strictHTTPSURL(raw string, query bool) bool {
 }
 
 func strictRedirectAllowed(client oidc.Client, raw string) bool {
-	return strictHTTPSURL(raw, true) && slices.Contains(client.RedirectURIs, raw)
+	target, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	// URL.Query silently drops malformed pairs. Reject the whole callback
+	// before issuance or consumption rather than lose registered routing data.
+	_, err = url.ParseQuery(target.RawQuery)
+	return err == nil && strictHTTPSURL(raw, true) && slices.Contains(client.RedirectURIs, raw)
 }
 
 func validSessionScopes(scopes []string) bool {
