@@ -65,6 +65,47 @@ Positive max_age is checked after waits and before callback exit. `prompt=none`
 cannot cause interaction; consent/account selection return explicit protocol
 errors. The login redirect query key is `oidc_challenge`.
 
+All strict-profile error callbacks, including initial protocol errors and
+`prompt=none` failures, preserve the exact opaque request state (including
+whitespace). Request state replaces any registered callback `state` query value;
+absent state is not inherited from the registration. The successful authorization
+response parameter `code` is reserved: error callbacks remove every registered
+`code` query value so a relying party cannot mistake the denial for success.
+Ordinary callback query parameters, including repeated values, are preserved.
+Legacy provider and successful authorization response behavior are unchanged.
+
+Registered callback queries must be fully accepted by Go's `url.ParseQuery`.
+Unencoded semicolons and invalid percent escapes reject the entire callback
+locally, even if other query pairs are valid; no partial query is forwarded.
+This check runs before authorization issuance or continuation consumption.
+Percent-encoded semicolons (for example, `tenant=a%3Bb`) and repeated ordinary
+query values are valid and preserved. Host registration validation should
+enforce the same constraint before accepting a callback.
+
+A completed continuation that loses policy admission or its client revision
+returns `access_denied` and the exact stored `state` to the current registered
+callback. The current client ID must still match the request, the client must
+remain trusted, and that exact HTTPS callback must still be registered under
+the admission locks. This is a terminal, single-use request consumption in the
+same owned transaction, with no code, family or token issuance. The provider
+rechecks the locked request's completion marker, browser binding, sid, cookie
+generation and expiry before preparing the error redirect. It releases the
+existing `AuthorizeResult` only after confirmed commit and before request
+expiry; hosts use their ordinary redirect path. This replaces the earlier
+local `access_denied` response for a valid, safe continuation callback, as
+required by [OIDC authorization errors](https://openid.net/specs/openid-connect-core-1_0.html#AuthError).
+
+Missing, malformed, expired, consumed or mismatched challenges remain local
+errors. A removed callback or unknown/untrusted client also stays local; this
+includes disabled/retired clients and disabled projects. Revoked membership on
+an otherwise enabled client/project can receive the safe callback denial.
+Callback edits must use the same project/client locks, so either the edit wins
+and the target is refused, or the denial commits against the still-registered
+target first. Infrastructure failures and unknown commit withhold all redirect
+output. Expiry detected by the in-transaction check rolls consumption back;
+expiry detected only after confirmed commit may leave the terminal consumption
+committed without delivery.
+
 ## Claims and verification
 
 Strict access tokens use typ `at+jwt`, token_use `access`; ID tokens use typ

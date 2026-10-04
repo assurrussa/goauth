@@ -129,8 +129,8 @@ func (s *SessionService) Authorize(ctx context.Context,
 		}
 		scopes, protocol := s.validateAuthorize(current.Client, req)
 		if protocol != nil {
-			result = &oidc.AuthorizeResult{RedirectURI: s.base.redirectWithError(req.RedirectURI, req.State, protocol)}
-			return nil
+			result, err = s.errorRedirect(req.RedirectURI, req.State, protocol)
+			return err
 		}
 		ready := validAdmission(current, nil, s.now()) && browser != nil && current.Binding.SessionID == browser.SessionID
 		forced := slices.Contains(req.Prompt, "login") || (req.MaxAgeSeconds != nil && *req.MaxAgeSeconds == 0)
@@ -142,10 +142,10 @@ func (s *SessionService) Authorize(ctx context.Context,
 			return err
 		}
 		if slices.Contains(req.Prompt, "none") {
-			result = &oidc.AuthorizeResult{RedirectURI: s.base.redirectWithError(req.RedirectURI,
+			result, err = s.errorRedirect(req.RedirectURI,
 				req.State,
-				sessionError("login_required"))}
-			return nil
+				sessionError("login_required"))
+			return err
 		}
 		if !validDigest(req.BrowserBinding) || current.ClientRevision <= 0 {
 			denial = sessionError(sessionErrorInvalidRequest)
@@ -189,6 +189,7 @@ func (s *SessionService) Authorize(ctx context.Context,
 	return result, nil
 }
 
+//nolint:gocognit // Keep safe callback admission, terminal denial and response release in one owned boundary.
 func (s *SessionService) ContinueAuthorization(ctx context.Context,
 	challenge string,
 	browser *oidc.BrowserSession,
@@ -212,8 +213,10 @@ func (s *SessionService) ContinueAuthorization(ctx context.Context,
 		if err != nil {
 			return err
 		}
-		if current.ClientRevision != hint.ClientRevision || !validAdmission(current, nil, s.now()) ||
-			!strictRedirectAllowed(current.Client, hint.RedirectURI) || current.Binding.SessionID != browser.SessionID {
+		// A current trusted callback can receive a denial even when issuance is
+		// no longer allowed. Never redirect to a removed or untrusted target.
+		if current.Client.ID != hint.ClientID || !current.Client.Trusted ||
+			!strictRedirectAllowed(current.Client, hint.RedirectURI) {
 			denial = sessionError("access_denied")
 			return nil
 		}
@@ -225,10 +228,24 @@ func (s *SessionService) ContinueAuthorization(ctx context.Context,
 			browser,
 			browserBinding,
 			s.now()) ||
-			record.ClientID != current.Client.ID ||
-			record.ClientRevision != current.ClientRevision {
+			record.Challenge != challenge || record.ClientID != hint.ClientID ||
+			record.ClientRevision != hint.ClientRevision || record.RedirectURI != hint.RedirectURI {
 			// No durable effect is intended: rollback the tentative consumption.
 			return oidc.ErrSessionStateConflict
+		}
+		if current.ClientRevision != record.ClientRevision || !validAdmission(current, nil, s.now()) ||
+			current.Binding.SessionID != browser.SessionID {
+			// This request is terminal, without creating a code or grant. Use only
+			// the consumed record's state and withhold output until confirmed commit.
+			deadline = record.ExpiresAt
+			result, err = s.errorRedirect(record.RedirectURI, record.State, sessionError("access_denied"))
+			if err != nil {
+				return err
+			}
+			if !s.now().Before(deadline) {
+				return errSessionExpired
+			}
+			return nil
 		}
 		binding := current.Binding
 		binding.AuthenticatedAt = record.LoginCompletion.AuthenticatedAt
@@ -267,6 +284,24 @@ func (s *SessionService) ContinueAuthorization(ctx context.Context,
 		return nil, sessionUnavailable(errSessionExpired)
 	}
 	return result, nil
+}
+
+// errorRedirect is used only after exact current-client/callback validation.
+// Keep the strict profile's opaque state semantics separate from legacy behavior.
+func (s *SessionService) errorRedirect(redirectURI, state string, protocol *oidc.OAuthError) (*oidc.AuthorizeResult, error) {
+	callback, err := url.Parse(s.base.redirectWithError(redirectURI, state, protocol))
+	if err != nil {
+		return nil, err
+	}
+	query := callback.Query()
+	// A registered success code must never make an error response ambiguous.
+	query.Del(responseTypeCode)
+	query.Del("state")
+	if state != "" {
+		query.Set("state", state)
+	}
+	callback.RawQuery = query.Encode()
+	return &oidc.AuthorizeResult{RedirectURI: callback.String()}, nil
 }
 
 func (s *SessionService) ExchangeToken(ctx context.Context, req oidc.TokenRequest) (*oidc.TokenResponse, error) {
@@ -674,7 +709,14 @@ func strictHTTPSURL(raw string, query bool) bool {
 }
 
 func strictRedirectAllowed(client oidc.Client, raw string) bool {
-	return strictHTTPSURL(raw, true) && slices.Contains(client.RedirectURIs, raw)
+	target, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	// URL.Query silently drops malformed pairs. Reject the whole callback
+	// before issuance or consumption rather than lose registered routing data.
+	_, err = url.ParseQuery(target.RawQuery)
+	return err == nil && strictHTTPSURL(raw, true) && slices.Contains(client.RedirectURIs, raw)
 }
 
 func validSessionScopes(scopes []string) bool {
