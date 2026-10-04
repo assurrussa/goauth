@@ -18,6 +18,7 @@ func TestInvalidRuntimeConfigDoesNotMigrateSchema(t *testing.T) {
 	resetSchema(t, db)
 	ctx := context.Background()
 	require.NoError(t, postgres.Migrate(ctx, db))
+	removeSessionOIDCSchema(t, db)
 	_, err := db.ExecContext(ctx, `
 DROP TABLE auth_notification_deliveries;
 DROP TABLE goauth_migration_history;

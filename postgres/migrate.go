@@ -10,7 +10,7 @@ import (
 	"fmt"
 )
 
-const schemaVersion = 7
+const schemaVersion = 8
 
 const localIdentitySchemaVersion = 4
 
@@ -57,8 +57,21 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if err != nil {
 		return err
 	}
+	if err := applyPendingMigrations(ctx, tx, state); err != nil {
+		return err
+	}
+	if err := verifySchema(ctx, tx); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit goauth migration: %w", err)
+	}
+	return nil
+}
+
+func applyPendingMigrations(ctx context.Context, tx *sql.Tx, state schemaState) error {
 	switch state {
-	case schemaStateV7:
+	case schemaStateV8:
 		// No schema change is needed, but still finish the transaction to release
 		// the lock before reporting a successful verification.
 	case schemaStateFuture:
@@ -109,14 +122,13 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 		if err := applyRateEventCleanupMigration(ctx, tx); err != nil {
 			return err
 		}
+		fallthrough
+	case schemaStateV7:
+		if err := applySessionOIDCMigration(ctx, tx); err != nil {
+			return err
+		}
 	default:
 		return errors.New("unknown goauth schema state")
-	}
-	if err := verifySchema(ctx, tx); err != nil {
-		return err
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit goauth migration: %w", err)
 	}
 	return nil
 }
@@ -173,7 +185,7 @@ func verifySchema(ctx context.Context, db queryRower) error {
 	if state == schemaStateFuture {
 		return ErrFutureSchema
 	}
-	if state != schemaStateV7 {
+	if state != schemaStateV8 {
 		return ErrSchemaNeedsMigration
 	}
 	if err := verifyNotificationSchema(ctx, db); err != nil {
@@ -188,7 +200,10 @@ func verifySchema(ctx context.Context, db queryRower) error {
 	if err := verifySubjectRetirementSchema(ctx, db); err != nil {
 		return err
 	}
-	return verifyRateEventCleanupSchema(ctx, db)
+	if err := verifyRateEventCleanupSchema(ctx, db); err != nil {
+		return err
+	}
+	return verifySessionOIDCSchema(ctx, db)
 }
 
 func verifyNotificationSchema(ctx context.Context, db queryRower) error {
@@ -256,8 +271,14 @@ DROP TABLE IF EXISTS auth_identity_links;
 DROP TABLE IF EXISTS auth_email_change_records;
 DROP TABLE IF EXISTS auth_email_challenges;
 DROP TABLE IF EXISTS auth_password_reset_records;
+DROP TABLE IF EXISTS auth_oidc_authorization_codes;
+DROP TABLE IF EXISTS auth_oidc_authorization_requests;
 DROP TABLE IF EXISTS auth_oidc_refresh_tokens;
 DROP TABLE IF EXISTS auth_oidc_refresh_families;
+DROP FUNCTION IF EXISTS auth_oidc_code_guard();
+DROP FUNCTION IF EXISTS auth_oidc_request_guard();
+DROP FUNCTION IF EXISTS auth_oidc_token_guard();
+DROP FUNCTION IF EXISTS auth_oidc_family_guard();
 DROP TABLE IF EXISTS auth_refresh_tokens;
 DROP TABLE IF EXISTS auth_refresh_families;
 DROP TABLE IF EXISTS auth_sessions;
@@ -304,6 +325,7 @@ const (
 	schemaStateV5
 	schemaStateV6
 	schemaStateV7
+	schemaStateV8
 	schemaStateFuture
 )
 
@@ -332,7 +354,8 @@ func detectSchema(ctx context.Context, db queryRower) (schemaState, error) {
 		return schemaStateFuture, nil
 	}
 	if version != 2 && version != notificationSchemaVersion && version != localIdentitySchemaVersion &&
-		version != notificationExpirySchemaVersion && version != subjectRetirementSchemaVersion && version != schemaVersion {
+		version != notificationExpirySchemaVersion && version != subjectRetirementSchemaVersion &&
+		version != rateEventCleanupSchemaVersion && version != schemaVersion {
 		return schemaStateLegacy, nil
 	}
 
@@ -350,6 +373,9 @@ WHERE table_schema = 'public'
 	}
 
 	if version == schemaVersion {
+		return schemaStateV8, nil
+	}
+	if version == rateEventCleanupSchemaVersion {
 		return schemaStateV7, nil
 	}
 	if version == subjectRetirementSchemaVersion {

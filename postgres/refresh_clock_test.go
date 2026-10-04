@@ -75,7 +75,7 @@ func (c *refreshClockConn) QueryContext(_ context.Context, query string, _ []dri
 	case strings.Contains(query, "FROM auth_oidc_refresh_tokens t"):
 		return &refreshClockRows{values: []driver.Value{
 			"family", f.subjectID.String(), "client", "openid", int64(1), f.origin, f.origin, f.sessionExpiry, nil, nil,
-			refreshClockKeyID, f.digest, f.origin, f.tokenExpiry, consumed,
+			refreshClockKeyID, f.digest, f.origin, f.tokenExpiry, consumed, nil, nil, nil,
 		}}, nil
 	case strings.Contains(query, "FROM auth_refresh_tokens rt"):
 		return &refreshClockRows{values: []driver.Value{

@@ -85,31 +85,14 @@ func (s *OIDCRefreshTokenStore) Get(ctx context.Context, rawToken string) (oidc.
 	if err != nil {
 		return oidc.RefreshToken{}, oidc.ErrRefreshTokenNotFound
 	}
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
-	if err != nil {
-		return oidc.RefreshToken{}, fmt.Errorf("begin OIDC refresh token lookup: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	locked, err := lockOIDCRefreshToken(ctx, tx, selector)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && !s.matches(rawToken, locked.keyID, locked.digest)) {
+	loaded, err := readOIDCRefreshToken(ctx, s.db, selector, false, false)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && !s.matches(rawToken, loaded.keyID, loaded.digest)) {
 		return oidc.RefreshToken{}, oidc.ErrRefreshTokenNotFound
 	}
 	if err != nil {
 		return oidc.RefreshToken{}, err
 	}
-	record := locked.record(rawToken)
-	if locked.consumedAt.Valid {
-		replayAt := time.Now().UTC()
-		if err := markOIDCRefreshReplay(ctx, tx, locked, replayAt); err != nil {
-			return oidc.RefreshToken{}, err
-		}
-		record.RevokedAt = &replayAt
-	}
-	if err := commitAuthTransaction(tx); err != nil {
-		return oidc.RefreshToken{}, fmt.Errorf("commit OIDC refresh token lookup: %w", err)
-	}
-
+	record := loaded.record(rawToken)
 	return record, nil
 }
 
@@ -129,6 +112,12 @@ func (s *OIDCRefreshTokenStore) Revoke(ctx context.Context, rawToken string, rev
 	}
 	if err != nil {
 		return err
+	}
+	if locked.consumedAt.Valid {
+		if err := markOIDCRefreshReplay(ctx, tx, locked, revokedAt.UTC()); err != nil {
+			return err
+		}
+		return commitAuthTransaction(tx)
 	}
 	if _, err := tx.ExecContext(ctx, `
 UPDATE auth_oidc_refresh_families
@@ -230,21 +219,24 @@ UPDATE auth_oidc_refresh_families SET expires_at = $2 WHERE id = $1`, locked.fam
 }
 
 type lockedOIDCRefreshToken struct {
-	familyID        string
-	subjectID       goauth.SubjectID
-	clientID        string
-	scopes          string
-	securityVersion int64
-	authenticatedAt time.Time
-	familyCreatedAt time.Time
-	familyExpiresAt time.Time
-	revokedAt       sql.NullTime
-	replayedAt      sql.NullTime
-	keyID           string
-	digest          []byte
-	tokenCreatedAt  time.Time
-	tokenExpiresAt  time.Time
-	consumedAt      sql.NullTime
+	familyID          string
+	subjectID         goauth.SubjectID
+	clientID          string
+	scopes            string
+	securityVersion   int64
+	authenticatedAt   time.Time
+	familyCreatedAt   time.Time
+	familyExpiresAt   time.Time
+	revokedAt         sql.NullTime
+	replayedAt        sql.NullTime
+	keyID             string
+	digest            []byte
+	tokenCreatedAt    time.Time
+	tokenExpiresAt    time.Time
+	consumedAt        sql.NullTime
+	sessionID         sql.NullString
+	policyStamp       sql.NullString
+	absoluteExpiresAt sql.NullTime
 }
 
 func lockOIDCRefreshToken(
@@ -252,39 +244,36 @@ func lockOIDCRefreshToken(
 	tx *sql.Tx,
 	selector string,
 ) (lockedOIDCRefreshToken, error) {
+	return readOIDCRefreshToken(ctx, tx, selector, true, false)
+}
+
+func readOIDCRefreshToken(ctx context.Context, q queryRower, selector string, lock, bound bool) (lockedOIDCRefreshToken, error) {
 	var token lockedOIDCRefreshToken
-	err := tx.QueryRowContext(ctx, `
-SELECT
+	query := `SELECT
     f.id, f.subject_id, f.client_id, f.scopes, f.security_version,
     f.authenticated_at, f.created_at, f.expires_at, f.revoked_at, f.replayed_at,
-    t.key_id, t.secret_digest, t.created_at, t.expires_at, t.consumed_at
+    t.key_id, t.secret_digest, t.created_at, t.expires_at, t.consumed_at,
+    f.session_id, f.authorization_stamp, f.absolute_expires_at
 FROM auth_oidc_refresh_tokens t
 JOIN auth_oidc_refresh_families f ON f.id = t.family_id
-WHERE t.selector = $1
-FOR UPDATE OF t, f`, selector).Scan(
-		&token.familyID,
-		&token.subjectID,
-		&token.clientID,
-		&token.scopes,
-		&token.securityVersion,
-		&token.authenticatedAt,
-		&token.familyCreatedAt,
-		&token.familyExpiresAt,
-		&token.revokedAt,
-		&token.replayedAt,
-		&token.keyID,
-		&token.digest,
-		&token.tokenCreatedAt,
-		&token.tokenExpiresAt,
-		&token.consumedAt,
+WHERE t.selector = $1`
+	if bound {
+		query += " AND f.session_id IS NOT NULL AND f.authorization_stamp IS NOT NULL AND f.absolute_expires_at IS NOT NULL"
+	} else {
+		query += " AND f.session_id IS NULL AND f.authorization_stamp IS NULL AND f.absolute_expires_at IS NULL"
+	}
+	if lock {
+		query += " FOR UPDATE OF f, t"
+	}
+	err := q.QueryRowContext(ctx, query, selector).Scan(
+		&token.familyID, &token.subjectID, &token.clientID, &token.scopes, &token.securityVersion,
+		&token.authenticatedAt, &token.familyCreatedAt, &token.familyExpiresAt, &token.revokedAt, &token.replayedAt,
+		&token.keyID, &token.digest, &token.tokenCreatedAt, &token.tokenExpiresAt, &token.consumedAt,
+		&token.sessionID, &token.policyStamp, &token.absoluteExpiresAt,
 	)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return lockedOIDCRefreshToken{}, sql.ErrNoRows
-		}
-		return lockedOIDCRefreshToken{}, fmt.Errorf("lock OIDC refresh token: %w", err)
+		return lockedOIDCRefreshToken{}, err
 	}
-
 	return token, nil
 }
 

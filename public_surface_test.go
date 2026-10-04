@@ -53,6 +53,11 @@ func (publicCacheInvalidator) Invalidate(context.Context) error { return nil }
 func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	t.Helper()
 
+	// Additive strict-profile signatures and legacy layouts are checked in public_session_surface_test.go.
+	_ = provider.NewSessionBound
+	_ = postgres.NewSessionOIDCState
+	_ = (*postgres.SessionOIDCState).CleanupExpired
+
 	var authTransaction goauth.AuthTransaction = (*postgres.Store)(nil)
 	_ = authTransaction
 	_ = (*goauth.Runtime).VerifyJWT

@@ -133,3 +133,19 @@
   key IDs and reports the audience actually validated. Discovery failures are
   bounded and backed off without enabling stale-cache acceptance.
 - OIDC `email_verified` comes only from identifier verification state.
+
+## Session-bound OIDC profile
+
+- The explicit session provider owns one transaction for final client/session
+  admission, one-time state and expected-denial effects. No token, code redirect
+  or cookie is released before confirmed commit. Unknown commit never permits
+  an automatic replay of a rotating secret.
+- Password interaction is proven by the exact request's immutable completion
+  marker and cookie generation, not a recent/equal timestamp or another login.
+- Required canonical project_id is a distinct claim; opaque host authorization
+  stamps and namespaced display metadata are never substituted for it.
+- Bound families keep sid, stamp, authentication evidence and absolute end
+  immutable. Legacy and bound adapters cannot cross profiles, including direct
+  Get/Rotate/Revoke. Canonical subject-wide revocation still covers both.
+- OIDC refresh Get is read-only, including consumed-token lookup. Only an
+  authenticated owner's mutation path records replay/revokes the family.
