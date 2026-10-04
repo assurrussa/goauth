@@ -710,8 +710,10 @@ func TestSessionContinuationParallelOneCodeAndRevisionFence(t *testing.T) {
 			}))
 			if revisionChanged {
 				h.admission.ClientRevision++
-				_, err = h.service.ContinueAuthorization(ctx, challenge, h.browser(), req.BrowserBinding)
-				requireOAuthError(t, err, "access_denied")
+				result, err = h.service.ContinueAuthorization(ctx, challenge, h.browser(), req.BrowserBinding)
+				require.NoError(t, err)
+				assertSessionDenialRedirect(t, result, req)
+				require.NotNil(t, h.requests[challenge].ConsumedAt)
 				require.Empty(t, h.codes)
 				return
 			}
