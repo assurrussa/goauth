@@ -87,3 +87,13 @@ interfaces or adding a package. The API deletes one bounded candidate batch in
 its own transaction and reports counts only for confirmed commits. See
 [rate-event maintenance](rate-event-maintenance.md) for retention, managed-scope
 rejection and schema 7 compatibility.
+
+## Owned auth transactions
+
+`postgres.Runtime.InOwnedAuthTransaction` and
+`postgres.ErrAuthTransactionAlreadyActive` add an outermost-owner capability in the
+existing PostgreSQL package. No root interface, supported package, host-support
+package, Subject layout or migration changes. Public symbol and ordinary consumer
+checks compile the signature/sentinel and exercise uninitialized rejection; the
+PostgreSQL consumer verifies ambient rejection, joining, commit/rollback and
+withholding provisional responses. See [owned transactions](owned-auth-transactions.md).

@@ -57,6 +57,11 @@
   hooks execute outside the registration lock. Hosts must join all operations
   using a managed context before its callback returns. Callback errors roll back;
   business denials that update attempt/replay protection commit.
+- Response-producing host boundaries can require an outermost managed transaction
+  with `postgres.Runtime.InOwnedAuthTransaction`. Ambient same-handle scopes reject
+  before callbacks or writes; joined internal operations remain atomic. Prepared
+  secrets, tokens and allow results are withheld until its nil return, never
+  published by its callback. An unknown commit outcome is not a confirmed rollback.
 - Refresh replay revokes its family and session and emits a security event.
   Replay processing bypasses token preparation. There is no grace interval.
 - Security writes lock the canonical subject before dependent state. Logout-all
