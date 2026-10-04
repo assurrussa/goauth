@@ -44,6 +44,10 @@ var (
 
 type publicCacheInvalidator struct{}
 
+var _ func(
+	*postgres.Runtime, context.Context, func(context.Context) error,
+) error = (*postgres.Runtime).InOwnedAuthTransaction
+
 func (publicCacheInvalidator) Invalidate(context.Context) error { return nil }
 
 func TestSupportedPublicSurfaceCompiles(t *testing.T) {
@@ -80,6 +84,7 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = goauth.ErrNotificationDeliveryDisabled
 	_ = goauth.Config{NotificationDelivery: goauth.NotificationDeliveryDisabled}
 	_ = (*postgres.Runtime).InAuthTransaction
+	_ = postgres.ErrAuthTransactionAlreadyActive
 	_ = (*postgres.Runtime).Database
 	_ = goauth.NewRuntime
 	_ = goauth.NewKeyRing

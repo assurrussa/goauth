@@ -34,50 +34,58 @@ func (c *concurrentInvalidationCache) Invalidate(context.Context) error {
 }
 
 func TestConcurrentManagedRBACCallbacks(t *testing.T) {
-	rollback := errors.New("host rollback")
-	for _, tc := range []struct {
-		name                                    string
-		callbackErr, commitErr, invalidationErr error
-		wantErr                                 error
-		wantCalls                               int64
-		wantAllowed                             bool
-	}{
-		{name: "commit", wantCalls: 1, wantAllowed: true},
-		{name: "rollback", callbackErr: rollback, wantErr: rollback, wantAllowed: true},
-		{name: "unknown commit", commitErr: io.ErrUnexpectedEOF, wantErr: goauth.ErrOperationOutcomeUnknown},
-		{name: "rejected commit", commitErr: &pgconn.PgError{Code: "40001"}, wantAllowed: true},
-		{name: "failed invalidation", invalidationErr: errors.New("cache unavailable"), wantCalls: 1},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			driverName := "goauth-concurrent-rbac-" + uuid.NewString()
-			sql.Register(driverName, commitResultDriver{err: tc.commitErr})
-			db, err := sql.Open(driverName, "")
-			require.NoError(t, err)
-			t.Cleanup(func() { require.NoError(t, db.Close()) })
-			store, err := NewStore(db)
-			require.NoError(t, err)
-			runtime := &Runtime{db: db, store: store}
-			cache := &concurrentInvalidationCache{err: tc.invalidationErr}
-			permissions, err := runtime.RBAC(cache)
-			require.NoError(t, err)
-			subject := goauth.NewSubjectID()
-			require.True(t, permissions.Can(t.Context(), subject, "users:read"))
-			err = runtime.InAuthTransaction(t.Context(), func(ctx context.Context) error {
-				assignConcurrentRoles(t, ctx, permissions, subject)
-				require.Zero(t, cache.calls.Load(), "invalidation must wait for durable commit")
-				return tc.callbackErr
-			})
-			switch {
-			case tc.wantErr != nil:
-				require.ErrorIs(t, err, tc.wantErr)
-			case tc.commitErr != nil:
-				require.ErrorIs(t, err, tc.commitErr)
-				require.NotErrorIs(t, err, goauth.ErrOperationOutcomeUnknown)
-			default:
-				require.NoError(t, err)
+	for _, owned := range []bool{false, true} {
+		t.Run(map[bool]string{false: "joining", true: "owned"}[owned], func(t *testing.T) {
+			rollback := errors.New("host rollback")
+			for _, tc := range []struct {
+				name                                    string
+				callbackErr, commitErr, invalidationErr error
+				wantErr                                 error
+				wantCalls                               int64
+				wantAllowed                             bool
+			}{
+				{name: "commit", wantCalls: 1, wantAllowed: true},
+				{name: "rollback", callbackErr: rollback, wantErr: rollback, wantAllowed: true},
+				{name: "unknown commit", commitErr: io.ErrUnexpectedEOF, wantErr: goauth.ErrOperationOutcomeUnknown},
+				{name: "rejected commit", commitErr: &pgconn.PgError{Code: "40001"}, wantAllowed: true},
+				{name: "failed invalidation", invalidationErr: errors.New("cache unavailable"), wantCalls: 1},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					driverName := "goauth-concurrent-rbac-" + uuid.NewString()
+					sql.Register(driverName, commitResultDriver{err: tc.commitErr})
+					db, err := sql.Open(driverName, "")
+					require.NoError(t, err)
+					t.Cleanup(func() { require.NoError(t, db.Close()) })
+					store, err := NewStore(db)
+					require.NoError(t, err)
+					runtime := &Runtime{db: db, store: store}
+					cache := &concurrentInvalidationCache{err: tc.invalidationErr}
+					permissions, err := runtime.RBAC(cache)
+					require.NoError(t, err)
+					subject := goauth.NewSubjectID()
+					require.True(t, permissions.Can(t.Context(), subject, "users:read"))
+					transaction := runtime.InAuthTransaction
+					if owned {
+						transaction = runtime.InOwnedAuthTransaction
+					}
+					err = transaction(t.Context(), func(ctx context.Context) error {
+						assignConcurrentRoles(t, ctx, permissions, subject)
+						require.Zero(t, cache.calls.Load(), "invalidation must wait for durable commit")
+						return tc.callbackErr
+					})
+					switch {
+					case tc.wantErr != nil:
+						require.ErrorIs(t, err, tc.wantErr)
+					case tc.commitErr != nil:
+						require.ErrorIs(t, err, tc.commitErr)
+						require.NotErrorIs(t, err, goauth.ErrOperationOutcomeUnknown)
+					default:
+						require.NoError(t, err)
+					}
+					require.Equal(t, tc.wantCalls, cache.calls.Load(), "one invalidation per transaction and cache")
+					require.Equal(t, tc.wantAllowed, permissions.Can(t.Context(), subject, "users:read"))
+				})
 			}
-			require.Equal(t, tc.wantCalls, cache.calls.Load(), "one invalidation per transaction and cache")
-			require.Equal(t, tc.wantAllowed, permissions.Can(t.Context(), subject, "users:read"))
 		})
 	}
 }

@@ -15,6 +15,15 @@ import (
 )
 
 func TestDisabledDeliverySharedHostTransaction(t *testing.T) {
+	testDisabledDeliverySharedHostTransaction(t, false)
+}
+
+func TestOwnedAuthTransactionCanonicalHostAtomicity(t *testing.T) {
+	testDisabledDeliverySharedHostTransaction(t, true)
+}
+
+func testDisabledDeliverySharedHostTransaction(t *testing.T, owned bool) {
+	t.Helper()
 	db := integrationDB(t)
 	resetSchema(t, db)
 	require.NoError(t, postgres.Migrate(t.Context(), db))
@@ -31,10 +40,14 @@ func TestDisabledDeliverySharedHostTransaction(t *testing.T) {
 	_, err = db.ExecContext(t.Context(), "CREATE TABLE IF NOT EXISTS goauth_host_transaction_probe (subject_id uuid PRIMARY KEY)")
 	require.NoError(t, err)
 	t.Cleanup(func() { _, _ = db.ExecContext(context.Background(), "DROP TABLE goauth_host_transaction_probe") })
+	transaction := runtime.InAuthTransaction
+	if owned {
+		transaction = runtime.InOwnedAuthTransaction
+	}
 	rollback := errors.New("host projection rejected")
 	for _, abort := range []bool{true, false} {
 		var subject goauth.SubjectID
-		err = runtime.InAuthTransaction(t.Context(), func(ctx context.Context) error {
+		err = transaction(t.Context(), func(ctx context.Context) error {
 			account, err := runtime.ProvisionTrustedLocalAccount(ctx, goauth.RegisterRequest{Email: "delivery-disabled@example.test", Password: "Integration-Unique-Passphrase-1"})
 			if err != nil {
 				return err

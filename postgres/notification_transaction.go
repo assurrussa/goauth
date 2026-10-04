@@ -74,11 +74,18 @@ func (s *Store) InNotificationTransaction(ctx context.Context, fn func(context.C
 
 // InAuthTransaction atomically commits participating auth, audit and event writes.
 func (s *Store) InAuthTransaction(ctx context.Context, fn func(context.Context) error) error {
+	return s.inAuthTransaction(ctx, fn, false)
+}
+
+func (s *Store) inAuthTransaction(ctx context.Context, fn func(context.Context) error, requireOwned bool) error {
 	existing, err := s.notificationTx(ctx)
 	if err != nil {
 		return err
 	}
 	if existing != nil {
+		if requireOwned {
+			return ErrAuthTransactionAlreadyActive
+		}
 		return fn(ctx)
 	}
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})

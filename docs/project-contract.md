@@ -37,6 +37,13 @@ enqueue share its database transaction.
 SQL writes on one database handle. The host obtains a context-scoped
 `SQLExecutor`; only the outer owner commits. Join concurrent operations before
 returning from its callback and do not retain its context or executor afterward.
+`InOwnedAuthTransaction` is the additive outermost-owner boundary for hosts that
+must confirm commit before returning secrets, tokens or allow responses. It rejects
+ambient same-handle transactions before callback/BEGIN with
+`postgres.ErrAuthTransactionAlreadyActive`; foreign handles remain rejected.
+Existing `InAuthTransaction` and low-level writes still join within its callback.
+See [owned transactions](owned-auth-transactions.md) for result withholding and
+uncertain-outcome handling. Required root interfaces and migrations are unchanged.
 RBAC snapshots run in a standalone repeatable-read, read-only transaction. A
 managed auth context returns `rbac.ErrSnapshotTransactionUnsupported`, preserving
 the normal auth transaction isolation.

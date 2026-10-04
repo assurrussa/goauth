@@ -6,6 +6,11 @@ import (
 	"errors"
 )
 
+// ErrAuthTransactionAlreadyActive means an owned auth transaction was requested
+// from a context already carrying a managed transaction on the same database handle.
+// The owned callback is not invoked and no new transaction is started.
+var ErrAuthTransactionAlreadyActive = errors.New("auth transaction is already active")
+
 // SQLExecutor provides transaction-aware SQL without transaction ownership.
 type SQLExecutor interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
@@ -47,6 +52,24 @@ func (r *Runtime) InAuthTransaction(ctx context.Context, fn func(context.Context
 		return errors.New("PostgreSQL Runtime is not initialized")
 	}
 	return r.store.InAuthTransaction(ctx, fn)
+}
+
+// InOwnedAuthTransaction owns the outermost managed auth transaction on this exact
+// database handle. It rejects an ambient same-handle scope with
+// ErrAuthTransactionAlreadyActive before invoking fn or starting a transaction;
+// a scope belonging to another database handle is also rejected. InAuthTransaction
+// and participating low-level operations may still join inside fn.
+//
+// A nil return confirms commit. Prepared secrets, tokens and authorization results
+// remain provisional until then: fn must not publish them, and callers must withhold
+// them on every error, including goauth.ErrOperationOutcomeUnknown. An unknown
+// outcome must not be treated as a rollback or blindly retried.
+// The context, executor, concurrency and result-set rules of InAuthTransaction apply.
+func (r *Runtime) InOwnedAuthTransaction(ctx context.Context, fn func(context.Context) error) error {
+	if r == nil || r.store == nil {
+		return errors.New("PostgreSQL Runtime is not initialized")
+	}
+	return r.store.inAuthTransaction(ctx, fn, true)
 }
 
 // Database returns the canonical database handle shared by managed transactions.

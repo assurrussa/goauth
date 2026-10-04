@@ -301,6 +301,15 @@ PostgreSQL hosts can use `Runtime.InAuthTransaction` and `Runtime.SQLExecutor(ct
 to commit host projections with canonical writes, audit, and RBAC. The executor
 exposes only SQL execution/query methods, never transaction ownership. Participating
 adapters must share `Runtime.Database()` exactly; a separate handle is rejected.
+Response-producing entry points can require ownership with
+`Runtime.InOwnedAuthTransaction`: an ambient same-handle transaction returns
+`postgres.ErrAuthTransactionAlreadyActive` before the callback or a second BEGIN.
+Ordinary `InAuthTransaction` and low-level calls still join inside its callback.
+Publish prepared secrets, tokens or authorization results only after the owned
+method returns nil; callbacks must not publish them early. Every error withholds
+these results, including `ErrOperationOutcomeUnknown`, which does not prove rollback
+and must not trigger a blind retry. See [owned transactions](docs/owned-auth-transactions.md).
+
 RBAC authorization reads join the transaction and bypass caches. `Snapshot` needs
 a standalone repeatable-read transaction; invoking it in a managed auth transaction
 returns `rbac.ErrSnapshotTransactionUnsupported`. Supplied caches must implement
