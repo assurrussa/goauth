@@ -68,8 +68,11 @@ errors. The login redirect query key is `oidc_challenge`.
 All strict-profile error callbacks, including initial protocol errors and
 `prompt=none` failures, preserve the exact opaque request state (including
 whitespace). Request state replaces any registered callback `state` query value;
-absent state is not inherited from the registration. Other callback query
-parameters are preserved. Legacy provider behavior is unchanged.
+absent state is not inherited from the registration. The successful authorization
+response parameter `code` is reserved: error callbacks remove every registered
+`code` query value so a relying party cannot mistake the denial for success.
+Ordinary callback query parameters, including repeated values, are preserved.
+Legacy provider and successful authorization response behavior are unchanged.
 
 A completed continuation that loses policy admission or its client revision
 returns `access_denied` and the exact stored `state` to the current registered

@@ -294,6 +294,8 @@ func (s *SessionService) errorRedirect(redirectURI, state string, protocol *oidc
 		return nil, err
 	}
 	query := callback.Query()
+	// A registered success code must never make an error response ambiguous.
+	query.Del(responseTypeCode)
 	query.Del("state")
 	if state != "" {
 		query.Set("state", state)
