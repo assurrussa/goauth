@@ -468,11 +468,13 @@ func (s *SessionService) tokenOutcome(result *oidc.TokenResponse,
 	if denial != nil {
 		return nil, denial
 	}
-	if result == nil || !s.now().Before(deadline) {
+	deliveryTime := s.now()
+	remainingSeconds := int64(deadline.Sub(deliveryTime) / time.Second)
+	if result == nil || !deliveryTime.Before(deadline) || remainingSeconds <= 0 {
 		return nil, sessionUnavailable(errSessionExpired)
 	}
 	// Remaining lifetime, never the configured TTL, is disclosed at delivery.
-	result.ExpiresIn = max(0, int64(deadline.Sub(s.now()).Seconds()))
+	result.ExpiresIn = remainingSeconds
 	return result, nil
 }
 

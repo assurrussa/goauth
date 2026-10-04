@@ -277,9 +277,10 @@ func TestSessionRefreshOwnerIsolationAndAbsoluteEnd(t *testing.T) {
 	_, err = h.service.ExchangeToken(ctx, wrong)
 	requireOAuthError(t, err, "invalid_client")
 	require.Zero(t, h.replays)
-	h.now = first.ExpiresAt.Add(-time.Second)
+	h.now = first.ExpiresAt.Truncate(time.Second).Add(-time.Second)
 	final, err := h.service.ExchangeToken(ctx, h.refreshRequest(next.RefreshToken))
 	require.NoError(t, err)
+	require.Equal(t, int64(1), final.ExpiresIn)
 	require.Equal(t, first.ExpiresAt, h.tokens[final.RefreshToken].ExpiresAt)
 	h.now = first.ExpiresAt
 	_, err = h.service.ExchangeToken(ctx, h.refreshRequest(final.RefreshToken))
