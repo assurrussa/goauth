@@ -5,11 +5,13 @@ sessions, recovery, encrypted notification delivery, OIDC and RBAC.
 PostgreSQL stores canonical auth state; net/http and Fiber are optional HTTP
 adapters, and Redis is needed only for optional OIDC one-time state.
 
-This checkout prepares unpublished `v0.5.0` from the `v0.4.1` tagged baseline.
-The release will go directly to `v0.5.0`, without alpha, beta or RC tags.
-Before tagging, integration acceptance will run in the `goadmin` administration
-flow composed with `site`, against the selected goauth source SHA.
-See [the v0.5 migration](docs/v0.5-migration.md) for changed contracts.
+The latest published tag is `v0.5.1` (schema 3). This checkout is unreleased
+master (schema 8); it is not an unpublished `v0.5.0` candidate. Upgrading to
+master includes the intervening migrations and needs an explicit rollout and
+rollback plan. See [release boundaries](docs/session-security-fixes.md#release-boundary)
+and [RELEASING.md](RELEASING.md) before selecting a release or narrow backport.
+The [v0.5 migration guide](docs/v0.5-migration.md) describes the published v0.5
+contract transition, not the complete schema 3→8 upgrade.
 
 **Pre-v1, public-release preparation.** A Git tag is not proof of public
 availability, an independent security audit, or production adoption. See
@@ -191,6 +193,8 @@ reason when decryption fails; alert on this signal without logging payloads.
 Run `auth.RunNotifications(ctx)` in a supervised worker, cancel and join it on
 shutdown, and close the Runtime when the process stops. Schedule broad
 `auth.Cleanup(ctx, postgres.CleanupPolicy{})` only with a host retention policy.
+Canonical refresh replay evidence remains until family/session termination plus
+retention; see [session security and release boundaries](docs/session-security-fixes.md).
 For rate-event-only maintenance, use bounded `auth.CleanupRateLimitEvents` calls
 outside managed transactions; preserve the longest window across all shared
 consumers plus clock skew and request latency. See [the maintenance contract](docs/rate-event-maintenance.md).
@@ -264,7 +268,7 @@ make integration-local
 make vulnerability-check
 ```
 
-For the unpublished v0.5 candidate, select the installed browser tools as
+For an unreleased candidate, select the installed browser tools as
 described in [release verification](docs/release-verification.md), then start
 disposable integration services:
 

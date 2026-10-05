@@ -9,6 +9,8 @@ import (
 )
 
 type CleanupPolicy struct {
+	// ExpiredRecordRetention applies to canonical refresh history only after
+	// its family or session ends, never merely after token consumption/expiry.
 	ExpiredRecordRetention       time.Duration
 	RateEventRetention           time.Duration
 	AuditEventRetention          time.Duration
@@ -79,10 +81,14 @@ func (r *Runtime) Cleanup(ctx context.Context, policy CleanupPolicy) (CleanupRes
 	if err != nil {
 		return CleanupResult{}, fmt.Errorf("clean session OIDC state: %w", err)
 	}
-	result := CleanupResult{
-		NotificationsExpired: notificationExpired,
-		OIDCRefreshTokens:    oidcResult.RefreshTokens, OIDCRefreshFamilies: oidcResult.RefreshFamilies,
+	result, err := cleanupRefreshState(ctx, r.db, expiredBefore)
+	if err != nil {
+		return CleanupResult{}, fmt.Errorf("clean canonical refresh state: %w", err)
 	}
+	result.NotificationsExpired = notificationExpired
+	result.OIDCRefreshTokens = oidcResult.RefreshTokens
+	result.OIDCRefreshFamilies = oidcResult.RefreshFamilies
+
 	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return CleanupResult{}, fmt.Errorf("begin goauth cleanup: %w", err)
@@ -97,9 +103,6 @@ func (r *Runtime) Cleanup(ctx context.Context, policy CleanupPolicy) (CleanupRes
 		{`DELETE FROM auth_password_reset_records WHERE expires_at < $1 OR consumed_at < $1`, expiredBefore, &result.PasswordResets},
 		{`DELETE FROM auth_email_challenges WHERE expires_at < $1 OR verified_at < $1`, expiredBefore, &result.EmailChallenges},
 		{`DELETE FROM auth_email_change_records WHERE expires_at < $1 OR consumed_at < $1`, expiredBefore, &result.EmailChanges},
-		{`DELETE FROM auth_refresh_tokens WHERE expires_at < $1 OR consumed_at < $1`, expiredBefore, &result.RefreshTokens},
-		{`DELETE FROM auth_refresh_families WHERE revoked_at < $1`, expiredBefore, &result.RefreshFamilies},
-		{`DELETE FROM auth_sessions WHERE expires_at < $1 OR revoked_at < $1`, expiredBefore, &result.Sessions},
 		{`DELETE FROM auth_rate_limit_events WHERE occurred_at < $1`, now.Add(-policy.RateEventRetention), &result.RateEvents},
 		{`DELETE FROM auth_security_audit_events WHERE occurred_at < $1`, now.Add(-policy.AuditEventRetention), &result.AuditEvents},
 		{

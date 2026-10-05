@@ -527,17 +527,17 @@ func TestSessionOIDCCleanupReleasesLocksBeforeCanonicalCleanup(t *testing.T) {
 		_, err := runtime.Cleanup(ctx, postgres.CleanupPolicy{Now: func() time.Time { return base.Add(10 * 24 * time.Hour) }})
 		cleaner <- err
 	}()
-	require.Eventually(t, func() bool {
-		var waiting bool
-		err := runtime.Database().QueryRow(`SELECT EXISTS(SELECT 1 FROM pg_stat_activity
- WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'DELETE FROM auth_sessions WHERE expires_at%')`).Scan(&waiting)
-		return err == nil && waiting
-	}, 3*time.Second, time.Millisecond)
-	// Cleanup must already have released the OIDC locks when its generic batch
-	// waits for this writer's session. The canonical writer can therefore finish.
+	// Canonical cleanup skips the writer's locked subject. It must return and
+	// release every OIDC lock while that writer still owns its session lock.
+	require.NoError(t, <-cleaner)
+	var retained int
+	require.NoError(t, runtime.Database().QueryRow(`SELECT count(*) FROM auth_sessions WHERE id=$1`, id).Scan(&retained))
+	require.Equal(t, 1, retained)
 	unblock()
 	require.NoError(t, <-writer)
-	require.NoError(t, <-cleaner)
+	result, err := runtime.Cleanup(ctx, postgres.CleanupPolicy{Now: func() time.Time { return base.Add(10 * 24 * time.Hour) }})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, result.Sessions)
 }
 
 func TestSessionOIDCScopedCleanupPreservesLegacyAndGenericState(t *testing.T) {

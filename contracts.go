@@ -105,6 +105,8 @@ type SessionSecurity struct {
 type SessionStore interface {
 	// PeekRefresh authenticates a token without consuming it. Rotation revalidates all state.
 	PeekRefresh(ctx context.Context, request RefreshRotationRequest) (RefreshRotationResult, error)
+	// CreateSession locks the canonical subject and rejects stale status, security
+	// version, or email-verification/scope state. It must not rewrite signed scope.
 	CreateSession(ctx context.Context, record SessionRecord) error
 	RotateRefresh(ctx context.Context, request RefreshRotationRequest) (RefreshRotationResult, error)
 	IntrospectSession(ctx context.Context, sessionID string) (SessionSecurity, error)

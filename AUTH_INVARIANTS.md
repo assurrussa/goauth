@@ -64,6 +64,8 @@
   published by its callback. An unknown commit outcome is not a confirmed rollback.
 - Refresh replay revokes its family and session and emits a security event.
   Replay processing bypasses token preparation. There is no grace interval.
+  Canonical consumed-token evidence survives until family/session termination
+  plus retention; individual token expiry does not end replay protection.
 - Security writes lock the canonical subject before dependent state. Logout-all
   increments its security version so an already prepared login cannot escape it.
 - OIDC refresh tokens also persist only selector plus HMAC digest; replay of a
