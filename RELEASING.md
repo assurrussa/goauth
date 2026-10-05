@@ -8,16 +8,33 @@ acceptance criteria and sequence of the first public release.
 
 Use repository tags/release notes for existing versions and select the target
 explicitly with `VERSION=<tag>`. There is no implicit latest/default version.
-During preparation on 2026-09-28, `v0.4.1` pointed to `070b1f3`; that observation
-alone is not evidence of public resolution or completed release checks.
-The current unpublished candidate is `v0.5.0`.
-The selected public release is `v0.5.0`, issued directly without alpha, beta or
-RC tags. Confirm that this tag is unused before publication. Before tagging,
-run integration acceptance in the `goadmin` administration flow composed with
-`site` at the selected goauth SHA. Record the site commit, resolved goadmin
-version/SHA and resolved goauth version/SHA in the private host evidence.
-This release decision does not establish completed acceptance or production
-readiness; the existing candidate, publication and evidence gates still apply.
+The latest published tag is `v0.5.1`, commit
+`0862228fd3d3e33d5cc46ed7fc92136df247bdbe`, using schema 3. Current master is
+unreleased and uses schema 8. The previous plan to publish `v0.5.0` is historical;
+that version must not be reused. No new release version is selected here.
+
+| Candidate path | Schema | Required decision before release |
+| --- | --- | --- |
+| Narrow backport on `v0.5.1` | 3 | Review the isolated patch and run its own gates; do not copy unrelated master migrations or OIDC changes. |
+| Current master | 8 | Explicitly accept the full schema 3→8 upgrade and intervening features, with host acceptance and compatible rollback. |
+
+The schema steps after published `v0.5.1` are 4 (local identity policy),
+5 (notification expiry), 6 (subject retirement), 7 (rate-event cleanup index),
+and 8 (session-bound OIDC). See the focused migration sections in
+[local identities](docs/local-identities.md),
+[notification outcomes](docs/notification-outcomes.md),
+[subject retirement](docs/subject-retirement.md),
+[rate-event maintenance](docs/rate-event-maintenance.md), and
+[session-bound OIDC](docs/session-bound-oidc.md).
+Older binaries reject future schema versions. Plan the migration/restart window
+and a schema-compatible rollback; do not lower schema history or use `Down` on
+production data. A patch PR does not authorize deployment or production migration.
+
+The [session security fixes](docs/session-security-fixes.md) add no migrations,
+but this does not make unrelated unreleased master changes part of a patch.
+Before any selected release, run host acceptance at its exact source SHA and
+record the host commit and resolved GoAdmin/GoAuth versions. Existing candidate,
+publication and evidence gates still apply; these notes are not passing evidence.
 
 Never move or replace a tag, publish a committed local `replace`, or describe a
 private tag as a verified public release. The frozen v0.1 compatibility line
@@ -25,10 +42,11 @@ ends at `v0.1.7`; its implementation is absent from the current source tree.
 Publication, independent review, consumer adoption and deployment are separate
 claims. Fix a failed published candidate in a new commit and tag.
 
-## v0.5 migration
+## Published v0.5 migration
 
-The v0.5 code changes Runtime/store contracts and HTTP authorization defaults.
+The published v0.5.0/v0.5.1 code changes Runtime/store contracts and HTTP authorization defaults.
 It preserves the version-3 database and existing rows; no `Down` is required.
+That historical claim does not apply to current schema-8 master.
 Read [docs/v0.5-migration.md](docs/v0.5-migration.md), including exact external
 issuer keys and custom transaction wiring. Candidate verification does not
 publish a tag, change visibility, or establish production adoption.
@@ -159,7 +177,7 @@ does not execute every scenario or certify the truth of recorded observations.
 
 ## Consumer evidence
 
-For `v0.5.0`, the selected acceptance environment is `goadmin` composed with
+The historical `v0.5.0` plan selected `goadmin` composed with
 `site`. Record the site's host flows as `host_checks.site` and its goadmin
 administration flow as `host_checks.admin`; include the resolved goadmin
 version/SHA in the admin evidence. Passing the library's synthetic consumer

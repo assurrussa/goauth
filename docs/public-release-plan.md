@@ -1,5 +1,12 @@
 # Public release plan
 
+Historical plan for `v0.5.0`. That version and `v0.5.1` are already tagged; do
+not rerun the tag-creation instructions below. Current master is unreleased
+and uses schema 8, while published `v0.5.1` uses schema 3. Follow
+[the current release decision](../RELEASING.md#version-state) for a new release
+or a narrow backport. This historical plan is not evidence that all acceptance
+checks were performed.
+
 ## Goal and scope
 
 Publish a reusable PostgreSQL-first Go authentication Runtime as the **pre-v1

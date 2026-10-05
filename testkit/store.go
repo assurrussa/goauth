@@ -340,6 +340,11 @@ func (s *Store) CreateSession(ctx context.Context, record goauth.SessionRecord) 
 	if account.Subject.SecurityVersion != record.Session.SecurityVersion {
 		return goauth.ErrSecurityVersionMismatch
 	}
+	// Scope was signed before this lock. Verification may promote existing
+	// sessions, but must never leave a newly inserted confirmation session behind.
+	if account.EmailVerified() != (record.Session.Scope == goauth.SessionScopeAuthenticated) {
+		return goauth.ErrSecurityVersionMismatch
+	}
 	if _, exists := s.sessions[record.Session.ID]; exists {
 		return errors.New("duplicate test session")
 	}

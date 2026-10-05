@@ -431,12 +431,7 @@ func (r *Runtime) Login(ctx context.Context, request LoginRequest) (LoginResult,
 	if err != nil {
 		return LoginResult{}, err
 	}
-	tokens, err := r.issueSession(ctx, record.Account, realm, scope)
-	if err != nil {
-		return LoginResult{}, err
-	}
-
-	return LoginResult{Account: record.Account, Tokens: tokens}, nil
+	return r.issueLoginSession(ctx, record.Account, realm, scope)
 }
 
 func (r *Runtime) Refresh(ctx context.Context, rawRefreshToken string) (TokenPair, error) {
@@ -622,20 +617,6 @@ func (r *Runtime) SetSubjectStatus(ctx context.Context, subjectID SubjectID, sta
 type preparedSession struct {
 	record SessionRecord
 	tokens TokenPair
-}
-
-func (r *Runtime) issueSession(ctx context.Context, account Account, realm Realm, scope SessionScope) (TokenPair, error) {
-	prepared, err := r.prepareSession(ctx, account, realm, scope)
-	if err != nil {
-		return TokenPair{}, err
-	}
-	err = r.authTransaction.InAuthTransaction(ctx, func(ctx context.Context) error {
-		return r.createPreparedSession(ctx, prepared)
-	})
-	if err != nil {
-		return TokenPair{}, err
-	}
-	return prepared.tokens, nil
 }
 
 // createPreparedSession must run inside an auth transaction, so an expired pair
