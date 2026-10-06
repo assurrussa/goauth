@@ -167,6 +167,13 @@ support limitations and actual evidence, not a blanket production-ready claim.
 
 ## Full public-preview acceptance
 
+The selected v0.6.0 release uses the bounded candidate, publication and separate
+AuthHub/GoAdmin host records in [its upgrade guide](docs/v0.6-migration.md).
+The broader program below retains historical v0.5.0 `site`/`admin` evidence
+mapping and is not a v0.6 acceptance path. Rebaseline its target, scenarios and
+host mapping explicitly before making a v0.6 full-public-preview claim; do not
+reuse old host observations or substitute the v0.6 release record for it.
+
 Candidate and anonymous publication gates prove only their declared scope.
 Before announcing a fully accepted public preview, complete the
 [scenario and evidence specification](docs/public-preview/README.md#completion)
