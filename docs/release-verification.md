@@ -62,9 +62,10 @@ For the combined candidate gate, start integration services, run
 `make release-candidate-readiness`, then stop the services even on failure.
 
 ```sh
-# Select an installed Playwright module and Chromium executable; no auto-install.
+# Select installed tools and a separately prepared, approved synthetic TLS fixture.
 export GOAUTH_BROWSER_PLAYWRIGHT_MODULE="$PLAYWRIGHT_MODULE"
 export GOAUTH_BROWSER_CHROMIUM_EXECUTABLE="$CHROMIUM_EXECUTABLE"
+export GOAUTH_BROWSER_FIXTURE_DIR="$OWNED_BROWSER_FIXTURE"
 make integration-up
 make release-candidate-readiness
 make integration-down
@@ -75,6 +76,10 @@ pg_restore in the disposable Compose project, and `make browser-acceptance`
 with a real HTTPS browser, canonical PostgreSQL Runtime, managed encrypted queue,
 full account lifecycle and exactly one refresh across two tabs after access expiry.
 Node, the selected installed Playwright module and Chromium must be available.
+The [browser fixture contract](browser-acceptance-fixture.md) requires a fresh
+owned profile, an explicitly verified synthetic CA/leaf/key pair, and separately
+authorized profile trust. The harness imports no trust and never bypasses HTTPS
+errors or disables Chromium sandboxing. Missing inputs or trust are failures.
 An invoked gate fails when the engine is missing; it does not silently skip or
 install dependencies. These profiles use their own temporary databases. The
 browser proof is the public same-origin example; separate host suites cover the

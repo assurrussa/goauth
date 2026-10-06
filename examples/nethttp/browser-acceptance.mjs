@@ -1,16 +1,16 @@
 import assert from 'node:assert/strict';
 import https from 'node:https';
 import {reviewBrowserRecovery} from './browser-review-acceptance.mjs';
+import {assertFixtureActive, browserFixture, browserOrigin, secureBrowserOptions, secureRequestOptions} from './browser-security.mjs';
+const fixture=browserFixture();
 const {chromium}=await import(process.env.GOAUTH_BROWSER_PLAYWRIGHT_MODULE || 'playwright');
-const origin=process.argv[2],port=new URL(origin).port,hostile=`https://127.0.0.1:${port}`;
+const {origin,port,hostile}=browserOrigin(process.argv[2]);
 const raw=(path,method='GET',body,headers={})=>new Promise((resolve,reject)=>{
- const req=https.request({hostname:'127.0.0.1',port,servername:'localhost',rejectUnauthorized:false,path,method,headers:{Host:`localhost:${port}`,'Content-Type':'application/json',...headers}},response=>{let text='';response.on('data',chunk=>text+=chunk);response.on('end',()=>{let data;try{data=JSON.parse(text)}catch{}resolve({status:response.statusCode,data,headers:response.headers});});});req.on('error',reject);if(body!==undefined)req.write(JSON.stringify(body));req.end();
+ const req=https.request(secureRequestOptions(fixture.ca,port,path,method,headers),response=>{let text='';response.on('data',chunk=>text+=chunk);response.on('end',()=>{let data;try{data=JSON.parse(text)}catch{}resolve({status:response.statusCode,data,headers:response.headers});});});req.on('error',reject);if(body!==undefined)req.write(JSON.stringify(body));req.end();
 });
 const delivered=async(to,template)=>{for(let attempt=0;attempt<100;attempt++){const value=await raw(`/fixture/delivery?to=${encodeURIComponent(to)}&template=${template}`);if(value.status===200)return value.data;await new Promise(resolve=>setTimeout(resolve,100));}throw new Error('Encrypted worker delivery not observed: '+template);};
-const browser=await chromium.launch({headless:true,executablePath:process.env.GOAUTH_BROWSER_CHROMIUM_EXECUTABLE,args:['--no-proxy-server']});
+const context=await chromium.launchPersistentContext(fixture.profile,secureBrowserOptions(process.env.GOAUTH_BROWSER_CHROMIUM_EXECUTABLE));
 try {
- const context=await browser.newContext({ignoreHTTPSErrors:true});
- try {
   const page=await context.newPage();await page.goto(origin);await page.waitForFunction(()=>typeof window.request==='function');
   const call=(action,data={},method='POST')=>page.evaluate(async({action,data,method})=>{const response=await request(action,data,method);return{status:response.status,data:JSON.parse(document.querySelector('#result').textContent.split('\n').slice(1).join('\n'))};},{action,data,method});
   const email=`public.${crypto.randomUUID()}@example.test`,newEmail=`changed.${crypto.randomUUID()}@example.test`;
@@ -52,6 +52,6 @@ try {
   assert.equal((await raw('/api/me','GET',undefined,{Cookie:cookieHeader})).status,401);assert.equal((await raw('/api/me','GET',undefined,{Authorization:'Bearer '+api.data.tokens.accessToken})).status,200);
   await reviewBrowserRecovery({context, page, second, origin, raw, call, email: newEmail, password});
   const stats=(await raw('/fixture/stats')).data;assert(stats.encrypted>=3);
+  assertFixtureActive(fixture.expiresAt);
   console.log('public nethttp PostgreSQL/HTTPS browser PASS: signup/delivered confirmation/login/me/expired access/two-tabs exactly1 rotation/logout/all/delivered reset/password/email; HttpOnly/CSRF/hostile/duplicates; bearer API no Set-Cookie');
- } finally {await context.close();}
-} finally {await browser.close();}
+} finally {await context.close();}
