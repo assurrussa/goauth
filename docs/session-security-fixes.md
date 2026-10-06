@@ -72,7 +72,8 @@ the release branch's own OIDC layout rather than copy the whole master file.
 Published `v0.5.1` predates master's separate OIDC retention/locking corrections;
 a backport of only these two fixes does not include those corrections.
 
-Choose either a separately verified narrow backport or an explicitly planned
-master release with the schema 3→8 migration review. Run the release readiness
-and clean public-consumer gates for the chosen exact new tag before claiming a
-published fix. Focused regressions or a passing PR do not establish that release.
+The selected release is now the full `v0.6.0` master release with the schema 3→8
+migration review; see [the upgrade and rollback guide](v0.6-migration.md).
+A narrow backport would be a separate release decision. Run the release readiness
+and clean public-consumer gates for the exact new tag before claiming a published
+fix. Focused regressions or a passing PR do not establish that release.

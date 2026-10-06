@@ -10,13 +10,21 @@ Use repository tags/release notes for existing versions and select the target
 explicitly with `VERSION=<tag>`. There is no implicit latest/default version.
 The latest published tag is `v0.5.1`, commit
 `0862228fd3d3e33d5cc46ed7fc92136df247bdbe`, using schema 3. Current master is
-unreleased and uses schema 8. The previous plan to publish `v0.5.0` is historical;
-that version must not be reused. No new release version is selected here.
+unreleased and uses schema 8. The selected next release is **`v0.6.0`**, including
+the full schema 3→8 upgrade and intervening features, rather than a narrow patch.
+Selection is not publication or passing release evidence. The previous plan to
+publish `v0.5.0` is historical; existing tags must not be reused.
 
 | Candidate path | Schema | Required decision before release |
 | --- | --- | --- |
-| Narrow backport on `v0.5.1` | 3 | Review the isolated patch and run its own gates; do not copy unrelated master migrations or OIDC changes. |
-| Current master | 8 | Explicitly accept the full schema 3→8 upgrade and intervening features, with host acceptance and compatible rollback. |
+| Selected `v0.6.0` from current master | 8 | Complete exact-source release gates, populated schema 3→8 upgrade/restore, AuthHub and GoAdmin host acceptance, and compatible rollback review. |
+| A future narrow backport on `v0.5.1` | 3 | Not part of this release. Select separately, review the isolated patch, and run its own gates. |
+
+Read [the v0.6 upgrade and rollback guide](docs/v0.6-migration.md) before adopting
+this release. Freeze the reviewed candidate SHA after preparation; record that
+SHA and each host's resolved module graph with the release evidence. A host test
+must resolve the exact candidate without a local replacement. Updating deployed
+hosts or migrating their live databases remains a separate operator action.
 
 The schema steps after published `v0.5.1` are 4 (local identity policy),
 5 (notification expiry), 6 (subject retirement), 7 (rate-event cleanup index),
