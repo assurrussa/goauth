@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
+import {chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -61,7 +61,7 @@ test('profile symlinks and shared fixture permissions are rejected', t => {
   rmSync(profile, {recursive: true});
   symlinkSync(os.tmpdir(), profile);
   assert.throws(() => browserFixture(f.env), /symlinks/);
-  rmSync(profile); mkdirSync(profile, {mode: 0o700});
+  unlinkSync(profile); mkdirSync(profile, {mode: 0o700});
   chmodSync(f.root, 0o755);
   assert.throws(() => browserFixture(f.env), /other users/);
 });

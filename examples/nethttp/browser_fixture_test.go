@@ -46,8 +46,12 @@ func browserTLSConfig(root string, now time.Time) (*tls.Config, error) {
 		name string
 		dir  bool
 	}{
-		{"", true}, {"chromium-profile", true}, {"fixture.json", false},
-		{"ca.pem", false}, {"server.pem", false}, {"server-key.pem", false},
+		{"", true},
+		{"chromium-profile", true},
+		{"fixture.json", false},
+		{"ca.pem", false},
+		{"server.pem", false},
+		{"server-key.pem", false},
 	} {
 		info, statErr := os.Lstat(filepath.Join(root, entry.name))
 		if statErr != nil {
@@ -196,7 +200,7 @@ func writeBrowserTLSFixture(t *testing.T, now time.Time, options browserFixtureO
 	require.NoError(t, err)
 	for name, data := range map[string][]byte{
 		"fixture.json": manifest, "ca.pem": caPEM,
-		"server.pem": pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leafDER}),
+		"server.pem":     pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leafDER}),
 		"server-key.pem": pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}),
 	} {
 		require.NoError(t, os.WriteFile(filepath.Join(root, name), data, 0o600))
