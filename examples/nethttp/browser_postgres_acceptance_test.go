@@ -31,6 +31,10 @@ func TestPostgresBrowserAcceptance(t *testing.T) {
 	if os.Getenv("GOAUTH_BROWSER_ACCEPTANCE") != "1" {
 		t.Skip("explicit browser acceptance required")
 	}
+	fixtureDir := os.Getenv("GOAUTH_BROWSER_FIXTURE_DIR")
+	tlsConfig, err := browserTLSConfig(fixtureDir, time.Now())
+	require.NoError(t, err, "explicit synthetic TLS fixture and separately approved disposable browser profile required")
+	require.NotEqual(t, "0", os.Getenv("NODE_TLS_REJECT_UNAUTHORIZED"), "TLS verification cannot be disabled")
 	dsn := os.Getenv("GOAUTH_TEST_POSTGRES_DSN")
 	require.NotEmpty(t, dsn, "explicit disposable PostgreSQL fixture DSN required")
 	parsed, err := url.Parse(dsn)
@@ -54,6 +58,7 @@ func TestPostgresBrowserAcceptance(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 	server := httptest.NewUnstartedServer(nil)
+	server.TLS = tlsConfig
 	origin := "https://localhost:" + strings.Split(server.Listener.Addr().String(), ":")[1]
 	keys := func(id string, value byte) goauth.KeyRing {
 		ring, keyErr := goauth.NewKeyRing(id, goauth.Key{ID: id, Material: []byte(strings.Repeat(string(value), 32))})
@@ -113,6 +118,9 @@ func TestPostgresBrowserAcceptance(t *testing.T) {
 	scriptPath, err := filepath.Abs("browser-acceptance.mjs")
 	require.NoError(t, err)
 	command := exec.CommandContext(ctx, "node", scriptPath, origin) //nolint:gosec // fixed local acceptance script and ephemeral listener
+	// Route.fetch uses Playwright's Node-side HTTPS client, so it needs the same
+	// explicit fixture CA as raw requests. This affects this child process only.
+	command.Env = append(os.Environ(), "NODE_EXTRA_CA_CERTS="+filepath.Join(fixtureDir, "ca.pem"), "NODE_OPTIONS=")
 	output, err := command.CombinedOutput()
 	require.NoError(t, err, string(output))
 	t.Log(string(output))
