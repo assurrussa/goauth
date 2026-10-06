@@ -255,12 +255,13 @@ func TestBrowserTLSFixtureValidation(t *testing.T) {
 		{"intermediate expires during run", browserFixtureOptions{shortIntermediate: true}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg, _, err := browserTLSConfig(writeBrowserTLSFixture(t, now, tc.options), now)
+			cfg, expiresAt, err := browserTLSConfig(writeBrowserTLSFixture(t, now, tc.options), now)
 			if tc.wantErr {
 				require.Error(t, err)
 				return
 			}
 			require.NoError(t, err)
+			require.Equal(t, now.Add(time.Hour).Truncate(time.Second), expiresAt)
 			require.Equal(t, uint16(tls.VersionTLS13), cfg.MinVersion)
 			require.False(t, cfg.InsecureSkipVerify)
 		})
