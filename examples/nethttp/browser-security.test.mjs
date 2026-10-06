@@ -4,7 +4,7 @@ import {chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, s
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import {browserFixture, browserOrigin, secureBrowserOptions, secureRequestOptions} from './browser-security.mjs';
+import {assertFixtureActive, browserFixture, browserOrigin, secureBrowserOptions, secureRequestOptions} from './browser-security.mjs';
 
 function fixture(t) {
   const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'goauth-browser-')));
@@ -45,7 +45,7 @@ test('origin cannot leave the explicit loopback HTTPS fixture', () => {
 
 test('fixture requires explicit fresh owned provenance and the same CA', t => {
   const f = fixture(t);
-  assert.deepEqual(browserFixture(f.env), {ca: f.ca, profile: path.join(f.root, 'chromium-profile')});
+  assert.deepEqual(browserFixture(f.env), {ca: f.ca, profile: path.join(f.root, 'chromium-profile'), expiresAt: Date.parse(f.manifest.expiresAt)});
   assert.throws(() => browserFixture({}), /GOAUTH_BROWSER_FIXTURE_DIR/);
   assert.throws(() => browserFixture({...f.env, NODE_TLS_REJECT_UNAUTHORIZED: '0'}), /disabled/);
   f.manifest.caHash = '0'.repeat(64); f.save();
@@ -72,4 +72,10 @@ test('acceptance source cannot silently restore TLS or sandbox bypasses', () => 
   assert.doesNotMatch(source, /rejectUnauthorized\s*:\s*false|ignoreHTTPSErrors\s*:\s*true|chromiumSandbox\s*:\s*false/);
   assert.doesNotMatch(source, /--no-sandbox|--disable-setuid-sandbox|--ignore-certificate-errors|--allow-insecure-localhost/);
   assert.match(source, /launchPersistentContext\(fixture\.profile,secureBrowserOptions/);
+});
+
+test('an expired fixture cannot report browser acceptance', () => {
+  assert.doesNotThrow(() => assertFixtureActive(2000, 1999));
+  assert.throws(() => assertFixtureActive(2000, 2000), /expired/);
+  assert.throws(() => assertFixtureActive(2000, 2072), /expired/);
 });

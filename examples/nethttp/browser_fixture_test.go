@@ -24,6 +24,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const browserFixtureCertificatePEMType = "CERTIFICATE"
+
 type browserFixtureManifest struct {
 	Version   int       `json:"version"`
 	Purpose   string    `json:"purpose"`
@@ -34,13 +36,13 @@ type browserFixtureManifest struct {
 
 // The caller creates a fresh private fixture and separately authorizes browser
 // trust. No trust store, user profile or certificate warning is modified here.
-func browserTLSConfig(root string, now time.Time) (*tls.Config, error) {
+func browserTLSConfig(root string, now time.Time) (*tls.Config, time.Time, error) {
 	if !filepath.IsAbs(root) || !strings.HasPrefix(filepath.Base(root), "goauth-browser-") {
-		return nil, errors.New("absolute dedicated GOAUTH_BROWSER_FIXTURE_DIR is required")
+		return nil, time.Time{}, errors.New("absolute dedicated GOAUTH_BROWSER_FIXTURE_DIR is required")
 	}
 	canonical, err := filepath.EvalSymlinks(root)
 	if err != nil || canonical != root {
-		return nil, errors.New("browser fixture directory must exist and be canonical")
+		return nil, time.Time{}, errors.New("browser fixture directory must exist and be canonical")
 	}
 	for _, entry := range []struct {
 		name string
@@ -55,17 +57,21 @@ func browserTLSConfig(root string, now time.Time) (*tls.Config, error) {
 	} {
 		info, statErr := os.Lstat(filepath.Join(root, entry.name))
 		if statErr != nil {
-			return nil, fmt.Errorf("browser fixture %s: %w", entry.name, statErr)
+			return nil, time.Time{}, fmt.Errorf("browser fixture %s: %w", entry.name, statErr)
 		}
 		if info.Mode().Perm()&0o077 != 0 || (entry.dir && !info.IsDir()) || (!entry.dir && !info.Mode().IsRegular()) {
-			return nil, fmt.Errorf("browser fixture %s must be private and must not be a symlink", entry.name)
+			return nil, time.Time{}, fmt.Errorf("browser fixture %s must be private and must not be a symlink", entry.name)
 		}
 	}
 	ca, expiresAt, err := browserFixtureCA(root, now)
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
-	return browserFixtureKeyPair(root, ca, now, expiresAt)
+	config, err := browserFixtureKeyPair(root, ca, now, expiresAt)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	return config, expiresAt, nil
 }
 
 func browserFixtureCA(root string, now time.Time) (*x509.Certificate, time.Time, error) {
@@ -90,7 +96,7 @@ func browserFixtureCA(root string, now time.Time) (*x509.Certificate, time.Time,
 		return nil, time.Time{}, errors.New("browser fixture CA does not match its provenance")
 	}
 	block, rest := pem.Decode(caPEM)
-	if block == nil || block.Type != "CERTIFICATE" || len(strings.TrimSpace(string(rest))) != 0 {
+	if block == nil || block.Type != browserFixtureCertificatePEMType || len(strings.TrimSpace(string(rest))) != 0 {
 		return nil, time.Time{}, errors.New("browser fixture needs exactly one CA certificate")
 	}
 	ca, err := x509.ParseCertificate(block.Bytes)
@@ -119,6 +125,9 @@ func browserFixtureKeyPair(root string, ca *x509.Certificate, now, expiresAt tim
 		if parseErr != nil {
 			return nil, parseErr
 		}
+		if expiresAt.After(intermediate.NotAfter) {
+			return nil, errors.New("browser fixture validity window exceeds intermediate certificate validity")
+		}
 		intermediates.AddCert(intermediate)
 	}
 	if expiresAt.After(leaf.NotAfter) {
@@ -140,8 +149,15 @@ func browserFixtureKeyPair(root string, ca *x509.Certificate, now, expiresAt tim
 	return &tls.Config{Certificates: []tls.Certificate{pair}, MinVersion: tls.VersionTLS13}, nil
 }
 
+func browserFixtureCoversDeadline(expiresAt, deadline time.Time) error {
+	if expiresAt.Before(deadline) {
+		return errors.New("browser fixture validity must cover the complete test deadline")
+	}
+	return nil
+}
+
 type browserFixtureOptions struct {
-	wrongCA, wrongKey, expired, wrongHost, missingIP bool
+	wrongCA, wrongKey, expired, wrongHost, missingIP, shortIntermediate bool
 }
 
 func writeBrowserTLSFixture(t *testing.T, now time.Time, options browserFixtureOptions) string {
@@ -177,7 +193,21 @@ func writeBrowserTLSFixture(t *testing.T, now time.Time, options browserFixtureO
 	if options.missingIP {
 		leaf.IPAddresses = nil
 	}
-	leafDER, err := x509.CreateCertificate(rand.Reader, leaf, ca, &key.PublicKey, caKey)
+	leafIssuer, leafSigner := ca, caKey
+	var intermediatePEM []byte
+	if options.shortIntermediate {
+		leafSigner, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		require.NoError(t, err)
+		leafIssuer = &x509.Certificate{
+			SerialNumber: big.NewInt(3), Subject: pkix.Name{CommonName: "Synthetic intermediate"},
+			NotBefore: now.Add(-time.Minute), NotAfter: now.Add(30 * time.Second),
+			IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign,
+		}
+		intermediateDER, signErr := x509.CreateCertificate(rand.Reader, leafIssuer, ca, &leafSigner.PublicKey, caKey)
+		require.NoError(t, signErr)
+		intermediatePEM = pem.EncodeToMemory(&pem.Block{Type: browserFixtureCertificatePEMType, Bytes: intermediateDER})
+	}
+	leafDER, err := x509.CreateCertificate(rand.Reader, leaf, leafIssuer, &key.PublicKey, leafSigner)
 	require.NoError(t, err)
 	if options.wrongCA {
 		otherKey, keyErr := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -191,16 +221,17 @@ func writeBrowserTLSFixture(t *testing.T, now time.Time, options browserFixtureO
 	}
 	keyDER, err := x509.MarshalPKCS8PrivateKey(key)
 	require.NoError(t, err)
-	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: browserFixtureCertificatePEMType, Bytes: caDER})
 	digest := sha256.Sum256(caPEM)
 	manifest, err := json.Marshal(browserFixtureManifest{
 		Version: 1, Purpose: "goauth-browser-acceptance", CreatedAt: now,
 		ExpiresAt: now.Add(time.Hour).Truncate(time.Second), CAHash: hex.EncodeToString(digest[:]),
 	})
 	require.NoError(t, err)
+	serverPEM := append(pem.EncodeToMemory(&pem.Block{Type: browserFixtureCertificatePEMType, Bytes: leafDER}), intermediatePEM...)
 	for name, data := range map[string][]byte{
 		"fixture.json": manifest, "ca.pem": caPEM,
-		"server.pem":     pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leafDER}),
+		"server.pem":     serverPEM,
 		"server-key.pem": pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER}),
 	} {
 		require.NoError(t, os.WriteFile(filepath.Join(root, name), data, 0o600))
@@ -221,9 +252,10 @@ func TestBrowserTLSFixtureValidation(t *testing.T) {
 		{"expired", browserFixtureOptions{expired: true}, true},
 		{"wrong hostname", browserFixtureOptions{wrongHost: true}, true},
 		{"missing hostile IP", browserFixtureOptions{missingIP: true}, true},
+		{"intermediate expires during run", browserFixtureOptions{shortIntermediate: true}, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg, err := browserTLSConfig(writeBrowserTLSFixture(t, now, tc.options), now)
+			cfg, _, err := browserTLSConfig(writeBrowserTLSFixture(t, now, tc.options), now)
 			if tc.wantErr {
 				require.Error(t, err)
 				return
@@ -237,12 +269,20 @@ func TestBrowserTLSFixtureValidation(t *testing.T) {
 
 func TestBrowserTLSFixtureRejectsMissingStaleAndChangedProvenance(t *testing.T) {
 	now := time.Now().UTC()
-	_, err := browserTLSConfig("", now)
+	_, _, err := browserTLSConfig("", now)
 	require.Error(t, err)
 	root := writeBrowserTLSFixture(t, now, browserFixtureOptions{})
-	_, err = browserTLSConfig(root, now.Add(5*time.Hour))
+	_, _, err = browserTLSConfig(root, now.Add(5*time.Hour))
 	require.ErrorContains(t, err, "provenance")
 	require.NoError(t, os.WriteFile(filepath.Join(root, "ca.pem"), []byte("replaced CA"), 0o600))
-	_, err = browserTLSConfig(root, now)
+	_, _, err = browserTLSConfig(root, now)
 	require.ErrorContains(t, err, "provenance")
+}
+
+func TestBrowserTLSFixtureMustCoverCompleteDeadline(t *testing.T) {
+	now := time.Now().UTC()
+	deadline := now.Add(150 * time.Second)
+	require.Error(t, browserFixtureCoversDeadline(now.Add(time.Second), deadline))
+	require.NoError(t, browserFixtureCoversDeadline(deadline, deadline))
+	require.NoError(t, browserFixtureCoversDeadline(deadline.Add(time.Second), deadline))
 }

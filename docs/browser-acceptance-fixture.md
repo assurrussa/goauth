@@ -32,7 +32,8 @@ Required entries, using exactly these names:
   disposable profile/environment. It must not be running in another browser.
 - `fixture.json`, mode 0600: the provenance record below. `createdAt` is the
   actual fixture creation time in UTC RFC3339. `expiresAt` is the explicit end
-  of this test session, no later than the CA and leaf certificate expiry. `caHash`
+  of this test session, no later than any CA, intermediate or leaf certificate
+  expiry. `caHash`
   is the lowercase hex SHA-256 of the exact `ca.pem` file bytes.
 
 ```json
@@ -53,8 +54,11 @@ personal localhost keys, account credentials or host trust stores.
 
 Before database creation, the Go gate verifies private/canonical input paths,
 the explicit fixture validity window, CA fingerprint, certificate chain, current validity,
-server-auth usage, both SANs and key-pair agreement. Node additionally verifies
-the current user's ownership before launching the supplied profile.
+server-auth usage, both SANs and key-pair agreement. The fixture window must cover
+the complete 150-second test deadline before database creation. Node additionally
+verifies the current user's ownership before launching the supplied profile.
+Both the script and Go gate recheck expiry before accepting a successful result;
+no PASS after the declared fixture window is accepted.
 
 ## Browser and Node trust
 

@@ -32,7 +32,7 @@ func TestPostgresBrowserAcceptance(t *testing.T) {
 		t.Skip("explicit browser acceptance required")
 	}
 	fixtureDir := os.Getenv("GOAUTH_BROWSER_FIXTURE_DIR")
-	tlsConfig, err := browserTLSConfig(fixtureDir, time.Now())
+	tlsConfig, fixtureExpiresAt, err := browserTLSConfig(fixtureDir, time.Now())
 	require.NoError(t, err, "explicit synthetic TLS fixture and separately approved disposable browser profile required")
 	require.NotEqual(t, "0", os.Getenv("NODE_TLS_REJECT_UNAUTHORIZED"), "TLS verification cannot be disabled")
 	dsn := os.Getenv("GOAUTH_TEST_POSTGRES_DSN")
@@ -42,6 +42,9 @@ func TestPostgresBrowserAcceptance(t *testing.T) {
 	require.Equal(t, "127.0.0.1", parsed.Hostname(), "only local disposable fixture is permitted")
 	ctx, cancel := context.WithTimeout(t.Context(), 150*time.Second)
 	defer cancel()
+	deadline, ok := ctx.Deadline()
+	require.True(t, ok)
+	require.NoError(t, browserFixtureCoversDeadline(fixtureExpiresAt, deadline))
 	adminDB, err := sql.Open("pgx", dsn)
 	require.NoError(t, err)
 	defer adminDB.Close()
@@ -123,6 +126,7 @@ func TestPostgresBrowserAcceptance(t *testing.T) {
 	command.Env = append(os.Environ(), "NODE_EXTRA_CA_CERTS="+filepath.Join(fixtureDir, "ca.pem"), "NODE_OPTIONS=")
 	output, err := command.CombinedOutput()
 	require.NoError(t, err, string(output))
+	require.True(t, time.Now().Before(fixtureExpiresAt), "fixture validity expired before accepting the browser result")
 	t.Log(string(output))
 	require.GreaterOrEqual(t, encrypted.Load(), int64(3), "worker must deliver encrypted confirmation, reset and email-change rows")
 }

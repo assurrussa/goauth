@@ -34,7 +34,7 @@ export function browserFixture(env = process.env) {
   const ca = readFileSync(caFile);
   assert.equal(manifest.caHash, createHash('sha256').update(ca).digest('hex'),
     'fixture CA must match its provenance manifest');
-  return {ca, profile};
+  return {ca, profile, expiresAt: expires};
 }
 
 export function secureBrowserOptions(executablePath) {
@@ -56,4 +56,9 @@ export function secureRequestOptions(ca, port, requestPath, method, headers) {
   return {hostname: '127.0.0.1', port, servername: 'localhost', ca,
     rejectUnauthorized: true, path: requestPath, method,
     headers: {Host: `localhost:${port}`, 'Content-Type': 'application/json', ...headers}};
+}
+
+export function assertFixtureActive(expiresAt, now = Date.now()) {
+  assert(Number.isFinite(expiresAt) && now < expiresAt,
+    'fixture validity expired before reporting browser acceptance');
 }
