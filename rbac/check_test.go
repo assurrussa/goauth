@@ -201,6 +201,6 @@ func (f permissionCacheFunc) HasPermission(
 	ctx context.Context,
 	subjectID goauth.SubjectID,
 	key rbac.PermissionKey,
-) (bool, bool, error) {
+) (allowed bool, found bool, err error) {
 	return f(ctx, subjectID, key)
 }
