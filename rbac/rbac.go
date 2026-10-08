@@ -130,23 +130,46 @@ func New(store Store, cache Cache) (*Service, error) {
 	return &Service{store: store, management: management, cache: cache}, nil
 }
 
-func (s *Service) Can(ctx context.Context, subjectID goauth.SubjectID, key PermissionKey) bool {
-	if subjectID.IsZero() || key.Validate() != nil {
-		return false
+// Check distinguishes an ordinary denial (false, nil) from a failed check.
+// A zero subject returns goauth.ErrInvalidSubjectID before key validation;
+// an invalid key returns an error wrapping ErrInvalidPermissionKey.
+// Cache and store errors are wrapped for errors.Is/errors.As and always return
+// false, even if the dependency also reports allowed. Cache errors do not fall
+// back to the store. The context is passed to the selected dependency; its
+// cancellation and deadline errors are preserved.
+func (s *Service) Check(ctx context.Context, subjectID goauth.SubjectID, key PermissionKey) (bool, error) {
+	if subjectID.IsZero() {
+		return false, goauth.ErrInvalidSubjectID
+	}
+	if err := key.Validate(); err != nil {
+		return false, err
 	}
 	if s.cache != nil {
 		allowed, found, err := s.cache.HasPermission(ctx, subjectID, key)
 		if err != nil {
-			return false
+			return false, fmt.Errorf("check RBAC cache permission: %w", err)
 		}
 		if found {
-			return allowed
+			return allowed, nil
 		}
 	}
 	allowed, err := s.store.HasPermission(ctx, subjectID, key)
+	if err != nil {
+		return false, fmt.Errorf("check RBAC store permission: %w", err)
+	}
+	return allowed, nil
+}
+
+// Can is a fail-closed convenience check. Use Check to distinguish denial from
+// invalid input or a dependency failure.
+func (s *Service) Can(ctx context.Context, subjectID goauth.SubjectID, key PermissionKey) bool {
+	allowed, err := s.Check(ctx, subjectID, key)
 	return err == nil && allowed
 }
 
+// Require preserves the fail-closed compatibility contract: every unsuccessful
+// check returns ErrPermissionDenied, including invalid input and dependency errors.
+// Use Check when callers need to distinguish these outcomes.
 func (s *Service) Require(ctx context.Context, subjectID goauth.SubjectID, key PermissionKey) error {
 	if !s.Can(ctx, subjectID, key) {
 		return ErrPermissionDenied

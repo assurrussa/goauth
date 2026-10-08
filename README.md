@@ -316,6 +316,23 @@ method returns nil; callbacks must not publish them early. Every error withholds
 these results, including `ErrOperationOutcomeUnknown`, which does not prove rollback
 and must not trigger a blind retry. See [owned transactions](docs/owned-auth-transactions.md).
 
+The unreleased additive `rbac.Service.Check(ctx, subjectID, key) (bool, error)`
+distinguishes ordinary denial (`false, nil`) from a failed authorization check.
+A zero subject returns `goauth.ErrInvalidSubjectID` before permission-key
+validation; an invalid key returns an error matching
+`rbac.ErrInvalidPermissionKey`. Cache and store errors retain their causes for
+`errors.Is`/`errors.As` and always return `false`. Cache failures do not fall
+back to storage. The selected dependency receives the caller's context;
+cancellation and deadline errors it returns remain identifiable. Check does not
+independently reject a canceled context when that dependency returns success,
+preserving existing cache-hit and store behavior.
+
+Existing `Can` remains a boolean fail-closed wrapper, and `Require` continues
+to return `ErrPermissionDenied` for every unsuccessful check, including
+dependency failures. Hosts can adopt Check explicitly when they need separate
+denial and dependency-failure handling; HTTP status policy remains host-owned.
+This API addition is not present in the published v0.6.0 tag.
+
 RBAC authorization reads join the transaction and bypass caches. `Snapshot` needs
 a standalone repeatable-read transaction; invoking it in a managed auth transaction
 returns `rbac.ErrSnapshotTransactionUnsupported`. Supplied caches must implement

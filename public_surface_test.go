@@ -263,6 +263,7 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = rbac.RoleFilter{}
 	_ = rbac.PermissionFilter{}
 	_ = rbac.Snapshot{}
+	_ = (*rbac.Service).Check
 	_ = (*rbac.Service).Roles
 	_ = (*rbac.Service).Role
 	_ = (*rbac.Service).CreateRole

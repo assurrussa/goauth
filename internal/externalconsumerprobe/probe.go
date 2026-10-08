@@ -192,6 +192,14 @@ strings.NewReader("{\"email\":\"http-probe@example.test\",\"password\":\"Probe-P
 	if !permissionService.Can(context.Background(), goauth.NewSubjectID(), rbac.MustPermissionKey("probe", "read")) {
 		t.Fatal("RBAC adapter did not authorize the probe permission")
 	}
+	allowed, err := permissionService.Check(context.Background(), goauth.NewSubjectID(), rbac.MustPermissionKey("probe", "read"))
+	if err != nil || !allowed {
+		t.Fatalf("RBAC Check = %t, %v; want true, nil", allowed, err)
+	}
+	allowed, err = permissionService.Check(context.Background(), goauth.NilSubjectID, rbac.MustPermissionKey("probe", "read"))
+	if allowed || !errors.Is(err, goauth.ErrInvalidSubjectID) {
+		t.Fatalf("RBAC Check invalid subject = %t, %v", allowed, err)
+	}
 
 	if provider.NewDisabled().Enabled() {
 		t.Fatal("disabled OIDC provider is unexpectedly enabled")
