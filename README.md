@@ -5,15 +5,16 @@ sessions, recovery, encrypted notification delivery, OIDC and RBAC.
 PostgreSQL stores canonical auth state; net/http and Fiber are optional HTTP
 adapters, and Redis is needed only for optional OIDC one-time state.
 
-The latest published tag is `v0.5.1` (schema 3). This checkout is unreleased
-master (schema 8); it is not an unpublished `v0.5.0` candidate. Upgrading to
-master includes the intervening migrations and needs an explicit rollout and
-rollback plan. See [release boundaries](docs/session-security-fixes.md#release-boundary)
-and [RELEASING.md](RELEASING.md) before selecting a release or narrow backport.
-The [v0.5 migration guide](docs/v0.5-migration.md) describes the published v0.5
+The latest published release is [`v0.6.0`](https://github.com/assurrussa/goauth/releases/tag/v0.6.0)
+(schema 8). Upgrading from `v0.5.1` (schema 3) includes the intervening migrations
+and needs an explicit rollout and rollback plan. Read the
+[v0.6 migration guide](docs/v0.6-migration.md),
+[release boundaries](docs/session-security-fixes.md#release-boundary) and
+[RELEASING.md](RELEASING.md) before adopting.
+The [v0.5 migration guide](docs/v0.5-migration.md) describes the earlier v0.5
 contract transition, not the complete schema 3→8 upgrade.
 
-**Pre-v1, public-release preparation.** A Git tag is not proof of public
+**Pre-v1, public release.** A Git tag is not proof of public
 availability, an independent security audit, or production adoption. See
 [the release plan](docs/public-release-plan.md) for the remaining acceptance
 criteria and [RELEASING.md](RELEASING.md) for exact-tag verification.
@@ -34,6 +35,7 @@ Existing tags remain immutable.
   [auth invariants](AUTH_INVARIANTS.md): ownership and security boundaries.
 - [PostgreSQL Runtime](docs/v0.2-runtime.md): canonical storage and lifecycle.
 - [OIDC policy](docs/oidc-provider-policy.md) and [RBAC API](rbac/rbac.go).
+- [v0.6 migration](docs/v0.6-migration.md): schema 3→8 upgrade and rollback guidance.
 - [v0.5 migration](docs/v0.5-migration.md): changed contracts and upgrade guidance.
 - [Security policy](SECURITY.md): private reporting and support scope.
 - [Releasing](RELEASING.md): candidate, publication and full acceptance gates.
