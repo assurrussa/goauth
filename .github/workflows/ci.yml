@@ -1,11 +1,8 @@
 name: CI
 
+# Hosted verification is opt-in; run this workflow manually for a selected ref.
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - master
-  pull_request:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

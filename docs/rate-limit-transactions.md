@@ -87,5 +87,5 @@ The editing session ran the committed standard-library boundary unit tests with
 were shims; no PostgreSQL server or full Runtime was executed. Those checks are
 not whole-module verification. Formatting was checked with `gofmt`; project
 `gofumpt`/gci/lint, full Runtime tests, integration, browser, vulnerability and
-candidate gates require the declared Go 1.27.1 toolchain and dependencies.
+candidate gates require the project's declared Go toolchain and dependencies.
 No historical release-evidence status is changed by this follow-up.

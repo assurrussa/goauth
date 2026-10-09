@@ -40,7 +40,7 @@ func (c Config) BuildGoMod() (string, error) {
 	var builder strings.Builder
 	_, _ = builder.WriteString("module ")
 	_, _ = builder.WriteString(cfg.ProbeModule)
-	_, _ = builder.WriteString("\n\ngo 1.27.0\n\ntoolchain go1.27.1\n\nrequire ")
+	_, _ = builder.WriteString("\n\ngo 1.27.2\n\nrequire ")
 	_, _ = builder.WriteString(cfg.ModulePath)
 	_, _ = builder.WriteString(" ")
 	_, _ = builder.WriteString(cfg.targetVersion())
@@ -66,7 +66,7 @@ func (c Config) BuildProbeTest() (string, error) {
 	source := runnableProbeTest + disabledDeliveryProbeTest + localIdentityProbeTest +
 		credentialAdmissionProbeTest + trustedLocalPasswordProbeTest +
 		localIdentityRenameProbeTest + notificationOutcomeProbeTest + subjectRetirementProbeTest + rateEventCleanupProbeTest +
-		ownedAuthTransactionProbeTest + sessionOIDCProbeTest
+		ownedAuthTransactionProbeTest + sessionOIDCProbeTest + localCommonPasswordProbeTest
 	content := strings.ReplaceAll(source, "GOAUTH_MODULE", cfg.ModulePath)
 	for _, pkg := range externalconsumer.SupportedPackages {
 		resolved := strings.Replace(pkg, DefaultModulePath, cfg.ModulePath, 1)

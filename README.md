@@ -98,6 +98,12 @@ Passwords are bounded before hashing/verification, and each Runtime admits four
 concurrent hash operations by default (`MaxConcurrentPasswordHashes` is configurable).
 Saturation returns `ErrPasswordHashOverloaded` with 503/Retry-After in HTTP adapters.
 
+The default 8–128-code-point password policy and twelve built-in blocklist entries
+remain unchanged. Hosts can opt into `NewLocalCommonPasswordChecker` through the
+existing `PasswordPolicy.Blocklist` field; `WithBuiltInCommonPasswords()` retains
+the built-ins alongside host entries. See [local dictionaries](docs/local-password-blocklist.md)
+for copying, matching, and explicit replacement/empty-set semantics.
+
 `CredentialVerificationRateLimit` can set a separate bounded policy for repeated
 `VerifyCredential`/PostgreSQL `PrepareCredential` calls. Zero preserves the current
 `LoginRateLimit` behavior; browser login, password change and recovery keep their

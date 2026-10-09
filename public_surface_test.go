@@ -42,6 +42,12 @@ var (
 	_ func(rbac.CacheInvalidator, context.Context) error                     = rbac.CacheInvalidator.Invalidate
 )
 
+var _ func(
+	[]string, ...goauth.LocalCommonPasswordCheckerOption,
+) (goauth.CommonPasswordChecker, error) = goauth.NewLocalCommonPasswordChecker
+
+var _ func() goauth.LocalCommonPasswordCheckerOption = goauth.WithBuiltInCommonPasswords
+
 type publicCacheInvalidator struct{}
 
 var _ func(
