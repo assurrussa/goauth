@@ -25,6 +25,8 @@ Existing tags remain immutable.
 ## Documentation
 
 - [Runnable quickstart](examples/nethttp/README.md): browser and JSON API wiring.
+- [Email-less host-session example](examples/hostsession/README.md): custom login,
+  host membership and an atomic host-owned session on the existing database pool.
 - [Notification outcomes and bounded expiry](docs/notification-outcomes.md): explicit
   terminal non-delivery and queue-only, transaction-aware maintenance.
 - [Bounded rate-event maintenance](docs/rate-event-maintenance.md): independent
