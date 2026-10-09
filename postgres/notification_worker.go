@@ -209,10 +209,11 @@ func (r *Runtime) deliverNotification(ctx context.Context, claim notificationCla
 	if sendCtx.Err() != nil {
 		return r.finishNotificationSendFailure(ctx, claim)
 	}
-	err = r.notificationSender.SendNotification(sendCtx, goauth.NotificationDelivery{
-		ID: claim.event.ID, Notification: notification, ValidUntil: claim.event.ValidUntil, EncryptedEvent: claim.event,
-	})
+	err = r.sendCurrentPasswordResetNotification(sendCtx, claim.event, notification)
 	cancel()
+	if errors.Is(err, errPasswordResetNotificationStale) {
+		return r.store.finishNotification(ctx, claim, notificationExpired, "stale", time.Time{})
+	}
 	if errors.Is(err, goauth.ErrNotificationRejected) {
 		// A definitive negative outcome survives worker shutdown. Use a bounded
 		// completion context; the original lease CAS still fences expiry/reclaim.

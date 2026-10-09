@@ -84,44 +84,49 @@ type Config struct {
 	// Every verification attempt, including success, still consumes admission.
 	CredentialVerificationRateLimit RateLimitPolicy
 
+	// PasswordResetRecipientResolver opts into host-authorized recovery addresses.
+	// Nil retains primary-email-only recovery. See docs/password-reset-recipients.md.
+	PasswordResetRecipientResolver PasswordResetRecipientResolver
+
 	PasswordResetRateLimit RateLimitPolicy
 	Now                    func() time.Time
 	Random                 io.Reader
 }
 
 type Runtime struct {
-	notificationDelivery        NotificationDeliveryPolicy
-	store                       RuntimeStore
-	identifiers                 map[IdentifierScheme]IdentifierResolver
-	membership                  MembershipGate
-	claims                      ClaimsEnricher
-	renderer                    NotificationRenderer
-	urlBuilder                  URLBuilder
-	eventSink                   EncryptedEventSink
-	authTransaction             AuthTransaction
-	autoLinkIssuers             []string
-	managedNotificationDelivery bool
-	audit                       AuditSink
-	hasher                      *boundedPasswordHasher
-	passwordPolicy              PasswordPolicy
-	realms                      map[Realm]struct{}
-	secretCodec                 *secretCodec
-	envelopes                   *envelopeCipher
-	jwt                         *jwtIssuer
-	accessTTL                   time.Duration
-	sessionTTL                  time.Duration
-	refreshTTL                  time.Duration
-	passwordResetTTL            time.Duration
-	challengeTTL                time.Duration
-	emailChangeTTL              time.Duration
-	envelopeRetention           time.Duration
-	resetResponseFloor          time.Duration
-	identityLinkAuthMaxAge      time.Duration
-	loginRateLimit              RateLimitPolicy
-	credentialVerifyRateLimit   RateLimitPolicy
-	passwordResetRateLimit      RateLimitPolicy
-	now                         func() time.Time
-	random                      io.Reader
+	notificationDelivery           NotificationDeliveryPolicy
+	store                          RuntimeStore
+	identifiers                    map[IdentifierScheme]IdentifierResolver
+	membership                     MembershipGate
+	claims                         ClaimsEnricher
+	renderer                       NotificationRenderer
+	urlBuilder                     URLBuilder
+	eventSink                      EncryptedEventSink
+	authTransaction                AuthTransaction
+	autoLinkIssuers                []string
+	managedNotificationDelivery    bool
+	audit                          AuditSink
+	hasher                         *boundedPasswordHasher
+	passwordPolicy                 PasswordPolicy
+	realms                         map[Realm]struct{}
+	secretCodec                    *secretCodec
+	envelopes                      *envelopeCipher
+	jwt                            *jwtIssuer
+	accessTTL                      time.Duration
+	sessionTTL                     time.Duration
+	refreshTTL                     time.Duration
+	passwordResetTTL               time.Duration
+	challengeTTL                   time.Duration
+	emailChangeTTL                 time.Duration
+	envelopeRetention              time.Duration
+	resetResponseFloor             time.Duration
+	identityLinkAuthMaxAge         time.Duration
+	loginRateLimit                 RateLimitPolicy
+	credentialVerifyRateLimit      RateLimitPolicy
+	passwordResetRateLimit         RateLimitPolicy
+	passwordResetRecipientResolver PasswordResetRecipientResolver
+	now                            func() time.Time
+	random                         io.Reader
 }
 
 func NewRuntime(config Config) (*Runtime, error) {
@@ -172,38 +177,39 @@ func NewRuntime(config Config) (*Runtime, error) {
 	}
 
 	return &Runtime{
-		store:                       config.Store,
-		notificationDelivery:        config.NotificationDelivery,
-		identifiers:                 identifierResolvers,
-		membership:                  config.MembershipGate,
-		claims:                      config.ClaimsEnricher,
-		renderer:                    config.NotificationRenderer,
-		urlBuilder:                  config.URLBuilder,
-		eventSink:                   config.EventSink,
-		authTransaction:             config.AuthTransaction,
-		autoLinkIssuers:             append([]string(nil), config.AutoLinkVerifiedEmailIssuers...),
-		managedNotificationDelivery: config.ManagedNotificationDelivery,
-		audit:                       config.AuditSink,
-		hasher:                      boundedHasher,
-		passwordPolicy:              config.PasswordPolicy,
-		realms:                      realms,
-		secretCodec:                 newSecretCodec(config.TokenHMACKeys, config.Random),
-		envelopes:                   newEnvelopeCipher(config.OutboxAEADKeys, config.Random, config.Now),
-		jwt:                         jwt,
-		accessTTL:                   config.AccessTTL,
-		sessionTTL:                  config.SessionTTL,
-		refreshTTL:                  config.RefreshTTL,
-		passwordResetTTL:            config.PasswordResetTTL,
-		challengeTTL:                config.ChallengeTTL,
-		emailChangeTTL:              config.EmailChangeTTL,
-		envelopeRetention:           config.EnvelopeRetention,
-		resetResponseFloor:          config.ResetResponseFloor,
-		identityLinkAuthMaxAge:      config.IdentityLinkAuthMaxAge,
-		loginRateLimit:              config.LoginRateLimit,
-		credentialVerifyRateLimit:   config.CredentialVerificationRateLimit,
-		passwordResetRateLimit:      config.PasswordResetRateLimit,
-		now:                         config.Now,
-		random:                      config.Random,
+		store:                          config.Store,
+		notificationDelivery:           config.NotificationDelivery,
+		identifiers:                    identifierResolvers,
+		membership:                     config.MembershipGate,
+		claims:                         config.ClaimsEnricher,
+		renderer:                       config.NotificationRenderer,
+		urlBuilder:                     config.URLBuilder,
+		eventSink:                      config.EventSink,
+		authTransaction:                config.AuthTransaction,
+		autoLinkIssuers:                append([]string(nil), config.AutoLinkVerifiedEmailIssuers...),
+		managedNotificationDelivery:    config.ManagedNotificationDelivery,
+		audit:                          config.AuditSink,
+		hasher:                         boundedHasher,
+		passwordPolicy:                 config.PasswordPolicy,
+		realms:                         realms,
+		secretCodec:                    newSecretCodec(config.TokenHMACKeys, config.Random),
+		envelopes:                      newEnvelopeCipher(config.OutboxAEADKeys, config.Random, config.Now),
+		jwt:                            jwt,
+		accessTTL:                      config.AccessTTL,
+		sessionTTL:                     config.SessionTTL,
+		refreshTTL:                     config.RefreshTTL,
+		passwordResetTTL:               config.PasswordResetTTL,
+		challengeTTL:                   config.ChallengeTTL,
+		emailChangeTTL:                 config.EmailChangeTTL,
+		envelopeRetention:              config.EnvelopeRetention,
+		resetResponseFloor:             config.ResetResponseFloor,
+		identityLinkAuthMaxAge:         config.IdentityLinkAuthMaxAge,
+		loginRateLimit:                 config.LoginRateLimit,
+		credentialVerifyRateLimit:      config.CredentialVerificationRateLimit,
+		passwordResetRateLimit:         config.PasswordResetRateLimit,
+		passwordResetRecipientResolver: config.PasswordResetRecipientResolver,
+		now:                            config.Now,
+		random:                         config.Random,
 	}, nil
 }
 
@@ -283,6 +289,11 @@ func validateRuntimeConfig(config Config) error {
 	}
 	if config.Store == nil {
 		return errors.New("runtime store is required")
+	}
+	if config.PasswordResetRecipientResolver != nil {
+		if _, ok := config.Store.(PasswordResetSubjectStore); !ok {
+			return errors.New("password reset recipient resolver requires a subject-bound reset store")
+		}
 	}
 	if err := validateNotificationDelivery(config); err != nil {
 		return err

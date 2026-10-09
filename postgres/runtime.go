@@ -29,14 +29,15 @@ type Config struct {
 // DSN, the database handle opened for it.
 type Runtime struct {
 	*goauth.Runtime
-	db                  *sql.DB
-	store               *Store
-	oidcRefreshTokens   *OIDCRefreshTokenStore
-	notificationSender  goauth.NotificationSender
-	notificationWorker  NotificationWorkerConfig
-	notificationNow     func() time.Time
-	notificationRunning atomic.Bool
-	ownsDB              bool
+	db                             *sql.DB
+	store                          *Store
+	oidcRefreshTokens              *OIDCRefreshTokenStore
+	notificationSender             goauth.NotificationSender
+	passwordResetRecipientResolver goauth.PasswordResetRecipientResolver
+	notificationWorker             NotificationWorkerConfig
+	notificationNow                func() time.Time
+	notificationRunning            atomic.Bool
+	ownsDB                         bool
 }
 
 func NewRuntime(config Config) (*Runtime, error) {
@@ -117,14 +118,15 @@ func NewRuntime(config Config) (*Runtime, error) {
 	}
 
 	return &Runtime{
-		Runtime:            coreRuntime,
-		db:                 db,
-		store:              store,
-		oidcRefreshTokens:  oidcRefreshTokens,
-		notificationSender: config.NotificationSender,
-		notificationWorker: worker,
-		notificationNow:    config.Runtime.Now,
-		ownsDB:             ownsDB,
+		Runtime:                        coreRuntime,
+		db:                             db,
+		store:                          store,
+		oidcRefreshTokens:              oidcRefreshTokens,
+		notificationSender:             config.NotificationSender,
+		passwordResetRecipientResolver: config.Runtime.PasswordResetRecipientResolver,
+		notificationWorker:             worker,
+		notificationNow:                config.Runtime.Now,
+		ownsDB:                         ownsDB,
 	}, nil
 }
 

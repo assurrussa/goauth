@@ -42,25 +42,8 @@ FOR UPDATE OF s`, record.SubjectID).Scan(&status, &securityVersion, &normalizedE
 		normalizedEmail != record.ExpectedNormalizedEmail {
 		return goauth.ErrAccountNotFound
 	}
-	if _, err := tx.ExecContext(ctx, `
-UPDATE auth_password_reset_records
-SET consumed_at = $2
-WHERE subject_id = $1 AND consumed_at IS NULL`, record.SubjectID, record.CreatedAt); err != nil {
-		return fmt.Errorf("retire previous password resets: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `
-INSERT INTO auth_password_reset_records (
-    selector, subject_id, key_id, secret_digest, created_at, expires_at
-)
-VALUES ($1, $2, $3, $4, $5, $6)`,
-		record.Selector,
-		record.SubjectID,
-		record.Digest.KeyID,
-		record.Digest.Digest,
-		record.CreatedAt,
-		record.ExpiresAt,
-	); err != nil {
-		return fmt.Errorf("insert password reset: %w", err)
+	if err := replacePasswordReset(ctx, tx, record); err != nil {
+		return err
 	}
 	if err := finishWrite(tx, owned); err != nil {
 		return fmt.Errorf("commit password reset issue: %w", err)
@@ -73,8 +56,37 @@ func (s *Store) ConsumePasswordReset(
 	ctx context.Context,
 	request goauth.PasswordResetConsumeRequest,
 ) (goauth.PasswordResetConsumeResult, error) {
+	return s.consumePasswordReset(ctx, request, nil)
+}
+
+// ConsumePasswordResetWithPreparation authenticates and locks the current token
+// before preparing a replacement credential. prepare must not mutate state.
+func (s *Store) ConsumePasswordResetWithPreparation(
+	ctx context.Context, request goauth.PasswordResetConsumeRequest,
+	prepare func(context.Context, goauth.Account) (string, error),
+) (goauth.PasswordResetConsumeResult, error) {
+	if prepare == nil {
+		return goauth.PasswordResetConsumeResult{}, errors.New("password reset preparation is required")
+	}
 	started := time.Now()
-	if request.Selector == "" || request.PasswordPHC == "" || len(request.Digest.Digest) != 32 {
+	var result goauth.PasswordResetConsumeResult
+	err := s.InAuthTransaction(ctx, func(txCtx context.Context) error {
+		// Include transaction-start wait without counting it twice later.
+		request.Now = securityTime(txCtx, request.Now, started)
+		var err error
+		result, err = s.consumePasswordReset(txCtx, request, prepare)
+		return err
+	})
+	return result, err
+}
+
+func (s *Store) consumePasswordReset(
+	ctx context.Context, request goauth.PasswordResetConsumeRequest,
+	prepare func(context.Context, goauth.Account) (string, error),
+) (goauth.PasswordResetConsumeResult, error) {
+	started := time.Now()
+	origin := request.Now
+	if request.Selector == "" || (request.PasswordPHC == "" && prepare == nil) || len(request.Digest.Digest) != 32 {
 		return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetInvalid}, nil
 	}
 
@@ -128,16 +140,48 @@ FOR UPDATE`, request.Selector).Scan(&subjectID, &keyID, &digest, &expiresAt, &co
 	if err != nil {
 		return goauth.PasswordResetConsumeResult{}, fmt.Errorf("lock password reset: %w", err)
 	}
-	if keyID != request.Digest.KeyID || !hmac.Equal(digest, request.Digest.Digest) {
+	if subjectID != lookupID || keyID != request.Digest.KeyID || !hmac.Equal(digest, request.Digest.Digest) {
 		return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetInvalid}, nil
 	}
 	if consumedAt.Valid {
 		return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetUsed}, nil
 	}
 	// The token must still be valid after both subject and reset locks were acquired.
-	request.Now = securityTime(ctx, request.Now, started)
+	request.Now = securityTime(ctx, origin, started)
 	if !request.Now.Before(expiresAt) {
 		return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetExpired}, nil
+	}
+
+	if prepare != nil {
+		var currentPHC string
+		err := tx.QueryRowContext(ctx, `
+SELECT password_phc FROM auth_local_credentials WHERE subject_id = $1 FOR UPDATE`, subjectID).Scan(&currentPHC)
+		if errors.Is(err, sql.ErrNoRows) || (err == nil && currentPHC == "") {
+			return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetInvalid}, nil
+		}
+		if err != nil {
+			return goauth.PasswordResetConsumeResult{}, fmt.Errorf("lock password reset credential: %w", err)
+		}
+		account, err := getAccount(ctx, tx, subjectID)
+		if err != nil {
+			return goauth.PasswordResetConsumeResult{}, err
+		}
+		request.PasswordPHC, err = prepare(ctx, account)
+		if err != nil {
+			return goauth.PasswordResetConsumeResult{}, err
+		}
+		if err := ctx.Err(); err != nil {
+			return goauth.PasswordResetConsumeResult{}, err
+		}
+		if request.PasswordPHC == "" {
+			return goauth.PasswordResetConsumeResult{}, goauth.ErrInvalidPassword
+		}
+		// Always start from the original supplied clock origin; do not add the
+		// elapsed lock/hash time twice for direct store consumers.
+		request.Now = securityTime(ctx, origin, started)
+		if !request.Now.Before(expiresAt) {
+			return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetExpired}, nil
+		}
 	}
 
 	credentialUpdate, err := tx.ExecContext(ctx, `
@@ -191,6 +235,30 @@ UPDATE auth_password_reset_records
 SET consumed_at = $2
 WHERE subject_id = $1 AND consumed_at IS NULL`, subjectID, now); err != nil {
 		return fmt.Errorf("invalidate password resets: %w", err)
+	}
+	return nil
+}
+
+func replacePasswordReset(ctx context.Context, tx *sql.Tx, record goauth.PasswordResetRecord) error {
+	if _, err := tx.ExecContext(ctx, `
+UPDATE auth_password_reset_records
+SET consumed_at = $2
+WHERE subject_id = $1 AND consumed_at IS NULL`, record.SubjectID, record.CreatedAt); err != nil {
+		return fmt.Errorf("retire previous password resets: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO auth_password_reset_records (
+    selector, subject_id, key_id, secret_digest, created_at, expires_at
+)
+VALUES ($1, $2, $3, $4, $5, $6)`,
+		record.Selector,
+		record.SubjectID,
+		record.Digest.KeyID,
+		record.Digest.Digest,
+		record.CreatedAt,
+		record.ExpiresAt,
+	); err != nil {
+		return fmt.Errorf("insert password reset: %w", err)
 	}
 	return nil
 }

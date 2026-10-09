@@ -107,3 +107,9 @@ injection into `PasswordPolicy.Blocklist`; no supported package or required
 interface changes. Public-surface compilation and the runnable clean consumer
 exercise construction, defensive copying, built-in inclusion, default isolation,
 and Runtime policy injection. See [local dictionary semantics](local-password-blocklist.md).
+
+Optional host-authorized recovery adds PasswordResetRecipientResolver,
+PasswordResetSubjectStore, Config.PasswordResetRecipientResolver, and
+postgres.Runtime.InvalidatePasswordResets within existing supported packages.
+The testkit Store mirrors creation and invalidation. No package, schema, token
+format or default primary-email behavior changes. See password-reset-recipients.md.
