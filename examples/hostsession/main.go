@@ -23,7 +23,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, "host-session example failed; check the isolated database configuration")
 		os.Exit(1)
 	}
-	fmt.Println("Email-less identity authenticated; host membership checked; host session accepted.")
+	if _, err := fmt.Fprintln(os.Stdout,
+		"Email-less identity authenticated; host membership checked; host session accepted."); err != nil {
+		os.Exit(1)
+	}
 }
 
 func run() error {
@@ -44,7 +47,8 @@ func run() error {
 }
 
 func demonstrate(ctx context.Context, db *sql.DB) error {
-	runtime, err := newRuntime(db)
+	// Runtime construction owns its startup timeout; postgres.NewRuntime accepts no caller context.
+	runtime, err := newRuntime(db) //nolint:contextcheck // The constructor API cannot inherit ctx.
 	if err != nil {
 		return err
 	}
@@ -70,7 +74,9 @@ func demonstrate(ctx context.Context, db *sql.DB) error {
 		if err != nil {
 			return err
 		}
-		_, err = q.ExecContext(txctx, `INSERT INTO example_host_memberships (subject_id, project_id) VALUES ($1, $2)`, account.Subject.ID, project)
+		_, err = q.ExecContext(txctx,
+			`INSERT INTO example_host_memberships (subject_id, project_id) VALUES ($1, $2)`,
+			account.Subject.ID, project)
 		return err
 	}); err != nil {
 		return err
@@ -123,7 +129,7 @@ func normalizeLogin(_ context.Context, input goauth.IdentifierInput) (goauth.Ide
 	}
 	// Exact, case-sensitive ASCII; do not infer identity from email or profile names.
 	for _, c := range input.Value {
-		if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-' || c == '_') {
+		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' && c != '_' {
 			return goauth.IdentifierInput{}, goauth.ErrInvalidIdentifier
 		}
 	}
