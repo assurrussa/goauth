@@ -13,6 +13,12 @@ import (
 var _ oidc.SessionStateStore = (*postgres.SessionOIDCState)(nil)
 
 var (
+	_ = oidc.CanonicalIdentifiers{Version: 1, Login: "canonical", EmailAlias: "alias@example.test"}
+	_ = oidc.SessionProjection{Identifiers: &oidc.CanonicalIdentifiers{Version: 1, Login: "canonical"}}
+	_ = oidc.SessionUserInfo{Identifiers: &oidc.CanonicalIdentifiers{Version: 1, Login: "canonical"}}
+)
+
+var (
 	_ func(*postgres.Runtime) (*postgres.SessionOIDCState, error)     = postgres.NewSessionOIDCState
 	_ func(provider.SessionOptions) (*provider.SessionService, error) = provider.NewSessionBound
 	_ func(

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -20,24 +21,25 @@ import (
 // standard second-resolution auth_time claim. Applications use auth_time; only
 // this provider interprets the additional session-bound authorization fields.
 type sessionTokenClaims struct {
-	ClientID               string            `json:"client_id"`
-	Scope                  string            `json:"scope"`
-	TokenUse               string            `json:"token_use"`
-	SessionID              string            `json:"sid"`
-	SecurityVersion        int64             `json:"security_version"`
-	FamilyID               string            `json:"family_id"`
-	PolicyStamp            string            `json:"authorization_stamp"`
-	BindingAuthenticatedAt time.Time         `json:"binding_auth_time"`
-	AbsoluteExpiresAt      time.Time         `json:"session_expires_at"`
-	ProjectID              string            `json:"project_id"`
-	AuthTime               int64             `json:"auth_time"`
-	Nonce                  string            `json:"nonce,omitempty"`
-	Email                  string            `json:"email,omitempty"`
-	EmailVerified          *bool             `json:"email_verified,omitempty"`
-	Name                   string            `json:"name,omitempty"`
-	PreferredUsername      string            `json:"preferred_username,omitempty"`
-	Profile                map[string]string `json:"authhub_profile,omitempty"`
-	Project                map[string]string `json:"authhub_project,omitempty"`
+	ClientID               string                     `json:"client_id"`
+	Scope                  string                     `json:"scope"`
+	TokenUse               string                     `json:"token_use"`
+	SessionID              string                     `json:"sid"`
+	SecurityVersion        int64                      `json:"security_version"`
+	FamilyID               string                     `json:"family_id"`
+	PolicyStamp            string                     `json:"authorization_stamp"`
+	BindingAuthenticatedAt time.Time                  `json:"binding_auth_time"`
+	AbsoluteExpiresAt      time.Time                  `json:"session_expires_at"`
+	ProjectID              string                     `json:"project_id"`
+	AuthTime               int64                      `json:"auth_time"`
+	Nonce                  string                     `json:"nonce,omitempty"`
+	Email                  string                     `json:"email,omitempty"`
+	EmailVerified          *bool                      `json:"email_verified,omitempty"`
+	Name                   string                     `json:"name,omitempty"`
+	PreferredUsername      string                     `json:"preferred_username,omitempty"`
+	Profile                map[string]string          `json:"authhub_profile,omitempty"`
+	Project                map[string]string          `json:"authhub_project,omitempty"`
+	Identifiers            *oidc.CanonicalIdentifiers `json:"authhub_identifiers,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -93,6 +95,7 @@ func (s *SessionService) prepareTokens(ctx context.Context, current oidc.Session
 	claims.PreferredUsername = info.PreferredUsername
 	claims.Profile = info.Profile
 	claims.Project = info.Project
+	claims.Identifiers = info.Identifiers
 	id, err := s.base.signToken(key, claims, "JWT")
 	if err != nil {
 		return nil, oidc.SessionRefresh{}, time.Time{}, err
@@ -160,6 +163,10 @@ func (s *SessionService) parseSessionAccessToken(ctx context.Context, raw string
 func (s *SessionService) userInfo(current oidc.SessionAdmissionResult, scopes []string) oidc.SessionUserInfo {
 	result := oidc.SessionUserInfo{UserInfo: s.base.buildUserInfo(current.Account, scopes), ProjectID: current.Projection.ProjectID}
 	if oidc.HasScope(scopes, oidc.ScopeProfile) {
+		if current.Projection.Identifiers != nil {
+			identifiers := *current.Projection.Identifiers
+			result.Identifiers = &identifiers
+		}
 		result.Profile = maps.Clone(current.Projection.Profile)
 		result.Project = maps.Clone(current.Projection.Project)
 	}
@@ -167,7 +174,25 @@ func (s *SessionService) userInfo(current oidc.SessionAdmissionResult, scopes []
 }
 
 func validProjection(value oidc.SessionProjection) bool {
-	return canonicalUUID(value.ProjectID) && validMetadataMap(value.Profile) && validMetadataMap(value.Project)
+	return canonicalUUID(value.ProjectID) && validMetadataMap(value.Profile) && validMetadataMap(value.Project) &&
+		validCanonicalIdentifiers(value.Identifiers)
+}
+
+var (
+	canonicalLoginPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`)
+	canonicalAliasPattern = regexp.MustCompile("^[a-z0-9!#$%&'*+/=?^_`{|}~-]+([.][a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@" +
+		"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?([.][a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$")
+)
+
+func validCanonicalIdentifiers(value *oidc.CanonicalIdentifiers) bool {
+	if value == nil {
+		return true // Existing hosts need not opt in to this claim.
+	}
+	if value.Version != 1 || !canonicalLoginPattern.MatchString(value.Login) {
+		return false
+	}
+	alias := value.EmailAlias
+	return alias == "" || len(alias) <= 254 && strings.IndexByte(alias, '@') <= 64 && canonicalAliasPattern.MatchString(alias)
 }
 
 func validMetadataMap(value map[string]string) bool {

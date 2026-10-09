@@ -43,10 +43,22 @@ type RequestLoginCompletion struct {
 	AuthenticatedAt time.Time
 }
 
+// CanonicalIdentifiers contains current host-authoritative matching identifiers.
+// Version 1 requires a case-sensitive canonical login and permits an optional
+// lowercase email alias. An alias does not assert verified mailbox ownership.
+// Populate only from canonical identifier storage, never display metadata.
+// These values are snapshots, not immutable session bindings or permissions.
+type CanonicalIdentifiers struct {
+	Version    int    `json:"version"`
+	Login      string `json:"login"`
+	EmailAlias string `json:"email_alias,omitempty"`
+}
+
 type SessionProjection struct {
-	ProjectID string
-	Profile   map[string]string
-	Project   map[string]string
+	Identifiers *CanonicalIdentifiers
+	ProjectID   string
+	Profile     map[string]string
+	Project     map[string]string
 }
 
 type SessionAdmissionRequest struct {
@@ -85,9 +97,10 @@ type SessionDiscoveryMetadata struct {
 
 type SessionUserInfo struct {
 	UserInfo
-	ProjectID string            `json:"project_id"`
-	Profile   map[string]string `json:"authhub_profile,omitempty"`
-	Project   map[string]string `json:"authhub_project,omitempty"`
+	Identifiers *CanonicalIdentifiers `json:"authhub_identifiers,omitempty"`
+	ProjectID   string                `json:"project_id"`
+	Profile     map[string]string     `json:"authhub_profile,omitempty"`
+	Project     map[string]string     `json:"authhub_project,omitempty"`
 }
 
 type SessionRequest struct {
