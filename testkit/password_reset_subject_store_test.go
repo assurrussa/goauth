@@ -14,8 +14,10 @@ import (
 )
 
 const (
-	preparedResetPHC       = "prepared"
-	resetPreparationCancel = "cancel"
+	existingResetPHC          = "existing-password-phc"
+	resetPreparationHashError = "hash error"
+	preparedResetPHC          = "prepared"
+	resetPreparationCancel    = "cancel"
 )
 
 func subjectResetRecord(t *testing.T) (*Store, goauth.PasswordResetRecord) {
@@ -26,7 +28,7 @@ func subjectResetRecord(t *testing.T) (*Store, goauth.PasswordResetRecord) {
 	s.accounts[id.String()] = goauth.Account{Subject: goauth.Subject{
 		ID: id, Status: goauth.SubjectStatusActive, SecurityVersion: 7,
 	}}
-	s.passwords[id.String()] = "existing-password-phc"
+	s.passwords[id.String()] = existingResetPHC
 	return s, goauth.PasswordResetRecord{
 		SubjectID: id, Selector: "subject-reset", Digest: goauth.SecretDigest{KeyID: "test", Digest: make([]byte, 32)},
 		ExpectedSecurityVersion: 7, CreatedAt: now, ExpiresAt: now.Add(15 * time.Minute),
@@ -143,12 +145,12 @@ func TestSubjectResetPreparationRechecksConfiguredExpiry(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, goauth.PasswordResetExpired, result.Status)
-	require.Equal(t, "existing-password-phc", s.passwords[record.SubjectID.String()])
+	require.Equal(t, existingResetPHC, s.passwords[record.SubjectID.String()])
 	require.Nil(t, s.resets[record.Selector].ConsumedAt)
 }
 
 func TestSubjectResetPreparationFailuresRollBack(t *testing.T) {
-	for _, scenario := range []string{"hash error", resetPreparationCancel, "empty phc"} {
+	for _, scenario := range []string{resetPreparationHashError, resetPreparationCancel, "empty phc"} {
 		t.Run(scenario, func(t *testing.T) {
 			s, record := subjectResetRecord(t)
 			require.NoError(t, s.CreatePasswordResetForSubject(t.Context(), record))
@@ -159,7 +161,7 @@ func TestSubjectResetPreparationFailuresRollBack(t *testing.T) {
 				Selector: record.Selector, Digest: record.Digest, Now: record.CreatedAt,
 			}, func(context.Context, goauth.Account) (string, error) {
 				switch scenario {
-				case "hash error":
+				case resetPreparationHashError:
 					return "", hashErr
 				case resetPreparationCancel:
 					cancel()
@@ -169,14 +171,14 @@ func TestSubjectResetPreparationFailuresRollBack(t *testing.T) {
 				}
 			})
 			switch scenario {
-			case "hash error":
+			case resetPreparationHashError:
 				require.ErrorIs(t, err, hashErr)
 			case resetPreparationCancel:
 				require.ErrorIs(t, err, context.Canceled)
 			default:
 				require.ErrorIs(t, err, goauth.ErrInvalidPassword)
 			}
-			require.Equal(t, "existing-password-phc", s.passwords[record.SubjectID.String()])
+			require.Equal(t, existingResetPHC, s.passwords[record.SubjectID.String()])
 			require.Nil(t, s.resets[record.Selector].ConsumedAt)
 		})
 	}
