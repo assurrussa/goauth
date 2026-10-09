@@ -430,7 +430,11 @@ Added a private immutable lookup set behind the existing
 and one typed option for explicit built-in inclusion. The existing twelve-entry
 default, policy bounds, bool-only checker interface, hashing, and login code are
 unchanged. The helper does not load files or remote corpora and adds no database,
-migration, dependency, CI trigger, or production configuration.
+migration, dependency, or production configuration. An ancillary CI policy
+correction removes the pre-existing push and pull_request triggers from
+`.github/workflows/ci.yml`, retaining `workflow_dispatch` and its jobs unchanged.
+Hosted verification now requires an explicit manual run; this change does not
+dispatch a workflow. The separate public-module workflow remains manual-only.
 
 The contract explicitly distinguishes nil/default and non-nil/empty checkers.
 Entries and queries use existing trim/lowercase matching without new Unicode
