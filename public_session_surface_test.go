@@ -10,12 +10,14 @@ import (
 	"github.com/assurrussa/goauth/postgres"
 )
 
+const publicSessionCanonicalLogin = "canonical"
+
 var _ oidc.SessionStateStore = (*postgres.SessionOIDCState)(nil)
 
 var (
-	_ = oidc.CanonicalIdentifiers{Version: 1, Login: "canonical", EmailAlias: "alias@example.test"}
-	_ = oidc.SessionProjection{Identifiers: &oidc.CanonicalIdentifiers{Version: 1, Login: "canonical"}}
-	_ = oidc.SessionUserInfo{Identifiers: &oidc.CanonicalIdentifiers{Version: 1, Login: "canonical"}}
+	_ = oidc.CanonicalIdentifiers{Version: 1, Login: publicSessionCanonicalLogin, EmailAlias: "alias@example.test"}
+	_ = oidc.SessionProjection{Identifiers: &oidc.CanonicalIdentifiers{Version: 1, Login: publicSessionCanonicalLogin}}
+	_ = oidc.SessionUserInfo{Identifiers: &oidc.CanonicalIdentifiers{Version: 1, Login: publicSessionCanonicalLogin}}
 )
 
 var (

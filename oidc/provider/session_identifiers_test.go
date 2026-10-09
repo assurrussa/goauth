@@ -13,6 +13,8 @@ import (
 	"github.com/assurrussa/goauth/oidc"
 )
 
+const canonicalTestLogin = "Main"
+
 func TestSessionCanonicalIdentifiersSignedAndCopied(t *testing.T) {
 	t.Parallel()
 	h := newSessionFixture(t)
@@ -102,7 +104,7 @@ func TestSessionCanonicalIdentifiersValidation(t *testing.T) {
 	for name, value := range map[string]*oidc.CanonicalIdentifiers{
 		"absent":        nil,
 		"login":         {Version: 1, Login: "Main.Admin-1_name"},
-		"alias":         {Version: 1, Login: "Main", EmailAlias: "first.last+tag@example.test"},
+		"alias":         {Version: 1, Login: canonicalTestLogin, EmailAlias: "first.last+tag@example.test"},
 		"maximum login": {Version: 1, Login: strings.Repeat("a", 64)},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -111,19 +113,19 @@ func TestSessionCanonicalIdentifiersValidation(t *testing.T) {
 		})
 	}
 	for name, value := range map[string]oidc.CanonicalIdentifiers{
-		"version missing":      {Login: "Main"},
-		"version future":       {Version: 2, Login: "Main"},
+		"version missing":      {Login: canonicalTestLogin},
+		"version future":       {Version: 2, Login: canonicalTestLogin},
 		"login missing":        {Version: 1, EmailAlias: "admin@example.test"},
 		"login too long":       {Version: 1, Login: strings.Repeat("a", 65)},
 		"login whitespace":     {Version: 1, Login: " Main"},
 		"login unicode":        {Version: 1, Login: "Админ"},
 		"login punctuation":    {Version: 1, Login: ".Main"},
-		"alias uppercase":      {Version: 1, Login: "Main", EmailAlias: "Admin@example.test"},
-		"alias whitespace":     {Version: 1, Login: "Main", EmailAlias: "admin@example.test "},
-		"alias malformed":      {Version: 1, Login: "Main", EmailAlias: "a..b@example.test"},
-		"alias unicode":        {Version: 1, Login: "Main", EmailAlias: "a@пример.test"},
-		"alias local too long": {Version: 1, Login: "Main", EmailAlias: strings.Repeat("a", 65) + "@example.test"},
-		"alias too long":       {Version: 1, Login: "Main", EmailAlias: "a@" + strings.Repeat("b.", 126) + "c"},
+		"alias uppercase":      {Version: 1, Login: canonicalTestLogin, EmailAlias: "Admin@example.test"},
+		"alias whitespace":     {Version: 1, Login: canonicalTestLogin, EmailAlias: "admin@example.test "},
+		"alias malformed":      {Version: 1, Login: canonicalTestLogin, EmailAlias: "a..b@example.test"},
+		"alias unicode":        {Version: 1, Login: canonicalTestLogin, EmailAlias: "a@пример.test"},
+		"alias local too long": {Version: 1, Login: canonicalTestLogin, EmailAlias: strings.Repeat("a", 65) + "@example.test"},
+		"alias too long":       {Version: 1, Login: canonicalTestLogin, EmailAlias: "a@" + strings.Repeat("b.", 126) + "c"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
