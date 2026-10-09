@@ -36,6 +36,8 @@ func TestBuildGoModIncludesReplaceForLocalPath(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Contains(t, content, "module example.com/goauthprobe")
+	require.Contains(t, content, "\ngo 1.27.2\n")
+	require.NotContains(t, content, "\ntoolchain ")
 	require.Contains(t, content, "require github.com/assurrussa/goauth v0.0.0-local")
 	require.Contains(t, content, "replace github.com/assurrussa/goauth => /tmp/goauth")
 }
@@ -50,6 +52,8 @@ func TestBuildGoModUsesPublishedVersionWithoutReplace(t *testing.T) {
 	}.BuildGoMod()
 	require.NoError(t, err)
 
+	require.Contains(t, content, "\ngo 1.27.2\n")
+	require.NotContains(t, content, "\ntoolchain ")
 	require.Contains(t, content, "require github.com/assurrussa/goauth v0.1.0")
 	require.NotContains(t, content, "replace github.com/assurrussa/goauth")
 }

@@ -2,6 +2,20 @@
 
 ## Local gates
 
+The main module and generated local/published consumer modules require Go 1.27.2
+or newer. This patch-level security floor includes the standard-library fixes in
+[Go 1.27.2](https://go.dev/doc/devel/release#go1.27.2); it does not change the Go
+1.27 language version or the public API. The `go` directive enforces the floor,
+and no redundant `toolchain` preference is needed. Older compilers reject the
+module when automatic toolchain selection is disabled, including with
+`GOTOOLCHAIN=local`. See [Go toolchain selection](https://go.dev/doc/toolchain).
+
+Record the actual `go version` used for each gate. Do not substitute a
+`GOVERSION` override for installing and running the patched compiler. Application
+hosts must select a patched supported toolchain and rebuild their binaries;
+updating this module cannot patch an already-built application. Historical
+results from Go 1.27.1 do not establish verification under Go 1.27.2.
+
 ```sh
 make prepare
 make check

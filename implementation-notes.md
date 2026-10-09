@@ -450,3 +450,40 @@ clean-consumer example use only the existing root/testkit imports.
 
 Validation results belong to the exact candidate SHA recorded on its PR;
 earlier gate results in this file do not certify this source addition.
+
+## 2026-10-09: Require patched Go after vulnerability gate failure
+
+The source and integration gates at `485c242c700246731717c4eddd2cc997a2a53bf6`
+passed under Go 1.27.1, but the mandatory vulnerability gate failed on nine
+reachable standard-library advisories: GO-2026-6617, GO-2026-6613,
+GO-2026-6612, GO-2026-6611, GO-2026-6610, GO-2026-6608, GO-2026-6607,
+GO-2026-6605, and GO-2026-6603. The official Go vulnerability records give
+Go 1.27.2 as their fix boundary on the 1.27 line; see the
+[release notes](https://go.dev/doc/devel/release#go1.27.2) and
+[HTTP/2 advisory](https://pkg.go.dev/vuln/GO-2026-6617).
+
+The main module and generated clean-consumer modules now require Go 1.27.2,
+with explicit generator assertions for both local and published consumers.
+The patch-level `go` minimum replaces the older minimum/preferred-toolchain pair;
+a redundant `toolchain` line is omitted. An older compiler with automatic
+selection disabled rejects this module instead of silently using the vulnerable
+standard library. The Go 1.27 language version and public APIs are unchanged.
+Application hosts must rebuild with a patched compiler;
+already-built applications are unaffected by a source version change. Both
+hosted workflows continue to use the declared version file and require manual
+dispatch.
+
+The independent `golang.org/x/net/http2` variants of GO-2026-6617,
+GO-2026-6612, GO-2026-6611, GO-2026-6610, and GO-2026-6603 affect the
+previous x/net v0.58.0 dependency and are fixed in v0.60.0. The dependency
+upgrade is a separate security correction; upgrading Go alone does not patch
+that module. Its minimal dependency and checksum changes are resolved with
+the real patched Go toolchain, not handwritten hashes or broad upgrades.
+The committed resolution advances x/crypto to v0.57.0, x/mod to v0.41.0,
+x/net to v0.60.0, x/sync to v0.23.0, x/sys to v0.48.0, and x/text to v0.42.0.
+No unrelated module was upgraded and no new dependency was added.
+
+These source changes do not claim that the final candidate has been executed
+under Go 1.27.2 or that the vulnerability gate now passes. Exact-head revalidation and independent review
+remain required. Earlier Go 1.27.1 passes and failures are preserved as evidence
+for that toolchain only; current results belong to the PR's candidate SHA.

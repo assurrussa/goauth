@@ -109,8 +109,8 @@ The current `CI` workflow runs the source/unit, integration, aggregate coverage
 and vulnerability checks, but not dump/restore or browser acceptance. A green
 CI run therefore does not replace the complete candidate gate.
 
-The `CI` workflow supports manual dispatch for a candidate branch as well as
-pushes/PRs. Record its SHA and outcome. A job that cannot acquire a runner is
+The `CI` workflow runs only by manual dispatch for a selected candidate branch;
+pushes and pull requests do not start it. Record its SHA and outcome. A job that cannot acquire a runner is
 not a successful test run; resolve account/runner availability separately.
 Do not lower security checks or change visibility merely to bypass CI failure.
 
