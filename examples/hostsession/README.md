@@ -74,8 +74,9 @@ DSN is absent:
 GOAUTH_HOSTSESSION_TEST_DSN='postgres://localhost/goauth_hostsession_test?sslmode=disable' go test -race -tags=integration ./examples/hostsession
 ```
 
-`go test ./examples/hostsession` only checks the custom identifier resolver;
-it is not PostgreSQL/session evidence. The repository's ordinary `make check`
+`go test ./examples/hostsession` checks the custom identifier resolver and rejects
+malformed or oversized host tokens without database access; it is not
+PostgreSQL/session integration evidence. The repository's ordinary `make check`
 does not replace the explicit integration command above.
 
 ## Limits
