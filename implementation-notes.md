@@ -435,6 +435,10 @@ correction removes the pre-existing push and pull_request triggers from
 `.github/workflows/ci.yml`, retaining `workflow_dispatch` and its jobs unchanged.
 Hosted verification now requires an explicit manual run; this change does not
 dispatch a workflow. The separate public-module workflow remains manual-only.
+The disposable PostgreSQL/Redis Compose fixture now binds its existing test
+ports explicitly to `127.0.0.1`, avoiding all-interface publication with its
+synthetic test credentials. Images, port numbers, services, and lifecycle commands
+are unchanged; no production or host network setting is modified.
 
 The contract explicitly distinguishes nil/default and non-nil/empty checkers.
 Entries and queries use existing trim/lowercase matching without new Unicode

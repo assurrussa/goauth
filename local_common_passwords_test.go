@@ -11,6 +11,11 @@ import (
 	"github.com/assurrussa/goauth/testkit"
 )
 
+const (
+	localCheckerBuiltinPassword    = "password"
+	localCheckerBuiltinPassword123 = "password123"
+)
+
 func TestLocalCommonPasswordCheckerCopiesAndNormalizes(t *testing.T) {
 	t.Parallel()
 
@@ -50,8 +55,8 @@ func TestLocalCommonPasswordCheckerBuiltinOptionIsIsolated(t *testing.T) {
 	}
 	for _, value := range []string{
 		"12345678", "123456789", "1234567890", "abcdefgh",
-		"admin123", "iloveyou", "letmein123", "password",
-		"password1", "password123", "qwerty123", "welcome1",
+		"admin123", "iloveyou", "letmein123", localCheckerBuiltinPassword,
+		"password1", localCheckerBuiltinPassword123, "qwerty123", "welcome1",
 	} {
 		require.True(t, checker.IsCommonPassword(" "+strings.ToUpper(value)+"\t"))
 		require.False(t, customOnly.IsCommonPassword(value))
@@ -70,17 +75,17 @@ func TestLocalCommonPasswordCheckerEmptySetAndRepeatedOption(t *testing.T) {
 		empty, err := goauth.NewLocalCommonPasswordChecker(passwords)
 		require.NoError(t, err)
 		require.NotNil(t, empty)
-		require.False(t, empty.IsCommonPassword("password"))
+		require.False(t, empty.IsCommonPassword(localCheckerBuiltinPassword))
 		require.False(t, empty.IsCommonPassword(""))
 		policy := goauth.PasswordPolicy{Blocklist: empty}
-		require.NoError(t, policy.Validate("password"))
+		require.NoError(t, policy.Validate(localCheckerBuiltinPassword))
 		require.ErrorIs(t, policy.Validate("short"), goauth.ErrInvalidPassword)
 
 		builtins, err := goauth.NewLocalCommonPasswordChecker(
 			passwords, goauth.WithBuiltInCommonPasswords(), goauth.WithBuiltInCommonPasswords(),
 		)
 		require.NoError(t, err)
-		require.True(t, builtins.IsCommonPassword("password"))
+		require.True(t, builtins.IsCommonPassword(localCheckerBuiltinPassword))
 	}
 }
 

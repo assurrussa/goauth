@@ -1,5 +1,6 @@
 package externalconsumerprobe
 
+//nolint:gosec // G101: Generated consumer contains only synthetic dictionary and password fixtures.
 const localCommonPasswordProbeTest = `
 func TestLocalCommonPasswordCheckerExternalConsumer(t *testing.T) {
 	words := []string{"Tenant-Example-Passphrase"}
