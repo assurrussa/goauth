@@ -97,8 +97,11 @@ func TestLocalCommonPasswordCheckerRejectsInvalidConfiguration(t *testing.T) {
 		{"blank entry", []string{"valid", "\u2003\t\u00a0"}, nil, "entry 1 is empty after trimming"},
 		{"invalid UTF-8", []string{"do-not-echo-this\xff"}, nil, "entry 0 is not valid UTF-8"},
 		{"nil option", nil, []goauth.LocalCommonPasswordCheckerOption{nil}, "option 0 is nil"},
-		{"later nil option", nil, []goauth.LocalCommonPasswordCheckerOption{goauth.WithBuiltInCommonPasswords(), nil},
-			"option 1 is nil"},
+		{
+			"later nil option", nil,
+			[]goauth.LocalCommonPasswordCheckerOption{goauth.WithBuiltInCommonPasswords(), nil},
+			"option 1 is nil",
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
