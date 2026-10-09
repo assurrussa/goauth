@@ -1,17 +1,22 @@
 package externalconsumerprobe
 
+//nolint:gosec // Generated consumer exercises synthetic fixture passwords only.
 const passwordResetRecipientProbeTest = `
 type probeResetRecipient struct { subject goauth.SubjectID }
 func (p *probeResetRecipient) LookupPasswordResetSubject(context.Context, string) (goauth.SubjectID, error) {
  return p.subject, nil
 }
-func (p *probeResetRecipient) ResolvePasswordResetRecipient(_ context.Context, account goauth.Account, requested string) (string, error) {
+func (p *probeResetRecipient) ResolvePasswordResetRecipient(
+ _ context.Context, account goauth.Account, requested string,
+) (string, error) {
  if account.Subject.ID != p.subject || (requested != "" && requested != "recovery-probe@example.test") {
   return "", goauth.ErrAccountNotFound
  }
  return "recovery-probe@example.test", nil
 }
-func (p *probeResetRecipient) PreparePasswordResetPassword(context.Context, goauth.Account, string) (string, error) { return "", nil }
+func (p *probeResetRecipient) PreparePasswordResetPassword(context.Context, goauth.Account, string) (string, error) {
+ return "", nil
+}
 func TestPasswordResetRecipientExternalConsumer(t *testing.T) {
  policy := &probeResetRecipient{}
  fixture, err := testkit.NewRuntime(func(c *goauth.Config) { c.PasswordResetRecipientResolver = policy })

@@ -153,28 +153,13 @@ FOR UPDATE`, request.Selector).Scan(&subjectID, &keyID, &digest, &expiresAt, &co
 	}
 
 	if prepare != nil {
-		var currentPHC string
-		err := tx.QueryRowContext(ctx, `
-SELECT password_phc FROM auth_local_credentials WHERE subject_id = $1 FOR UPDATE`, subjectID).Scan(&currentPHC)
-		if errors.Is(err, sql.ErrNoRows) || (err == nil && currentPHC == "") {
+		var valid bool
+		request.PasswordPHC, valid, err = preparePasswordResetCredential(ctx, tx, subjectID, prepare)
+		if err != nil {
+			return goauth.PasswordResetConsumeResult{}, err
+		}
+		if !valid {
 			return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetInvalid}, nil
-		}
-		if err != nil {
-			return goauth.PasswordResetConsumeResult{}, fmt.Errorf("lock password reset credential: %w", err)
-		}
-		account, err := getAccount(ctx, tx, subjectID)
-		if err != nil {
-			return goauth.PasswordResetConsumeResult{}, err
-		}
-		request.PasswordPHC, err = prepare(ctx, account)
-		if err != nil {
-			return goauth.PasswordResetConsumeResult{}, err
-		}
-		if err := ctx.Err(); err != nil {
-			return goauth.PasswordResetConsumeResult{}, err
-		}
-		if request.PasswordPHC == "" {
-			return goauth.PasswordResetConsumeResult{}, goauth.ErrInvalidPassword
 		}
 		// Always start from the original supplied clock origin; do not add the
 		// elapsed lock/hash time twice for direct store consumers.
@@ -184,41 +169,7 @@ SELECT password_phc FROM auth_local_credentials WHERE subject_id = $1 FOR UPDATE
 		}
 	}
 
-	credentialUpdate, err := tx.ExecContext(ctx, `
-UPDATE auth_local_credentials
-SET password_phc = $2, updated_at = $3, password_input_policy = 'unicode_v1'
-WHERE subject_id = $1`, subjectID, request.PasswordPHC, request.Now)
-	if err != nil {
-		return goauth.PasswordResetConsumeResult{}, fmt.Errorf("update local credential: %w", err)
-	}
-	rows, err := credentialUpdate.RowsAffected()
-	if err != nil || rows != 1 {
-		return goauth.PasswordResetConsumeResult{}, errors.New("password reset credential guard did not update exactly one row")
-	}
-	if _, err := tx.ExecContext(ctx, `
-UPDATE auth_subjects
-SET security_version = security_version + 1, updated_at = $2
-WHERE id = $1`, subjectID, request.Now); err != nil {
-		return goauth.PasswordResetConsumeResult{}, fmt.Errorf("increment password security version: %w", err)
-	}
-	consume, err := tx.ExecContext(ctx, `
-UPDATE auth_password_reset_records
-SET consumed_at = $2
-WHERE selector = $1 AND consumed_at IS NULL`, request.Selector, request.Now)
-	if err != nil {
-		return goauth.PasswordResetConsumeResult{}, fmt.Errorf("consume password reset record: %w", err)
-	}
-	rows, err = consume.RowsAffected()
-	if err != nil || rows != 1 {
-		return goauth.PasswordResetConsumeResult{}, errors.New("password reset consume guard did not update exactly one row")
-	}
-	if _, err := revokeSubjectSecurityState(ctx, tx, subjectID, request.Now); err != nil {
-		return goauth.PasswordResetConsumeResult{}, err
-	}
-	if err := invalidatePasswordResets(ctx, tx, subjectID, request.Now); err != nil {
-		return goauth.PasswordResetConsumeResult{}, err
-	}
-	account, err := getAccount(ctx, tx, subjectID)
+	account, err := applyPasswordResetCredential(ctx, tx, subjectID, request)
 	if err != nil {
 		return goauth.PasswordResetConsumeResult{}, err
 	}
@@ -227,6 +178,80 @@ WHERE selector = $1 AND consumed_at IS NULL`, request.Selector, request.Now)
 	}
 
 	return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetConsumed, Account: account}, nil
+}
+
+func preparePasswordResetCredential(
+	ctx context.Context, tx *sql.Tx, subjectID goauth.SubjectID,
+	prepare func(context.Context, goauth.Account) (string, error),
+) (string, bool, error) {
+	var currentPHC string
+	err := tx.QueryRowContext(ctx, `
+SELECT password_phc FROM auth_local_credentials WHERE subject_id = $1 FOR UPDATE`, subjectID).Scan(&currentPHC)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && currentPHC == "") {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("lock password reset credential: %w", err)
+	}
+	account, err := getAccount(ctx, tx, subjectID)
+	if err != nil {
+		return "", false, err
+	}
+	phc, err := prepare(ctx, account)
+	if err != nil {
+		return "", false, err
+	}
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
+	if phc == "" {
+		return "", false, goauth.ErrInvalidPassword
+	}
+	return phc, true, nil
+}
+
+func applyPasswordResetCredential(
+	ctx context.Context, tx *sql.Tx, subjectID goauth.SubjectID, request goauth.PasswordResetConsumeRequest,
+) (goauth.Account, error) {
+	credentialUpdate, err := tx.ExecContext(ctx, `
+UPDATE auth_local_credentials
+SET password_phc = $2, updated_at = $3, password_input_policy = 'unicode_v1'
+WHERE subject_id = $1`, subjectID, request.PasswordPHC, request.Now)
+	if err != nil {
+		return goauth.Account{}, fmt.Errorf("update local credential: %w", err)
+	}
+	rows, err := credentialUpdate.RowsAffected()
+	if err != nil || rows != 1 {
+		return goauth.Account{}, errors.New("password reset credential guard did not update exactly one row")
+	}
+	if _, err := tx.ExecContext(ctx, `
+UPDATE auth_subjects
+SET security_version = security_version + 1, updated_at = $2
+WHERE id = $1`, subjectID, request.Now); err != nil {
+		return goauth.Account{}, fmt.Errorf("increment password security version: %w", err)
+	}
+	consume, err := tx.ExecContext(ctx, `
+UPDATE auth_password_reset_records
+SET consumed_at = $2
+WHERE selector = $1 AND consumed_at IS NULL`, request.Selector, request.Now)
+	if err != nil {
+		return goauth.Account{}, fmt.Errorf("consume password reset record: %w", err)
+	}
+	rows, err = consume.RowsAffected()
+	if err != nil || rows != 1 {
+		return goauth.Account{}, errors.New("password reset consume guard did not update exactly one row")
+	}
+	if _, err := revokeSubjectSecurityState(ctx, tx, subjectID, request.Now); err != nil {
+		return goauth.Account{}, err
+	}
+	if err := invalidatePasswordResets(ctx, tx, subjectID, request.Now); err != nil {
+		return goauth.Account{}, err
+	}
+	account, err := getAccount(ctx, tx, subjectID)
+	if err != nil {
+		return goauth.Account{}, err
+	}
+	return account, nil
 }
 
 func invalidatePasswordResets(ctx context.Context, tx *sql.Tx, subjectID goauth.SubjectID, now time.Time) error {

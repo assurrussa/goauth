@@ -51,21 +51,8 @@ func (r *Runtime) sendCurrentPasswordResetNotification(
 		if !current {
 			return errPasswordResetNotificationStale
 		}
-		requested, err := goauth.NormalizeEmail(notification.To)
-		if err != nil {
-			return errPasswordResetNotificationStale
-		}
-		recipient, err := r.passwordResetRecipientResolver.ResolvePasswordResetRecipient(txCtx, account, requested)
-		if errors.Is(err, goauth.ErrAccountNotFound) || errors.Is(err, goauth.ErrAccountUnavailable) ||
-			errors.Is(err, goauth.ErrInvalidIdentifier) || errors.Is(err, goauth.ErrSecurityVersionMismatch) {
-			return errPasswordResetNotificationStale
-		}
-		if err != nil {
+		if err := r.validatePasswordResetNotificationRecipient(txCtx, account, notification.To); err != nil {
 			return err
-		}
-		resolved, err := goauth.NormalizeEmail(recipient)
-		if err != nil || resolved != requested {
-			return errPasswordResetNotificationStale
 		}
 		// Keep the subject lock through the bounded sender call. Hosts must use
 		// this context, including when their sender joins the auth transaction.
@@ -74,4 +61,26 @@ func (r *Runtime) sendCurrentPasswordResetNotification(
 		}
 		return send(txCtx)
 	})
+}
+
+func (r *Runtime) validatePasswordResetNotificationRecipient(
+	ctx context.Context, account goauth.Account, address string,
+) error {
+	requested, err := goauth.NormalizeEmail(address)
+	if err != nil {
+		return errPasswordResetNotificationStale
+	}
+	recipient, err := r.passwordResetRecipientResolver.ResolvePasswordResetRecipient(ctx, account, requested)
+	if errors.Is(err, goauth.ErrAccountNotFound) || errors.Is(err, goauth.ErrAccountUnavailable) ||
+		errors.Is(err, goauth.ErrInvalidIdentifier) || errors.Is(err, goauth.ErrSecurityVersionMismatch) {
+		return errPasswordResetNotificationStale
+	}
+	if err != nil {
+		return err
+	}
+	resolved, err := goauth.NormalizeEmail(recipient)
+	if err != nil || resolved != requested {
+		return errPasswordResetNotificationStale
+	}
+	return nil
 }

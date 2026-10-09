@@ -17,9 +17,10 @@ import (
 )
 
 const (
-	passwordResetSecretPurpose = "password-reset"
-	emailChallengeSecretPrefix = "email-challenge:"
-	notificationExpiresKey     = "expires"
+	passwordResetSecretPurpose    = "password-reset"
+	passwordResetNotificationType = "password_reset"
+	emailChallengeSecretPrefix    = "email-challenge:"
+	notificationExpiresKey        = "expires"
 )
 
 type jsonNotificationRenderer struct{}
@@ -55,7 +56,7 @@ func (r *Runtime) RequestPasswordResetWithReceipt(
 	if err != nil {
 		return nil
 	}
-	allowed, err := r.takeIdentifierRateLimit(ctx, "password_reset", normalized, r.passwordResetRateLimit)
+	allowed, err := r.takeIdentifierRateLimit(ctx, passwordResetNotificationType, normalized, r.passwordResetRateLimit)
 	if err != nil {
 		return fmt.Errorf("check password reset rate limit: %w", err)
 	}
@@ -103,8 +104,8 @@ func (r *Runtime) RequestPasswordResetWithReceipt(
 			}
 			return fmt.Errorf("create password reset: %w", err)
 		}
-		if err := r.enqueueNotification(txCtx, "password_reset", record.Account, Notification{
-			Template: "password_reset",
+		if err := r.enqueueNotification(txCtx, passwordResetNotificationType, record.Account, Notification{
+			Template: passwordResetNotificationType,
 			To:       record.Account.PrimaryEmail.DisplayValue,
 			Data: map[string]string{
 				"reset_url":            resetURL,
@@ -326,7 +327,7 @@ func (r *Runtime) takeIdentifierRateLimit(
 		return false, err
 	}
 	// Reset issuance deliberately preserves its enumeration-safe accepted response.
-	if !result.Allowed && action != "password_reset" {
+	if !result.Allowed && action != passwordResetNotificationType {
 		return false, r.limited(ErrAuthenticationRateLimited, result.RetryAt)
 	}
 

@@ -419,12 +419,16 @@ func (publicPasswordResetRecipientResolver) LookupPasswordResetSubject(context.C
 	return goauth.SubjectID{}, goauth.ErrAccountNotFound
 }
 
-func (publicPasswordResetRecipientResolver) ResolvePasswordResetRecipient(context.Context, goauth.Account, string) (string, error) {
+func (publicPasswordResetRecipientResolver) ResolvePasswordResetRecipient(
+	context.Context, goauth.Account, string,
+) (string, error) {
 	return "", goauth.ErrAccountNotFound
 }
 
 var _ goauth.PasswordResetRecipientResolver = publicPasswordResetRecipientResolver{}
 
-func (publicPasswordResetRecipientResolver) PreparePasswordResetPassword(context.Context, goauth.Account, string) (string, error) {
+func (publicPasswordResetRecipientResolver) PreparePasswordResetPassword(
+	context.Context, goauth.Account, string,
+) (string, error) {
 	return "", nil
 }

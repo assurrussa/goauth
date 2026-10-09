@@ -13,6 +13,11 @@ import (
 	"github.com/assurrussa/goauth/internal/authclock"
 )
 
+const (
+	preparedResetPHC       = "prepared"
+	resetPreparationCancel = "cancel"
+)
+
 func subjectResetRecord(t *testing.T) (*Store, goauth.PasswordResetRecord) {
 	t.Helper()
 	s := NewStore()
@@ -29,7 +34,9 @@ func subjectResetRecord(t *testing.T) (*Store, goauth.PasswordResetRecord) {
 }
 
 func TestSubjectBoundResetStoreGuardsCurrentCredentialAndVersion(t *testing.T) {
-	for _, scenario := range []string{"valid email-less", "stale version", "no credential", "empty credential", "disabled", "retired", "email guard"} {
+	for _, scenario := range []string{
+		"valid email-less", "stale version", "no credential", "empty credential", "disabled", "retired", "email guard",
+	} {
 		t.Run(scenario, func(t *testing.T) {
 			s, record := subjectResetRecord(t)
 			key := record.SubjectID.String()
@@ -112,7 +119,7 @@ func TestSubjectResetPreparationRequiresCurrentAuthenticatedToken(t *testing.T) 
 			}
 			called := false
 			result, err := s.ConsumePasswordResetWithPreparation(t.Context(), request,
-				func(context.Context, goauth.Account) (string, error) { called = true; return "prepared", nil })
+				func(context.Context, goauth.Account) (string, error) { called = true; return preparedResetPHC, nil })
 			require.NoError(t, err)
 			require.NotEqual(t, goauth.PasswordResetConsumed, result.Status)
 			require.False(t, called)
@@ -132,7 +139,7 @@ func TestSubjectResetPreparationRechecksConfiguredExpiry(t *testing.T) {
 		_, err := s.GetLocalAccount(ctx, account.Subject.ID)
 		require.NoError(t, err)
 		now = record.ExpiresAt
-		return "prepared", nil
+		return preparedResetPHC, nil
 	})
 	require.NoError(t, err)
 	require.Equal(t, goauth.PasswordResetExpired, result.Status)
@@ -141,7 +148,7 @@ func TestSubjectResetPreparationRechecksConfiguredExpiry(t *testing.T) {
 }
 
 func TestSubjectResetPreparationFailuresRollBack(t *testing.T) {
-	for _, scenario := range []string{"hash error", "cancel", "empty phc"} {
+	for _, scenario := range []string{"hash error", resetPreparationCancel, "empty phc"} {
 		t.Run(scenario, func(t *testing.T) {
 			s, record := subjectResetRecord(t)
 			require.NoError(t, s.CreatePasswordResetForSubject(t.Context(), record))
@@ -154,9 +161,9 @@ func TestSubjectResetPreparationFailuresRollBack(t *testing.T) {
 				switch scenario {
 				case "hash error":
 					return "", hashErr
-				case "cancel":
+				case resetPreparationCancel:
 					cancel()
-					return "prepared", nil
+					return preparedResetPHC, nil
 				default:
 					return "", nil
 				}
@@ -164,7 +171,7 @@ func TestSubjectResetPreparationFailuresRollBack(t *testing.T) {
 			switch scenario {
 			case "hash error":
 				require.ErrorIs(t, err, hashErr)
-			case "cancel":
+			case resetPreparationCancel:
 				require.ErrorIs(t, err, context.Canceled)
 			default:
 				require.ErrorIs(t, err, goauth.ErrInvalidPassword)

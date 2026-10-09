@@ -32,7 +32,9 @@ func (p *resetRecipientPolicy) LookupPasswordResetSubject(context.Context, strin
 	return p.subject, nil
 }
 
-func (p *resetRecipientPolicy) ResolvePasswordResetRecipient(_ context.Context, account goauth.Account, requested string) (string, error) {
+func (p *resetRecipientPolicy) ResolvePasswordResetRecipient(
+	_ context.Context, account goauth.Account, requested string,
+) (string, error) {
 	if p.denied || account.Subject.ID != p.subject || (requested != "" && requested != p.address) {
 		return "", goauth.ErrAccountNotFound
 	}
@@ -45,7 +47,9 @@ func resetRecipientFixture(t *testing.T) (*testkit.Fixture, *resetRecipientPolic
 	fixture, err := testkit.NewRuntime(func(c *goauth.Config) {
 		c.PasswordResetRecipientResolver = policy
 		c.IdentifierResolvers = map[goauth.IdentifierScheme]goauth.IdentifierResolver{
-			localIdentityScheme: goauth.IdentifierResolverFunc(func(_ context.Context, input goauth.IdentifierInput) (goauth.IdentifierInput, error) {
+			localIdentityScheme: goauth.IdentifierResolverFunc(func(
+				_ context.Context, input goauth.IdentifierInput,
+			) (goauth.IdentifierInput, error) {
 				return input, nil
 			}),
 		}
@@ -92,7 +96,8 @@ func TestHostRecipientResetPreservesEmailLessIdentity(t *testing.T) {
 	require.Equal(t, "15m0s", notification.Data["expires"])
 	token := recipientResetToken(t, fixture)
 	require.NoError(t, fixture.Runtime.ResetPassword(t.Context(), token, "Replacement-Recipient-Passphrase-42"))
-	require.ErrorIs(t, fixture.Runtime.ResetPassword(t.Context(), token, "Different-Recipient-Passphrase-42"), goauth.ErrResetAlreadyUsed)
+	require.ErrorIs(t,
+		fixture.Runtime.ResetPassword(t.Context(), token, "Different-Recipient-Passphrase-42"), goauth.ErrResetAlreadyUsed)
 	current, err := fixture.Store.GetLocalAccount(t.Context(), account.Subject.ID)
 	require.NoError(t, err)
 	require.Zero(t, current.Account.PrimaryEmail)
@@ -113,7 +118,8 @@ func TestHostRecipientConsumeRejectionRollsBackPasswordAndToken(t *testing.T) {
 	before, err := fixture.Store.GetLocalAccount(t.Context(), account.Subject.ID)
 	require.NoError(t, err)
 	policy.denied = true
-	require.ErrorIs(t, fixture.Runtime.ResetPassword(t.Context(), token, "Replacement-Recipient-Passphrase-42"), goauth.ErrInvalidToken)
+	require.ErrorIs(t,
+		fixture.Runtime.ResetPassword(t.Context(), token, "Replacement-Recipient-Passphrase-42"), goauth.ErrInvalidToken)
 	after, err := fixture.Store.GetLocalAccount(t.Context(), account.Subject.ID)
 	require.NoError(t, err)
 	require.Equal(t, before, after)
@@ -131,7 +137,7 @@ func TestHostRecipientIssuanceDenialsRemainAccepted(t *testing.T) {
 			case "collision":
 				policy.denied = true
 			case "wrong address":
-				email = "other@example.test"
+				email = otherTestEmail
 			case "inactive":
 				_, err := fixture.Runtime.SetSubjectStatus(t.Context(), account.Subject.ID, goauth.SubjectStatusDisabled)
 				require.NoError(t, err)
@@ -140,8 +146,10 @@ func TestHostRecipientIssuanceDenialsRemainAccepted(t *testing.T) {
 				_, _, err := fixture.Store.CreateSSOAccount(t.Context(), goauth.SSOAccountRecord{
 					Account: goauth.Account{
 						Subject: goauth.Subject{ID: policy.subject, Status: goauth.SubjectStatusActive, SecurityVersion: 1},
-						PrimaryEmail: goauth.Identifier{ID: "sso-recipient", SubjectID: policy.subject,
-							Scheme: goauth.IdentifierSchemeEmail, DisplayValue: policy.address, NormalizedValue: policy.address},
+						PrimaryEmail: goauth.Identifier{
+							ID: "sso-recipient", SubjectID: policy.subject,
+							Scheme: goauth.IdentifierSchemeEmail, DisplayValue: policy.address, NormalizedValue: policy.address,
+						},
 					},
 					Link: goauth.IdentityLink{SubjectID: policy.subject, Issuer: "https://sso.example.test", ExternalSubject: "sso-recipient"},
 				})
@@ -176,14 +184,12 @@ func TestHostRecipientInvalidationSurvivesAddressRestoration(t *testing.T) {
 	token := recipientResetToken(t, fixture)
 	old := policy.address
 	require.NoError(t, fixture.Store.InAuthTransaction(t.Context(), func(ctx context.Context) error {
-		if err := fixture.Store.InvalidatePasswordResets(ctx, account.Subject.ID, time.Now().UTC()); err != nil {
-			return err
-		}
-		return nil
+		return fixture.Store.InvalidatePasswordResets(ctx, account.Subject.ID, time.Now().UTC())
 	}))
 	policy.address = "replacement@example.test"
 	policy.address = old
-	require.ErrorIs(t, fixture.Runtime.ResetPassword(t.Context(), token, "Replacement-Recipient-Passphrase-42"), goauth.ErrResetAlreadyUsed)
+	require.ErrorIs(t,
+		fixture.Runtime.ResetPassword(t.Context(), token, "Replacement-Recipient-Passphrase-42"), goauth.ErrResetAlreadyUsed)
 }
 
 func TestPrimaryEmailDefaultDoesNotAuthorizeHostAlias(t *testing.T) {
@@ -243,7 +249,9 @@ func TestRecipientIssuanceRejectsStaleSecuritySnapshot(t *testing.T) {
 	require.Empty(t, fixture.Events.Events())
 }
 
-func (p *resetRecipientPolicy) PreparePasswordResetPassword(ctx context.Context, account goauth.Account, password string) (string, error) {
+func (p *resetRecipientPolicy) PreparePasswordResetPassword(
+	ctx context.Context, account goauth.Account, password string,
+) (string, error) {
 	if len(password) > 256 {
 		return "", goauth.ErrInvalidPassword
 	}
@@ -275,10 +283,10 @@ func TestHostRecipientPreservesCustomPasswordIssuanceProfile(t *testing.T) {
 		return hasher.HashPassword(password)
 	}
 	require.NoError(t, fixture.Runtime.RequestPasswordReset(t.Context(), policy.address))
-	password := "Canonical-Recipient-Password-42"
-	require.NoError(t, fixture.Runtime.ResetPassword(t.Context(), recipientResetToken(t, fixture), password))
+	replacement := "Canonical-Recipient-Password-42"
+	require.NoError(t, fixture.Runtime.ResetPassword(t.Context(), recipientResetToken(t, fixture), replacement))
 	record, err := fixture.Store.GetLocalAccount(t.Context(), account.Subject.ID)
 	require.NoError(t, err)
 	require.Contains(t, record.PasswordPHC, "m=65536,t=3,p=1")
-	require.NoError(t, hasher.VerifyPassword(record.PasswordPHC, password))
+	require.NoError(t, hasher.VerifyPassword(record.PasswordPHC, replacement))
 }

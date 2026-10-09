@@ -83,36 +83,14 @@ func (r *Runtime) requestPasswordResetForRecipient(
 		return err
 	}
 	return r.inNotificationTransaction(ctx, func(txCtx context.Context) error {
-		account, err := r.lockActiveAccount(txCtx, subjectID)
+		account, recipient, err := r.lockPasswordResetRecipient(
+			txCtx, subjectID, record.Account.Subject.SecurityVersion, normalizedEmail,
+		)
+		if passwordResetRecipientUnavailable(err) {
+			return nil
+		}
 		if err != nil {
-			if passwordResetRecipientUnavailable(err) {
-				return nil
-			}
 			return err
-		}
-		if account.Subject.SecurityVersion != record.Account.Subject.SecurityVersion {
-			return nil
-		}
-		local, err := r.store.GetLocalAccount(txCtx, subjectID)
-		if err != nil {
-			if passwordResetRecipientUnavailable(err) {
-				return nil
-			}
-			return err
-		}
-		if local.Account.Subject.ID != subjectID || local.PasswordPHC == "" ||
-			local.Account.Subject.SecurityVersion != account.Subject.SecurityVersion {
-			return nil
-		}
-		recipient, err := r.passwordResetRecipientResolver.ResolvePasswordResetRecipient(txCtx, account, normalizedEmail)
-		if err != nil {
-			if passwordResetRecipientUnavailable(err) {
-				return nil
-			}
-			return fmt.Errorf("resolve password reset recipient: %w", err)
-		}
-		if _, err := NormalizeEmail(recipient); err != nil {
-			return nil
 		}
 		now := r.now().UTC()
 		// NewRuntime checked this optional capability before accepting the policy.
@@ -130,8 +108,8 @@ func (r *Runtime) requestPasswordResetForRecipient(
 			}
 			return fmt.Errorf("create subject-bound password reset: %w", err)
 		}
-		if err := r.enqueueNotification(txCtx, "password_reset", account, Notification{
-			Template: "password_reset", To: recipient,
+		if err := r.enqueueNotification(txCtx, passwordResetNotificationType, account, Notification{
+			Template: passwordResetNotificationType, To: recipient,
 			Data: map[string]string{"reset_url": resetURL, notificationExpiresKey: r.passwordResetTTL.String()},
 		}, notificationMetadata{referenceID: token.selector, validUntil: now.Add(r.passwordResetTTL)}); err != nil {
 			return err
@@ -146,6 +124,34 @@ func (r *Runtime) requestPasswordResetForRecipient(
 		}
 		return nil
 	})
+}
+
+func (r *Runtime) lockPasswordResetRecipient(
+	ctx context.Context, subjectID SubjectID, securityVersion int64, normalizedEmail string,
+) (Account, string, error) {
+	account, err := r.lockActiveAccount(ctx, subjectID)
+	if err != nil {
+		return Account{}, "", err
+	}
+	if account.Subject.SecurityVersion != securityVersion {
+		return Account{}, "", ErrAccountNotFound
+	}
+	local, err := r.store.GetLocalAccount(ctx, subjectID)
+	if err != nil {
+		return Account{}, "", err
+	}
+	if local.Account.Subject.ID != subjectID || local.PasswordPHC == "" ||
+		local.Account.Subject.SecurityVersion != account.Subject.SecurityVersion {
+		return Account{}, "", ErrAccountNotFound
+	}
+	recipient, err := r.passwordResetRecipientResolver.ResolvePasswordResetRecipient(ctx, account, normalizedEmail)
+	if err != nil {
+		return Account{}, "", fmt.Errorf("resolve password reset recipient: %w", err)
+	}
+	if _, err := NormalizeEmail(recipient); err != nil {
+		return Account{}, "", ErrAccountNotFound
+	}
+	return account, recipient, nil
 }
 
 func (r *Runtime) consumePasswordResetForRecipient(
