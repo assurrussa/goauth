@@ -422,3 +422,23 @@ This is a local source candidate, not a published release or complete product
 acceptance. Full aggregate coverage/consumer gates and independent frozen-tree
 review are still required before release. No production credentials, persisted
 signing keys or deployment were created.
+
+## 2026-10-09: Opt-in local common-password checker
+
+Added a private immutable lookup set behind the existing
+`CommonPasswordChecker` interface, with a constructor accepting host entries
+and one typed option for explicit built-in inclusion. The existing twelve-entry
+default, policy bounds, bool-only checker interface, hashing, and login code are
+unchanged. The helper does not load files or remote corpora and adds no database,
+migration, dependency, CI trigger, or production configuration.
+
+The contract explicitly distinguishes nil/default and non-nil/empty checkers.
+Entries and queries use existing trim/lowercase matching without new Unicode
+normalization; malformed entries and nil options fail construction without
+echoing entry text. Runtime issuance, unchanged existing-credential login,
+input mutation, duplicate entries, Unicode boundaries, and concurrent reads
+have regression coverage. Public-surface signatures and the executable
+clean-consumer example use only the existing root/testkit imports.
+
+Validation results belong to the exact candidate SHA recorded on its PR;
+earlier gate results in this file do not certify this source addition.

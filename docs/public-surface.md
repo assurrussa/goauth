@@ -97,3 +97,13 @@ package, Subject layout or migration changes. Public symbol and ordinary consume
 checks compile the signature/sentinel and exercise uninitialized rejection; the
 PostgreSQL consumer verifies ambient rejection, joining, commit/rollback and
 withholding provisional responses. See [owned transactions](owned-auth-transactions.md).
+
+## Local common-password dictionaries
+
+The root package adds `NewLocalCommonPasswordChecker`,
+`LocalCommonPasswordCheckerOption`, and `WithBuiltInCommonPasswords`.
+The constructor returns the existing `CommonPasswordChecker` interface for
+injection into `PasswordPolicy.Blocklist`; no supported package or required
+interface changes. Public-surface compilation and the runnable clean consumer
+exercise construction, defensive copying, built-in inclusion, default isolation,
+and Runtime policy injection. See [local dictionary semantics](local-password-blocklist.md).
