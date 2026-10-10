@@ -15,6 +15,7 @@ import (
 )
 
 func TestPostgresRBACIndependentHandlesUseAuthoritativePermissions(t *testing.T) {
+	const roleName = "Operator"
 	writerDB := integrationDB(t)
 	readerDB := integrationDB(t)
 	require.NotSame(t, writerDB, readerDB)
@@ -36,7 +37,7 @@ VALUES ($1, 'active', now(), now())`, subject.String())
 	key := rbac.MustPermissionKey("users", "read")
 	_, err = writer.UpsertPermission(t.Context(), rbac.Permission{Key: key})
 	require.NoError(t, err)
-	role, err := writer.CreateRole(t.Context(), rbac.Role{Slug: "operator", Name: "Operator"}, []rbac.PermissionKey{key})
+	role, err := writer.CreateRole(t.Context(), rbac.Role{Slug: "operator", Name: roleName}, []rbac.PermissionKey{key})
 	require.NoError(t, err)
 
 	assertIndependentHandlePermission(t, t.Context(), reader, subject, key, false)

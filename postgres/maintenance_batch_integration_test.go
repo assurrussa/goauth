@@ -103,7 +103,8 @@ FROM generate_series(1,5) f CROSS JOIN generate_series(1,7) n`, now)
 }
 
 func TestCleanupBatchKeepsReplayEvidenceAndStrictCanonicalBoundary(t *testing.T) {
-	for _, end := range []string{"session expiry", "session revocation", "family revocation"} {
+	const familyRevocation = "family revocation"
+	for _, end := range []string{"session expiry", "session revocation", familyRevocation} {
 		t.Run(end, func(t *testing.T) {
 			runtime, db, clock := refreshRetentionRuntime(t, 48*time.Hour, 48*time.Hour)
 			registered := register(t, runtime, "bounded-replay@example.test")
@@ -129,16 +130,17 @@ WHERE consumed_at IS NOT NULL`, start.Add(-time.Hour))
 			require.ErrorIs(t, err, goauth.ErrInvalidToken)
 			current, err := runtime.Refresh(t.Context(), rotated.RefreshToken)
 			require.NoError(t, err)
-			if end == "family revocation" {
+			switch end {
+			case familyRevocation:
 				_, err = runtime.Refresh(t.Context(), original)
 				require.ErrorIs(t, err, goauth.ErrRefreshReplay)
 				_, err = runtime.AuthenticateSession(t.Context(), current.AccessToken)
 				require.ErrorIs(t, err, goauth.ErrSessionRevoked)
 				require.EqualValues(t, 1, maintenanceCount(t, db, `SELECT count(*) FROM auth_security_audit_events
 WHERE subject_id=$1 AND event_type='refresh.replay'`, registered.Account.Subject.ID.String()))
-			} else if end == "session expiry" {
+			case "session expiry":
 				maintenanceExec(t, db, `UPDATE auth_sessions SET expires_at=$1 WHERE id=$2`, now, current.Session.ID)
-			} else {
+			default:
 				maintenanceExec(t, db, `UPDATE auth_sessions SET revoked_at=$1 WHERE id=$2`, now, current.Session.ID)
 			}
 			now = now.Add(24 * time.Hour)

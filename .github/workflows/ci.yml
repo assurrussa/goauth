@@ -3,6 +3,15 @@ name: CI
 # Hosted verification is opt-in; run this workflow manually for a selected ref.
 on:
   workflow_dispatch:
+    inputs:
+      validation_scope:
+        description: Validation scope
+        required: true
+        type: choice
+        default: full
+        options:
+          - full
+          - fixtures
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -59,14 +68,6 @@ jobs:
         with:
           version: v2.14.0
           install-only: true
-      - name: Canonical unit and public API gate
-        run: make check
-      - name: PostgreSQL and Redis integration gate
-        run: make integration
-      - name: Aggregate coverage profile
-        run: make coverage-aggregate
-      - name: Reachable vulnerability gate
-        run: make vulnerability-check
       - name: Changed integration-tagged source lint
         run: |
           base="$(git merge-base HEAD origin/master)"
@@ -77,3 +78,20 @@ jobs:
           go version
           go test ./testkit -run='^$' -bench='^BenchmarkRuntimeHotPaths$' -benchtime=12x -count=1 -cpu=1 -benchmem
           go test ./rbac -run='^$' -bench='^BenchmarkCheck$' -benchtime=12x -count=1 -cpu=1 -benchmem
+      - name: Focused PostgreSQL fixture race tests
+        if: ${{ inputs.validation_scope == 'fixtures' }}
+        run: |
+          echo 'Focused fixture mode: full unit, integration, aggregate coverage, and vulnerability gates are not run.'
+          go test -v -race -tags=integration -run='^(TestCleanupBatch|TestPostgresRBACIndependentHandlesUseAuthoritativePermissions)' -count=1 ./postgres
+      - name: Canonical unit and public API gate
+        if: ${{ inputs.validation_scope != 'fixtures' }}
+        run: make check
+      - name: PostgreSQL and Redis integration gate
+        if: ${{ inputs.validation_scope != 'fixtures' }}
+        run: make integration
+      - name: Aggregate coverage profile
+        if: ${{ inputs.validation_scope != 'fixtures' }}
+        run: make coverage-aggregate
+      - name: Reachable vulnerability gate
+        if: ${{ inputs.validation_scope != 'fixtures' }}
+        run: make vulnerability-check
