@@ -107,3 +107,15 @@ injection into `PasswordPolicy.Blocklist`; no supported package or required
 interface changes. Public-surface compilation and the runnable clean consumer
 exercise construction, defensive copying, built-in inclusion, default isolation,
 and Runtime policy injection. See [local dictionary semantics](local-password-blocklist.md).
+
+## Bounded broad maintenance
+
+`postgres.Runtime.CleanupBatch(ctx, policy, perCategoryLimit)` and
+`postgres.CleanupBatchResult` add opt-in broad maintenance in the existing
+PostgreSQL package. Limits apply separately to counted categories; they are not a
+global row budget. The existing `Cleanup` behavior and retention defaults remain
+unchanged. The pass rejects ambient managed scopes and reports only confirmed
+phase counts, including partial progress before a later error. See
+[bounded broad maintenance](bounded-maintenance.md) for bounds, continuation,
+security-history retention and required validation.
+

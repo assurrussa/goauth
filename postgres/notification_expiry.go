@@ -31,7 +31,15 @@ func (r *Runtime) ExpireNotifications(ctx context.Context, limit int) (int64, er
 	if err != nil {
 		return 0, err
 	}
-	result, err := exec.ExecContext(ctx, `
+	result, err := exec.ExecContext(ctx, notificationExpirySQL, r.notificationNow().UTC(), limit)
+	if err != nil {
+		return 0, fmt.Errorf("expire managed notification batch: %w", err)
+	}
+	return result.RowsAffected()
+}
+
+// Shared by queue-only expiry and the independently committed broad batch.
+const notificationExpirySQL = `
 WITH expired AS (
  SELECT id FROM auth_notification_deliveries
  WHERE ciphertext IS NOT NULL AND valid_until <= $1
@@ -41,9 +49,4 @@ WITH expired AS (
 UPDATE auth_notification_deliveries n
 SET state='expired', ciphertext=NULL, nonce='\x'::bytea, additional_data='\x'::bytea,
  lease_token=NULL, leased_until=NULL
-FROM expired e WHERE n.id=e.id`, r.notificationNow().UTC(), limit)
-	if err != nil {
-		return 0, fmt.Errorf("expire managed notification batch: %w", err)
-	}
-	return result.RowsAffected()
-}
+FROM expired e WHERE n.id=e.id`
