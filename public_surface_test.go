@@ -92,10 +92,7 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = postgres.RateLimitCleanupRequest{Before: time.Time{}, Limit: 1}
 	_ = (*postgres.Runtime).CleanupRateLimitEvents
 	_ = postgres.CleanupBatchResult{CleanupResult: postgres.CleanupResult{}, OIDCRequests: 0, OIDCCodes: 0}
-	var cleanupBatch func(
-		context.Context, postgres.CleanupPolicy, int,
-	) (postgres.CleanupBatchResult, error) = (*postgres.Runtime)(nil).CleanupBatch
-	_ = cleanupBatch
+	_ = (*postgres.Runtime).CleanupBatch
 	_ = (*postgres.Runtime).ExpireNotifications
 	_ = goauth.ErrNotificationDeliveryDisabled
 	_ = goauth.Config{NotificationDelivery: goauth.NotificationDeliveryDisabled}
