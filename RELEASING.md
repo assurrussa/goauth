@@ -6,49 +6,53 @@ acceptance criteria and sequence of the first public release.
 
 ## Version state
 
-Use repository tags/release notes for existing versions and select the target
-explicitly with `VERSION=<tag>`. There is no implicit latest/default version.
-The latest published tag is `v0.5.1`, commit
-`0862228fd3d3e33d5cc46ed7fc92136df247bdbe`, using schema 3. Current master is
-unreleased and uses schema 8. The selected next release is **`v0.6.0`**, including
-the full schema 3→8 upgrade and intervening features, rather than a narrow patch.
-Selection is not publication or passing release evidence. The previous plan to
-publish `v0.5.0` is historical; existing tags must not be reused.
+The latest published release is [`v0.6.0`](https://github.com/assurrussa/goauth/releases/tag/v0.6.0),
+commit `ca1933747bd3399a12fff5c70debd32128b67c6d`, using schema 8.
+Unreleased master also uses schema 8.
 
-| Candidate path | Schema | Required decision before release |
-| --- | --- | --- |
-| Selected `v0.6.0` from current master | 8 | Complete exact-source release gates, populated schema 3→8 upgrade/restore, AuthHub and GoAdmin host acceptance, and compatible rollback review. |
-| A future narrow backport on `v0.5.1` | 3 | Not part of this release. Select separately, review the isolated patch, and run its own gates. |
+The selected next release is **v0.7.0**, covering the complete reviewed
+post-`v0.6.0` feature and security delta. Version selection does not mean that a
+tag or release exists. Existing tags must never be reused or moved. See the
+[release preparation record](docs/v0.7-release-preparation.md).
 
-Read [the v0.6 upgrade and rollback guide](docs/v0.6-migration.md) before adopting
-this release. Freeze the reviewed candidate SHA after preparation; record that
-SHA and each host's resolved module graph with the release evidence. A host test
-must resolve the exact candidate without a local replacement. Updating deployed
-hosts or migrating their live databases remains a separate operator action.
+The reviewed preparation baseline is
+`da2d0a0889ceae0dcf3383d6e35cf4b70da1c65e`, tree
+`f743e8a3106978aeb3dec6878f78aae351b9eda8`. On 2026-10-10, one literal
+`make release-candidate-readiness` invocation passed with exit 0 on candidate
+tree `2f32aa180b27d40a4e2904a3067a9bc85fcdba59`. The subsequent status refresh is
+documentation-only; it was reviewed separately and was not the tree on which
+that command ran. Record the final source commit and reviewed documentation
+delta. Candidate verification does not establish exact-tag public availability,
+host acceptance, adoption or deployment.
 
-The schema steps after published `v0.5.1` are 4 (local identity policy),
-5 (notification expiry), 6 (subject retirement), 7 (rate-event cleanup index),
-and 8 (session-bound OIDC). See the focused migration sections in
-[local identities](docs/local-identities.md),
-[notification outcomes](docs/notification-outcomes.md),
-[subject retirement](docs/subject-retirement.md),
-[rate-event maintenance](docs/rate-event-maintenance.md), and
-[session-bound OIDC](docs/session-bound-oidc.md).
-Older binaries reject future schema versions. Plan the migration/restart window
-and a schema-compatible rollback; do not lower schema history or use `Down` on
-production data. A patch PR does not authorize deployment or production migration.
+Upgrading from `v0.6.0` introduces no new database migration. Preserve existing
+auth state, identifiers, credentials, host projections, keys and security
+history. Do not reset the database or lower migration history. The
+[v0.6 migration guide](docs/v0.6-migration.md) remains the historical schema 3→8
+upgrade and rollback contract for older installations; it is not evidence of a
+new rehearsal. Schema steps 4 through 8 and their invariants remain in force.
 
-The [session security fixes](docs/session-security-fixes.md) add no migrations,
-but this does not make unrelated unreleased master changes part of a patch.
+Current source requires Go 1.27.2 or newer. Hosts must rebuild with a supported
+patched compiler; a module requirement cannot patch an already-built binary.
+
+Before selecting a rollback binary, review newly enabled recovery-recipient
+policy, queued notifications, public APIs and host integration. Sharing schema 8
+does not prove that an older binary enforces a newly adopted host policy. Drain
+or invalidate affected recovery notifications before removing that policy.
+Older pre-schema-8 binaries remain unsuitable for an upgraded database.
+
 Before any selected release, run host acceptance at its exact source SHA and
-record the host commit and resolved GoAdmin/GoAuth versions. Existing candidate,
-publication and evidence gates still apply; these notes are not passing evidence.
+record each host commit and complete resolved module graph, including the
+resolved GoAdmin/GoAuth versions and replacement status. A host test must resolve
+the exact candidate without a local replacement. A pre-tag commit may resolve as a Go pseudo-version; record its full origin SHA. Temporary host
+acceptance is not consumer adoption or deployment.
 
-Never move or replace a tag, publish a committed local `replace`, or describe a
-private tag as a verified public release. The frozen v0.1 compatibility line
-ends at `v0.1.7`; its implementation is absent from the current source tree.
-Publication, independent review, consumer adoption and deployment are separate
-claims. Fix a failed published candidate in a new commit and tag.
+Never publish a committed local `replace` or describe a private tag as a verified
+public release. The frozen v0.1 compatibility line ends at `v0.1.7`; its
+implementation is absent from the current source tree. Publication, independent
+review, consumer adoption and deployment are separate claims. Fix a failed
+published candidate in a new commit and tag. A future narrow backport requires
+its own explicit scope, review and verification.
 
 ## Published v0.5 migration
 
@@ -167,7 +171,7 @@ support limitations and actual evidence, not a blanket production-ready claim.
 
 ## Full public-preview acceptance
 
-The selected v0.6.0 release uses the bounded candidate, publication and separate
+The v0.6.0 release plan required bounded candidate, publication and separate
 AuthHub/GoAdmin host records in [its upgrade guide](docs/v0.6-migration.md).
 The broader program below retains historical v0.5.0 `site`/`admin` evidence
 mapping and is not a v0.6 acceptance path. Rebaseline its target, scenarios and

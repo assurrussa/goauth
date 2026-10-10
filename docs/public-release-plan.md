@@ -1,11 +1,11 @@
 # Public release plan
 
-Historical plan for `v0.5.0`. That version and `v0.5.1` are already tagged; do
-not rerun the tag-creation instructions below. Current master is unreleased
-and uses schema 8, while published `v0.5.1` uses schema 3. Follow
-[the current release decision](../RELEASING.md#version-state) for a new release
-or a narrow backport. This historical plan is not evidence that all acceptance
-checks were performed.
+Historical plan for `v0.5.0`. That version, `v0.5.1` and `v0.6.0` are already
+published; do not rerun the tag-creation instructions below. The latest published
+release is `v0.6.0` using schema 8. Unreleased master also uses schema 8; the
+older `v0.5.1` baseline uses schema 3. Follow
+[the current release decision](../RELEASING.md#version-state) for subsequent work.
+This historical plan is not evidence that all acceptance checks were performed.
 
 ## Goal and scope
 
