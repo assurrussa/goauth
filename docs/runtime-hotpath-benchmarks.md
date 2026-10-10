@@ -101,7 +101,7 @@ set -o pipefail
 go test ./testkit -run='^$' -bench='^BenchmarkRuntimeHotPaths$' -benchtime=100x -count=5 -cpu=1 -benchmem 2>&1 | tee goauth-runtime-hotpaths.raw.txt
 ```
 
-The existing independent RBAC candidate remains separate and unchanged:
+The existing independent RBAC fixture remains separate and unchanged:
 
 ```sh
 go test ./rbac -run='^$' -bench='^BenchmarkCheck$' -benchtime=100x -count=5 -cpu=1 -benchmem
@@ -109,9 +109,9 @@ go test ./rbac -run='^$' -bench='^BenchmarkCheck$' -benchtime=100x -count=5 -cpu
 
 The examples pin benchmark `GOMAXPROCS` to one with `-cpu=1`; they do not prescribe
 production concurrency. The repository's existing `make bench-all` runs `go test -bench=. -benchmem ./...`
-and also runs ordinary tests. No new Makefile/CI command is required. Run the
-normal required repository checks once for the composed final candidate when
-execution becomes permitted; a benchmark smoke run does not replace them.
+and also runs ordinary tests. The manual retained-sample mode below runs only the
+two named benchmark suites. Neither smoke nor retained-sample mode replaces the
+normal required repository checks.
 
 Alongside raw benchmark rows and exit status, retain:
 
@@ -143,3 +143,49 @@ ten operations. Their short timing rows are not a retained performance baseline.
 Use the repeated-run procedure and matching configuration above before drawing
 performance conclusions. Keep actual pass, failure, and skipped-stage evidence
 with the relevant commit or pull request rather than inferring it from this guide.
+
+## Manual retained-sample mode
+
+In the existing CI workflow, select the intended source ref and
+`validation_scope=baseline`. The default remains `full`; `fixtures` keeps its
+existing behavior. Baseline mode runs a separate benchmark-only job with no
+PostgreSQL/Redis services, race instrumentation, or full test/lint/vulnerability
+gates. It does not add any automatic workflow trigger.
+
+Both commands above use exactly 100 measured operations, five repetitions, and
+one benchmark CPU. This mode sets `GOMAXPROCS=1`, `GOGC=100`,
+`GOMEMLIMIT=off`, and `GOFLAGS=-mod=readonly`. It uses the Go version required
+by `go.mod`. A clean committed checkout is required before and after capture.
+The fixtures and production implementation are unchanged.
+
+The RBAC cases use the existing in-process store/cache test doubles:
+uncached allow/deny, cache-hit allow/deny, and cache miss. They do not measure a
+real cache, database, invalidation, or cross-process behavior. Runtime cases use
+the dataset, hashing, algorithms, frozen clock, and timing exclusions above.
+
+A successful capture requires every Runtime case five times (20 rows) and every
+RBAC case five times (25 rows), each with operation count 100 and finite,
+nonnegative `ns/op`, `B/op`, and `allocs/op`. Missing/extra cases,
+missing/excess repetitions, malformed rows, errors, or missing/duplicate package
+success markers fail the job. A failed command retains partial evidence and
+cannot be called a completed baseline.
+
+The `goauth-hotpath-baseline-<source-sha>-<attempt>` artifact is retained for 90
+days and contains:
+
+- Unedited `runtime.raw.txt` and `rbac.raw.txt` with all repetitions.
+- Exact commands, package exit statuses, and start/end UTC timestamps.
+- Source commit/tree, clean source diff, fixture/workflow/module/document hashes,
+  the complete configuration guide, and run URL/attempt.
+- Go version/build settings, GC/memory/parallelism settings, runner image,
+  OS/kernel, CPU model/count, available memory, and before/after host load.
+- Capture log and final capture exit status, including assertion failures.
+
+Download the artifact before expiry if it is needed for longer-term comparison.
+Retain all repeated rows rather than only a summary, and use matching fixture,
+toolchain, timing mode, configuration, and hardware for comparisons. Hosted
+runners can vary and 100 operations is especially noisy for very fast RBAC
+checks. These are small retained microbenchmark samples, not statistically
+stable latency estimates, percentiles, a production SLA, or a PostgreSQL
+baseline. Increase the controlled sample budget in a separately reviewed run
+before relying on small differences.
