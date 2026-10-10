@@ -8,6 +8,15 @@ func TestRateEventCleanupSurfaceExternalConsumer(t *testing.T) {
  count, err := cleanup(nil,t.Context(),request)
  if err == nil || count != 0 { t.Fatal("uninitialized cleanup must fail without a successful count") }
 }
+func TestBroadCleanupSurfaceExternalConsumer(t *testing.T) {
+ var cleanup func(*postgres.Runtime,context.Context,postgres.CleanupPolicy,int)(postgres.CleanupBatchResult,error) =
+  (*postgres.Runtime).CleanupBatch
+ result, err := cleanup(nil,t.Context(),postgres.CleanupPolicy{},1)
+ if err == nil || result != (postgres.CleanupBatchResult{}) {
+  t.Fatal("uninitialized bounded broad cleanup must reject with no confirmed counts")
+ }
+ _ = postgres.CleanupBatchResult{CleanupResult:postgres.CleanupResult{},OIDCRequests:0,OIDCCodes:0}
+}
 `
 
 const rateEventCleanupPostgresProbeTest = `
@@ -49,6 +58,21 @@ func TestRateEventCleanupManagedExternalConsumer(t *testing.T) {
  }
  if count, err := runtime.CleanupRateLimitEvents(t.Context(),postgres.RateLimitCleanupRequest{}); err == nil || count != 0 {
   t.Fatal("zero cleanup bound was accepted")
+ }
+}
+
+func TestBroadCleanupManagedScopeExternalConsumer(t *testing.T) {
+ runtime := newHostProbeRuntime(t, true)
+ if err := runtime.InAuthTransaction(t.Context(),func(ctx context.Context) error {
+  result, err := runtime.CleanupBatch(ctx,postgres.CleanupPolicy{},1)
+  if !errors.Is(err,postgres.ErrAuthTransactionAlreadyActive) || result != (postgres.CleanupBatchResult{}) {
+   return errors.New("bounded broad cleanup must reject an ambient transaction before any phase")
+  }
+  return nil
+ }); err != nil { t.Fatal(err) }
+ result, err := runtime.CleanupBatch(t.Context(),postgres.CleanupPolicy{},0)
+ if err == nil || result != (postgres.CleanupBatchResult{}) {
+  t.Fatal("zero broad cleanup bound was accepted")
  }
 }
 `

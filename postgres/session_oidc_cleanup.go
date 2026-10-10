@@ -64,19 +64,26 @@ func cleanupSessionOIDCBatch(ctx context.Context, db *sql.DB, before time.Time) 
 func cleanupSessionOIDC(
 	ctx context.Context, tx *sql.Tx, before time.Time, result *SessionOIDCCleanupResult, boundOnly bool,
 ) error {
+	return cleanupSessionOIDCLimited(ctx, tx, before, result, boundOnly, sessionOIDCCleanupBatch)
+}
+
+// The existing entry points retain their fixed 1000-row/32-family bounds.
+func cleanupSessionOIDCLimited(
+	ctx context.Context, tx *sql.Tx, before time.Time, result *SessionOIDCCleanupResult, boundOnly bool, limit int,
+) error {
 	for _, deletion := range []struct {
 		statement string
 		count     *int64
 	}{
 		{`DELETE FROM auth_oidc_authorization_requests WHERE selector IN (
  SELECT selector FROM auth_oidc_authorization_requests WHERE expires_at<=$1
- ORDER BY expires_at,selector LIMIT 1000 FOR UPDATE SKIP LOCKED)`, &result.Requests},
+ ORDER BY expires_at,selector LIMIT $2 FOR UPDATE SKIP LOCKED)`, &result.Requests},
 		{`DELETE FROM auth_oidc_authorization_codes WHERE selector IN (
  SELECT c.selector FROM auth_oidc_authorization_codes c LEFT JOIN auth_oidc_refresh_families f ON f.id=c.family_id
  WHERE c.expires_at<=$1 AND (c.family_id IS NULL OR f.expires_at<=$1)
- ORDER BY c.expires_at,c.selector LIMIT 1000 FOR UPDATE OF c SKIP LOCKED)`, &result.Codes},
+ ORDER BY c.expires_at,c.selector LIMIT $2 FOR UPDATE OF c SKIP LOCKED)`, &result.Codes},
 	} {
-		deleted, err := tx.ExecContext(ctx, deletion.statement, before)
+		deleted, err := tx.ExecContext(ctx, deletion.statement, before, limit)
 		if err != nil {
 			return err
 		}
@@ -92,8 +99,8 @@ func cleanupSessionOIDC(
 	if boundOnly {
 		query += " AND f.session_id IS NOT NULL AND f.authorization_stamp IS NOT NULL AND f.absolute_expires_at IS NOT NULL"
 	}
-	query += " ORDER BY f.expires_at,f.id LIMIT 32 FOR UPDATE OF f SKIP LOCKED"
-	rows, err := tx.QueryContext(ctx, query, before)
+	query += " ORDER BY f.expires_at,f.id LIMIT $2 FOR UPDATE OF f SKIP LOCKED"
+	rows, err := tx.QueryContext(ctx, query, before, min(limit, 32))
 	if err != nil {
 		return err
 	}
@@ -113,7 +120,7 @@ func cleanupSessionOIDC(
 	if err != nil {
 		return err
 	}
-	remaining := sessionOIDCCleanupBatch
+	remaining := limit
 	for _, id := range families {
 		if remaining == 0 {
 			break
