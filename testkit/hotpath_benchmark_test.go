@@ -12,7 +12,7 @@ import (
 
 const (
 	hotPathEmail    = "hotpath@example.test"
-	hotPathPassword = "Hotpath-Only-Passphrase-2026"
+	hotPathPassword = "Hotpath-Only-Passphrase-2026" //nolint:gosec // Synthetic password used only by this benchmark.
 )
 
 // BenchmarkRuntimeHotPaths measures sequential, in-memory user-realm operations.

@@ -17,6 +17,13 @@ import (
 	"github.com/assurrussa/goauth"
 )
 
+const (
+	batchFailureBegin     = "begin"
+	batchFailureStatement = "statement"
+	batchFailureCount     = "count"
+	batchFailureCommit    = "commit"
+)
+
 func TestCleanupBatchRejectsBeforeSQL(t *testing.T) {
 	db := new(sql.DB) // Any SQL use would panic.
 	r := &Runtime{db: db, store: &Store{db: db}}
@@ -92,7 +99,7 @@ func (*batchCleanupConn) Prepare(string) (driver.Stmt, error) { return nil, erro
 func (*batchCleanupConn) Close() error                        { return nil }
 func (c *batchCleanupConn) Begin() (driver.Tx, error) {
 	c.phase++
-	if err := c.fail("begin"); err != nil {
+	if err := c.fail(batchFailureBegin); err != nil {
 		return nil, err
 	}
 	return &batchCleanupTx{c.batchCleanupDriver}, nil
@@ -118,10 +125,10 @@ func (c *batchCleanupConn) ExecContext(ctx context.Context, query string, args [
 	}
 	c.queries = append(c.queries, query)
 	c.arguments = append(c.arguments, args)
-	if err := c.fail("statement"); err != nil {
+	if err := c.fail(batchFailureStatement); err != nil {
 		return nil, err
 	}
-	return batchCleanupCount{err: c.fail("count")}, nil
+	return batchCleanupCount{err: c.fail(batchFailureCount)}, nil
 }
 
 func (c *batchCleanupConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
@@ -137,7 +144,7 @@ func (c *batchCleanupConn) QueryContext(ctx context.Context, query string, args 
 }
 
 func (tx *batchCleanupTx) Commit() error {
-	if err := tx.fail("commit"); err != nil {
+	if err := tx.fail(batchFailureCommit); err != nil {
 		return err
 	}
 	tx.committed = append(tx.committed, tx.phase)
@@ -196,15 +203,15 @@ func TestCleanupBatchUsesSingleClockAndIndependentPhases(t *testing.T) {
 func TestCleanupBatchErrorsKeepOnlyEarlierConfirmedPhases(t *testing.T) {
 	failure := errors.New("injected I/O failure")
 	for phase := 1; phase <= 4; phase++ {
-		for _, at := range []string{"begin", "statement", "count", "commit"} {
-			if phase == 3 && (at == "statement" || at == "count") {
+		for _, at := range []string{batchFailureBegin, batchFailureStatement, batchFailureCount, batchFailureCommit} {
+			if phase == 3 && (at == batchFailureStatement || at == batchFailureCount) {
 				continue // This fixture's canonical phase has no subjects.
 			}
 			t.Run(strconv.Itoa(phase)+"/"+at, func(t *testing.T) {
 				d := &batchCleanupDriver{failPhase: phase, failAt: at, failure: failure}
 				result, err := batchCleanupTestRuntime(t, d).CleanupBatch(t.Context(), CleanupPolicy{}, 2)
 				require.ErrorIs(t, err, failure)
-				require.Equal(t, at == "commit", errors.Is(err, goauth.ErrOperationOutcomeUnknown))
+				require.Equal(t, at == batchFailureCommit, errors.Is(err, goauth.ErrOperationOutcomeUnknown))
 				expected := CleanupBatchResult{}
 				if phase > 1 {
 					expected.NotificationsExpired = 2
@@ -223,7 +230,7 @@ func TestCleanupBatchErrorsKeepOnlyEarlierConfirmedPhases(t *testing.T) {
 		require.ErrorIs(t, err, failure)
 		require.Equal(t, []int{phase}, d.rolledBack)
 	}
-	d := &batchCleanupDriver{failPhase: 4, failAt: "commit", failure: &pgconn.PgError{Code: "40001"}}
+	d := &batchCleanupDriver{failPhase: 4, failAt: batchFailureCommit, failure: &pgconn.PgError{Code: "40001"}}
 	result, err := batchCleanupTestRuntime(t, d).CleanupBatch(t.Context(), CleanupPolicy{}, 2)
 	require.Error(t, err)
 	require.NotErrorIs(t, err, goauth.ErrOperationOutcomeUnknown)

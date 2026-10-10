@@ -45,6 +45,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -66,3 +67,13 @@ jobs:
         run: make coverage-aggregate
       - name: Reachable vulnerability gate
         run: make vulnerability-check
+      - name: Changed integration-tagged source lint
+        run: |
+          base="$(git merge-base HEAD origin/master)"
+          printf 'Tagged lint comparison: base=%s head=%s\n' "$base" "$(git rev-parse HEAD)"
+          golangci-lint run --build-tags=integration --new-from-rev="$base" --whole-files --timeout=5m ./postgres
+      - name: Runtime and RBAC benchmark smoke
+        run: |
+          go version
+          go test ./testkit -run='^$' -bench='^BenchmarkRuntimeHotPaths$' -benchtime=12x -count=1 -cpu=1 -benchmem
+          go test ./rbac -run='^$' -bench='^BenchmarkCheck$' -benchtime=12x -count=1 -cpu=1 -benchmem

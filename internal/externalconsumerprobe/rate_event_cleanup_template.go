@@ -70,7 +70,8 @@ func TestBroadCleanupManagedScopeExternalConsumer(t *testing.T) {
   }
   return nil
  }); err != nil { t.Fatal(err) }
- if result, err := runtime.CleanupBatch(t.Context(),postgres.CleanupPolicy{},0); err == nil || result != (postgres.CleanupBatchResult{}) {
+ result, err := runtime.CleanupBatch(t.Context(),postgres.CleanupPolicy{},0)
+ if err == nil || result != (postgres.CleanupBatchResult{}) {
   t.Fatal("zero broad cleanup bound was accepted")
  }
 }

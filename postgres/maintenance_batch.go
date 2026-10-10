@@ -151,7 +151,7 @@ func cleanupGenericBatch(ctx context.Context, db *sql.DB, policy CleanupPolicy, 
 			before time.Time
 			count  *int64
 		}{
-			{passwordResetCleanupBatchSQL, now.Add(-policy.ExpiredRecordRetention), &result.PasswordResets},
+			{resetRecordCleanupBatchSQL, now.Add(-policy.ExpiredRecordRetention), &result.PasswordResets},
 			{emailChallengeCleanupBatchSQL, now.Add(-policy.ExpiredRecordRetention), &result.EmailChallenges},
 			{emailChangeCleanupBatchSQL, now.Add(-policy.ExpiredRecordRetention), &result.EmailChanges},
 			{rateEventCleanupSQL, now.Add(-policy.RateEventRetention), &result.RateEvents},
@@ -172,7 +172,7 @@ func cleanupGenericBatch(ctx context.Context, db *sql.DB, policy CleanupPolicy, 
 	return result, nil
 }
 
-const passwordResetCleanupBatchSQL = `DELETE FROM auth_password_reset_records WHERE selector IN (
+const resetRecordCleanupBatchSQL = `DELETE FROM auth_password_reset_records WHERE selector IN (
  SELECT selector FROM auth_password_reset_records WHERE expires_at < $1 OR consumed_at < $1
  ORDER BY LEAST(expires_at, consumed_at), selector LIMIT $2 FOR UPDATE SKIP LOCKED)`
 

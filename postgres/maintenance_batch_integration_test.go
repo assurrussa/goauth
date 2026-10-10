@@ -61,7 +61,8 @@ func TestCleanupBatchCanonicalBoundsCountEveryDeletedRow(t *testing.T) {
 	// including a chain larger than a batch. Four sessions have no children.
 	maintenanceExec(t, db, `INSERT INTO auth_sessions
 (id,subject_id,realm,scope,security_version,created_at,expires_at)
-SELECT md5('batch-session-'||g)::uuid,$1,'user','authenticated',1,$2::timestamptz-interval '4 days',$2::timestamptz-interval '25 hours'
+SELECT md5('batch-session-'||g)::uuid,$1,'user','authenticated',1,$2::timestamptz-interval '4 days',
+$2::timestamptz-interval '25 hours'
 FROM generate_series(1,5) g`, registered.Account.Subject.ID.String(), now)
 	maintenanceExec(t, db, `INSERT INTO auth_refresh_families
 (id,session_id,subject_id,realm,security_version,created_at)
@@ -205,7 +206,8 @@ func TestCleanupBatchCanonicalMergeAndCycleRemainFKSafe(t *testing.T) {
 	now := time.Unix(0, clock.Load()).UTC()
 	maintenanceExec(t, db, `INSERT INTO auth_sessions
 (id,subject_id,realm,scope,security_version,created_at,expires_at)
-SELECT md5('batch-fk-session')::uuid,$1,'user','authenticated',1,$2::timestamptz-interval '4 days',$2::timestamptz-interval '25 hours'`,
+SELECT md5('batch-fk-session')::uuid,$1,'user','authenticated',1,$2::timestamptz-interval '4 days',
+$2::timestamptz-interval '25 hours'`,
 		registered.Account.Subject.ID.String(), now)
 	maintenanceExec(t, db, `INSERT INTO auth_refresh_families
 (id,session_id,subject_id,realm,security_version,created_at)
@@ -213,7 +215,8 @@ SELECT md5('batch-fk-'||kind)::uuid,md5('batch-fk-session')::uuid,$1,'user',1,$2
 FROM (VALUES ('merge'),('cycle')) fixture(kind)`, registered.Account.Subject.ID.String(), now)
 	maintenanceExec(t, db, `INSERT INTO auth_refresh_tokens
 (selector,family_id,key_id,secret_digest,created_at,expires_at,replaced_by_selector)
-SELECT selector,md5('batch-fk-'||family)::uuid,'fixture',decode(repeat('00',32),'hex'),$1::timestamptz-interval '4 days',$1::timestamptz-interval '25 hours',successor
+SELECT selector,md5('batch-fk-'||family)::uuid,'fixture',decode(repeat('00',32),'hex'),
+$1::timestamptz-interval '4 days',$1::timestamptz-interval '25 hours',successor
 FROM (VALUES ('batch-a','merge','batch-c'),('batch-b','merge','batch-c'),('batch-c','merge',NULL),
 ('batch-x','cycle','batch-y'),('batch-y','cycle','batch-x')) fixture(selector,family,successor)`, now)
 	policy := postgres.CleanupPolicy{Now: func() time.Time { return now }}

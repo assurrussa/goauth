@@ -45,9 +45,11 @@ SELECT md5('batch-audit-'||g)::uuid,$1,'batch',
 CASE WHEN g<=5 THEN $2::timestamptz-interval '90 days 1 microsecond' ELSE $2::timestamptz-interval '90 days' END
 FROM generate_series(1,6) g`,
 		`INSERT INTO auth_notification_deliveries
-(id,subject_id,event_type,valid_until,key_id,nonce,ciphertext,additional_data,created_at,delete_after,state,next_attempt_at,lease_token,leased_until)
+(id,subject_id,event_type,valid_until,key_id,nonce,ciphertext,additional_data,created_at,
+delete_after,state,next_attempt_at,lease_token,leased_until)
 SELECT md5('batch-envelope-'||g)::uuid,$1,'batch',$2,'fixture',decode('01','hex'),decode('01','hex'),decode('01','hex'),
-$2::timestamptz-interval '1 day',$2::timestamptz+interval '1 day','leased',$2::timestamptz-interval '1 day',md5('batch-lease-'||g)::uuid,$2::timestamptz+interval '1 day'
+$2::timestamptz-interval '1 day',$2::timestamptz+interval '1 day','leased',
+$2::timestamptz-interval '1 day',md5('batch-lease-'||g)::uuid,$2::timestamptz+interval '1 day'
 FROM generate_series(1,5) g`,
 		`INSERT INTO auth_notification_deliveries
 (id,subject_id,event_type,valid_until,key_id,nonce,ciphertext,additional_data,created_at,delete_after,state,next_attempt_at)
@@ -108,7 +110,8 @@ func TestCleanupBatchSkipsLockedGenericRowsThenContinues(t *testing.T) {
 	now := time.Unix(0, clock.Load()).UTC()
 	maintenanceExec(t, db, `INSERT INTO auth_password_reset_records
 (selector,subject_id,key_id,secret_digest,created_at,expires_at)
-VALUES ('batch-locked',$1,'fixture',decode(repeat('00',32),'hex'),$2::timestamptz-interval '4 days',$2::timestamptz-interval '25 hours')`,
+VALUES ('batch-locked',$1,'fixture',decode(repeat('00',32),'hex'),$2::timestamptz-interval '4 days',
+$2::timestamptz-interval '25 hours')`,
 		registered.Account.Subject.ID.String(), now)
 	blocker, err := db.BeginTx(t.Context(), nil)
 	require.NoError(t, err)
