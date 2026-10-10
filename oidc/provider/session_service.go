@@ -82,7 +82,7 @@ func NewSessionBound(opts SessionOptions) (*SessionService, error) {
 func (s *SessionService) Discovery(ctx context.Context) oidc.SessionDiscoveryMetadata {
 	d := s.base.Discovery(ctx)
 	d.ScopesSupported = []string{oidc.ScopeOpenID, oidc.ScopeProfile, oidc.ScopeEmail}
-	d.ClaimsSupported = append(d.ClaimsSupported, "project_id", "authhub_profile", "authhub_project", "sid")
+	d.ClaimsSupported = append(d.ClaimsSupported, "project_id", "authhub_profile", "authhub_project", "authhub_identifiers", "sid")
 	return oidc.SessionDiscoveryMetadata{DiscoveryMetadata: d}
 }
 func (s *SessionService) JWKS(ctx context.Context) (oidc.JWKS, error) { return s.base.JWKS(ctx) }

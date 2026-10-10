@@ -17,9 +17,10 @@ import (
 )
 
 const (
-	passwordResetSecretPurpose = "password-reset"
-	emailChallengeSecretPrefix = "email-challenge:"
-	notificationExpiresKey     = "expires"
+	passwordResetSecretPurpose    = "password-reset"
+	passwordResetNotificationType = "password_reset"
+	emailChallengeSecretPrefix    = "email-challenge:"
+	notificationExpiresKey        = "expires"
 )
 
 type jsonNotificationRenderer struct{}
@@ -55,12 +56,15 @@ func (r *Runtime) RequestPasswordResetWithReceipt(
 	if err != nil {
 		return nil
 	}
-	allowed, err := r.takeIdentifierRateLimit(ctx, "password_reset", normalized, r.passwordResetRateLimit)
+	allowed, err := r.takeIdentifierRateLimit(ctx, passwordResetNotificationType, normalized, r.passwordResetRateLimit)
 	if err != nil {
 		return fmt.Errorf("check password reset rate limit: %w", err)
 	}
 	if !allowed {
 		return nil
+	}
+	if r.passwordResetRecipientResolver != nil {
+		return r.requestPasswordResetForRecipient(ctx, normalized.Value, bind)
 	}
 	record, err := r.store.FindLocalAccount(ctx, normalized)
 	if err != nil {
@@ -100,8 +104,8 @@ func (r *Runtime) RequestPasswordResetWithReceipt(
 			}
 			return fmt.Errorf("create password reset: %w", err)
 		}
-		if err := r.enqueueNotification(txCtx, "password_reset", record.Account, Notification{
-			Template: "password_reset",
+		if err := r.enqueueNotification(txCtx, passwordResetNotificationType, record.Account, Notification{
+			Template: passwordResetNotificationType,
 			To:       record.Account.PrimaryEmail.DisplayValue,
 			Data: map[string]string{
 				"reset_url":            resetURL,
@@ -128,26 +132,40 @@ func (r *Runtime) ResetPassword(ctx context.Context, rawToken, newPassword strin
 	if r.notificationDelivery == NotificationDeliveryDisabled {
 		return ErrNotificationDeliveryDisabled
 	}
-	if err := r.passwordPolicy.Validate(newPassword); err != nil {
-		return err
+	if r.passwordResetRecipientResolver == nil {
+		if err := r.passwordPolicy.Validate(newPassword); err != nil {
+			return err
+		}
 	}
 	token, digest, err := r.secretCodec.Parse(strings.TrimSpace(rawToken), passwordResetSecretPurpose)
 	if err != nil {
 		return ErrInvalidToken
 	}
-	passwordPHC, err := r.hasher.HashPassword(newPassword)
-	if err != nil {
-		return fmt.Errorf("hash replacement password: %w", err)
+	var passwordPHC string
+	if r.passwordResetRecipientResolver == nil {
+		passwordPHC, err = r.hasher.HashPassword(newPassword)
+		if err != nil {
+			return fmt.Errorf("hash replacement password: %w", err)
+		}
 	}
 	var outcomeErr error
 	err = r.inNotificationTransaction(ctx, func(txCtx context.Context) error {
 		now := r.now().UTC()
-		result, err := r.store.ConsumePasswordReset(txCtx, PasswordResetConsumeRequest{
+		request := PasswordResetConsumeRequest{
 			Selector:    token.selector,
 			Digest:      digest,
 			PasswordPHC: passwordPHC,
 			Now:         now,
-		})
+		}
+		var result PasswordResetConsumeResult
+		var recipient string
+		var err error
+		if r.passwordResetRecipientResolver != nil {
+			result, recipient, err = r.consumePasswordResetForRecipient(txCtx, request, newPassword)
+		} else {
+			result, err = r.store.ConsumePasswordReset(txCtx, request)
+			recipient = result.Account.PrimaryEmail.DisplayValue
+		}
 		if err != nil {
 			return fmt.Errorf("consume password reset: %w", err)
 		}
@@ -165,7 +183,7 @@ func (r *Runtime) ResetPassword(ctx context.Context, rawToken, newPassword strin
 		}
 		if err := r.enqueueNotification(txCtx, "password_reset_success", result.Account, Notification{
 			Template: "password_reset_success",
-			To:       result.Account.PrimaryEmail.DisplayValue,
+			To:       recipient,
 		}); err != nil {
 			return err
 		}
@@ -309,7 +327,7 @@ func (r *Runtime) takeIdentifierRateLimit(
 		return false, err
 	}
 	// Reset issuance deliberately preserves its enumeration-safe accepted response.
-	if !result.Allowed && action != "password_reset" {
+	if !result.Allowed && action != passwordResetNotificationType {
 		return false, r.limited(ErrAuthenticationRateLimited, result.RetryAt)
 	}
 

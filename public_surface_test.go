@@ -69,6 +69,13 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = (*goauth.Runtime).VerifyJWT
 	_ = (*goauth.Runtime).AuthenticateSession
 	_ = (*goauth.Runtime).RequestPasswordResetWithReceipt
+	_ = goauth.Config{PasswordResetRecipientResolver: publicPasswordResetRecipientResolver{}}
+	var subjectResets goauth.PasswordResetSubjectStore = (*postgres.Store)(nil)
+	var fixtureSubjectResets goauth.PasswordResetSubjectStore = (*testkit.Store)(nil)
+	_ = subjectResets
+	_ = fixtureSubjectResets
+	_ = (*postgres.Runtime).InvalidatePasswordResets
+	_ = (*testkit.Store).InvalidatePasswordResets
 	_ = goauth.PasswordResetReceipt{SubjectID: goauth.SubjectID{}, Selector: ""}
 	_ = goauth.ErrOperationOutcomeUnknown
 	_ = goauth.ErrRateLimitTransactionUnsupported
@@ -406,4 +413,24 @@ func TestReleaseDocsDoNotContainMachineLocalPaths(t *testing.T) {
 			t.Fatalf("%s contains a machine-local path", filename)
 		}
 	}
+}
+
+type publicPasswordResetRecipientResolver struct{}
+
+func (publicPasswordResetRecipientResolver) LookupPasswordResetSubject(context.Context, string) (goauth.SubjectID, error) {
+	return goauth.SubjectID{}, goauth.ErrAccountNotFound
+}
+
+func (publicPasswordResetRecipientResolver) ResolvePasswordResetRecipient(
+	context.Context, goauth.Account, string,
+) (string, error) {
+	return "", goauth.ErrAccountNotFound
+}
+
+var _ goauth.PasswordResetRecipientResolver = publicPasswordResetRecipientResolver{}
+
+func (publicPasswordResetRecipientResolver) PreparePasswordResetPassword(
+	context.Context, goauth.Account, string,
+) (string, error) {
+	return "", nil
 }

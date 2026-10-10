@@ -73,10 +73,13 @@
 - Password reset is selector-based, contains no email in the URL, and updates
   the credential, security version, reset record, sessions, and refresh
   families in one transaction.
-- Reset issuance checks the active subject, current primary email, and
-  security version under the subject lock. Password, email, or status changes
-  invalidate outstanding reset records; custom stores must preserve these
-  guards.
+- Default reset issuance checks the active subject, current primary email, and
+  security version under the subject lock. An explicitly configured host recipient
+  resolver may authorize a recovery alias for the same canonical subject, requiring
+  an existing local credential, current version, and locked recipient revalidation.
+  Password, email, status, and host recovery-alias changes invalidate outstanding
+  reset records atomically; change-away-and-back cannot revive them. Custom stores
+  and senders must preserve these guards. See docs/password-reset-recipients.md.
 - Email confirmation records are append-only. Wrong attempts commit before the
   typed error returns. Issuance uses atomic rolling-window events and rejects
   an account snapshot whose primary email or security version changed before

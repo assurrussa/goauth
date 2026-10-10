@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/assurrussa/goauth"
+	"github.com/assurrussa/goauth/internal/authclock"
 )
 
 type Store struct {
@@ -609,6 +610,15 @@ func (s *Store) ConsumePasswordReset(
 	ctx context.Context,
 	request goauth.PasswordResetConsumeRequest,
 ) (goauth.PasswordResetConsumeResult, error) {
+	return s.consumePasswordReset(ctx, request, nil)
+}
+
+func (s *Store) consumePasswordReset(
+	ctx context.Context, request goauth.PasswordResetConsumeRequest,
+	prepare func(context.Context, goauth.Account) (string, error),
+) (goauth.PasswordResetConsumeResult, error) {
+	started := time.Now()
+	origin := request.Now
 	s = s.scoped(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -624,8 +634,38 @@ func (s *Store) ConsumePasswordReset(
 	if record.ConsumedAt != nil {
 		return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetUsed}, nil
 	}
+	if prepare != nil {
+		request.Now = authclock.Now(ctx, origin, started)
+	}
 	if !request.Now.Before(record.ExpiresAt) {
 		return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetExpired}, nil
+	}
+	if s.passwords[record.SubjectID.String()] == "" {
+		return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetInvalid}, nil
+	}
+
+	if prepare != nil {
+		// The outer transaction owns the original store mutex. Release only
+		// the isolated working-copy mutex so host reads can join this context.
+		s.mu.Unlock()
+		preparedPHC, err := func() (string, error) {
+			defer s.mu.Lock()
+			return prepare(ctx, cloneAccount(account))
+		}()
+		if err != nil {
+			return goauth.PasswordResetConsumeResult{}, err
+		}
+		if err := ctx.Err(); err != nil {
+			return goauth.PasswordResetConsumeResult{}, err
+		}
+		if preparedPHC == "" {
+			return goauth.PasswordResetConsumeResult{}, goauth.ErrInvalidPassword
+		}
+		request.PasswordPHC = preparedPHC
+		request.Now = authclock.Now(ctx, origin, started)
+		if !request.Now.Before(record.ExpiresAt) {
+			return goauth.PasswordResetConsumeResult{Status: goauth.PasswordResetExpired}, nil
+		}
 	}
 	s.passwords[record.SubjectID.String()] = request.PasswordPHC
 	s.passwordPolicies[record.SubjectID.String()] = goauth.PasswordInputPolicyUnicode

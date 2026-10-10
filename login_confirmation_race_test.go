@@ -279,7 +279,7 @@ func TestLoginConfirmationRetryRejectsChangedIdentity(t *testing.T) {
 				case "email scheme":
 					account.PrimaryEmail.Scheme = employeeIdentifierScheme
 				default:
-					account.PrimaryEmail.NormalizedValue = "other@example.test"
+					account.PrimaryEmail.NormalizedValue = otherTestEmail
 				}
 				return account
 			}
