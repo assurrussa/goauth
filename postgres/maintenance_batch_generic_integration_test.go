@@ -24,16 +24,16 @@ SELECT 'batch-reset-'||g,$1,'fixture',decode(repeat('00',32),'hex'),$2::timestam
 CASE WHEN g<=5 THEN $2::timestamptz-interval '24 hours 1 microsecond' ELSE $2::timestamptz-interval '24 hours' END
 FROM generate_series(1,6) g`,
 		`INSERT INTO auth_email_challenges
-(id,subject_id,identifier_id,purpose,key_id,code_digest,created_at,expires_at)
+(id,subject_id,identifier_id,purpose,key_id,code_digest,max_attempts,created_at,expires_at)
 SELECT md5('batch-challenge-'||g)::uuid,$1,
 (SELECT id FROM auth_identifiers WHERE subject_id=$1 AND scheme='email' AND is_primary),
-'verification','fixture',decode(repeat('00',32),'hex'),$2::timestamptz-interval '4 days',
+'verification','fixture',decode(repeat('00',32),'hex'),5,$2::timestamptz-interval '4 days',
 CASE WHEN g<=5 THEN $2::timestamptz-interval '24 hours 1 microsecond' ELSE $2::timestamptz-interval '24 hours' END
 FROM generate_series(1,6) g`,
 		`INSERT INTO auth_email_change_records
-(id,subject_id,new_display_value,new_normalized_value,key_id,code_digest,created_at,expires_at)
+(id,subject_id,new_display_value,new_normalized_value,key_id,code_digest,max_attempts,created_at,expires_at)
 SELECT md5('batch-change-'||g)::uuid,$1,'batch-'||g||'@example.test','batch-'||g||'@example.test',
-'fixture',decode(repeat('00',32),'hex'),$2::timestamptz-interval '4 days',
+'fixture',decode(repeat('00',32),'hex'),5,$2::timestamptz-interval '4 days',
 CASE WHEN g<=5 THEN $2::timestamptz-interval '24 hours 1 microsecond' ELSE $2::timestamptz-interval '24 hours' END
 FROM generate_series(1,6) g`,
 		`INSERT INTO auth_rate_limit_events(subject_id,key_id,bucket_digest,action,occurred_at)

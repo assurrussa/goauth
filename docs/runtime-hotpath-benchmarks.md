@@ -130,12 +130,16 @@ a PostgreSQL or production baseline. A real-store run still needs its own
 disposable canonical schema, database/version/pool configuration, dataset sizes,
 realm/membership workload, and separately reviewed measurement fixtures.
 
-## Candidate status
+## Validation evidence
 
-Prepared against `assurrussa/goauth` commit
-`4e85000d6343ed73e9b86e8e57c00f1a69357811` on 2026-10-10 UTC.
-This candidate's compile, benchmark, test, race, vet, and lint execution is
-`NOT_RUN` because runtime execution requires filesystem/cache/temp writes that
-are currently blocked. No timings or allocation numbers have been produced.
-Read-only formatting and source review are recorded separately; neither is a
-compile or execution pass. No publication, merge, or CI configuration change.
+The manually dispatched CI workflow compiles the fixtures and runs a 12-operation
+smoke check. Inspect the exact source commit's run logs to confirm that all four
+Runtime cases and all five RBAC cases executed successfully. A configured step,
+source review, or zero exit status without the expected case rows does not prove
+that every benchmark ran.
+
+Smoke runs validate fixture behavior, including bounded login quota state beyond
+ten operations. Their short timing rows are not a retained performance baseline.
+Use the repeated-run procedure and matching configuration above before drawing
+performance conclusions. Keep actual pass, failure, and skipped-stage evidence
+with the relevant commit or pull request rather than inferring it from this guide.
