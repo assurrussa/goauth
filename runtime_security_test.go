@@ -23,6 +23,7 @@ const (
 	ssoOnlySubject           = "sso-only"
 	testAudience             = "test"
 	testEmail                = "Security.User@Example.Test"
+	otherTestEmail           = "other@example.test"
 	invalidTestEmail         = "not-an-email"
 	testNotificationTemplate = "test"
 	testOIDCIssuer           = "https://idp.example.test"

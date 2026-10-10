@@ -30,7 +30,7 @@ func TestDisabledDeliveryAllowsPasswordAndRejectsRecoveryBeforeAdmission(t *test
 		require.ErrorIs(t, fixture.Runtime.SendEmailChallenge(
 			t.Context(), account.Subject.ID, goauth.EmailChallengePurposeVerification), goauth.ErrNotificationDeliveryDisabled)
 		require.ErrorIs(t, fixture.Runtime.RequestEmailChangeWithPassword(t.Context(), goauth.PasswordEmailChangeRequest{
-			SubjectID: account.Subject.ID, CurrentPassword: "disabled-command-password", NewEmail: "other@example.test",
+			SubjectID: account.Subject.ID, CurrentPassword: "disabled-command-password", NewEmail: otherTestEmail,
 		}), goauth.ErrNotificationDeliveryDisabled)
 	}
 	_, err = fixture.Runtime.Login(t.Context(), loginRequest(testEmail, testPassword, goauth.RealmUser))

@@ -107,13 +107,13 @@ func (s *Store) notificationCurrent(ctx context.Context, event goauth.EncryptedE
 	var current bool
 	switch event.Type {
 	case "password_reset":
-		err := s.db.QueryRowContext(ctx, `SELECT EXISTS (
+		err := s.queryer(ctx).QueryRowContext(ctx, `SELECT EXISTS (
     SELECT 1 FROM auth_password_reset_records
     WHERE selector = $1 AND subject_id = $2 AND consumed_at IS NULL AND expires_at > $3
 )`, event.ReferenceID, event.SubjectID, now).Scan(&current)
 		return current, err
 	case "email_challenge":
-		err := s.db.QueryRowContext(ctx, `SELECT EXISTS (
+		err := s.queryer(ctx).QueryRowContext(ctx, `SELECT EXISTS (
     SELECT 1 FROM auth_email_challenges c
     JOIN auth_identifiers i ON i.id = c.identifier_id AND i.subject_id = c.subject_id
     JOIN auth_subjects s ON s.id = c.subject_id
@@ -127,7 +127,7 @@ func (s *Store) notificationCurrent(ctx context.Context, event goauth.EncryptedE
 )`, event.ReferenceID, event.SubjectID, now).Scan(&current)
 		return current, err
 	case "email_change":
-		err := s.db.QueryRowContext(ctx, `SELECT EXISTS (
+		err := s.queryer(ctx).QueryRowContext(ctx, `SELECT EXISTS (
     SELECT 1 FROM auth_email_change_records c
     JOIN auth_subjects s ON s.id = c.subject_id
     WHERE c.id = $1 AND c.subject_id = $2 AND c.consumed_at IS NULL

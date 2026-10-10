@@ -20,7 +20,7 @@ const loginScheme goauth.IdentifierScheme = "host_login"
 func main() {
 	if err := run(); err != nil {
 		// Database errors can contain connection details. Do not print them or secrets.
-		fmt.Fprintln(os.Stderr, "host-session example failed; check the isolated database configuration")
+		_, _ = fmt.Fprintln(os.Stderr, "host-session example failed; check the isolated database configuration")
 		os.Exit(1)
 	}
 	if _, err := fmt.Fprintln(os.Stdout,
