@@ -12,6 +12,7 @@ on:
         options:
           - full
           - fixtures
+          - baseline
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -22,6 +23,7 @@ permissions:
 
 jobs:
   verify:
+    if: ${{ inputs.validation_scope != 'baseline' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
@@ -95,3 +97,138 @@ jobs:
       - name: Reachable vulnerability gate
         if: ${{ inputs.validation_scope != 'fixtures' }}
         run: make vulnerability-check
+
+  baseline:
+    if: ${{ inputs.validation_scope == 'baseline' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOMAXPROCS: "1"
+      GOGC: "100"
+      GOMEMLIMIT: "off"
+      GOFLAGS: "-mod=readonly"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Capture retained in-memory samples
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/goauth-hotpath-baseline"
+          mkdir "$out"
+          exec > >(tee "$out/capture.log") 2>&1
+          finish() {
+            status=$?
+            printf 'capture_exit_status=%s\nfinished_utc=%s\n' "$status" "$(date -u +%FT%TZ)" >> "$out/metadata.txt"
+            { uptime; free -b; } > "$out/host-after.txt"
+            exit "$status"
+          }
+          trap finish EXIT
+          test -z "$(git status --porcelain)"
+          {
+            printf 'started_utc=%s\nsource_commit=%s\nsource_tree=%s\napplied_patches=none\n' \
+              "$(date -u +%FT%TZ)" "$(git rev-parse HEAD)" "$(git rev-parse HEAD^{tree})"
+            printf 'run_url=%s/%s/actions/runs/%s\nrun_attempt=%s\n' \
+              "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT"
+            printf 'runner_os=%s\nrunner_arch=%s\nimage_os=%s\nimage_version=%s\n' \
+              "$RUNNER_OS" "$RUNNER_ARCH" "${ImageOS:-unknown}" "${ImageVersion:-unknown}"
+            printf 'GOMAXPROCS=%s\nGOGC=%s\nGOMEMLIMIT=%s\nGOFLAGS=%s\n' \
+              "$GOMAXPROCS" "$GOGC" "$GOMEMLIMIT" "$GOFLAGS"
+            printf 'benchtime=100x\ncount=5\ncpu=1\nrace=false\nbackend=testkit.Store/fixtureTransaction; RBAC test doubles\n'
+            go version
+            go env -json GOOS GOARCH GOVERSION CGO_ENABLED GOAMD64 GOARM64 GOEXPERIMENT GOTOOLCHAIN
+            uname -a
+            cat /etc/os-release
+            lscpu
+            nproc
+            uptime
+            free -b
+          } > "$out/metadata.txt"
+          git diff --binary HEAD > "$out/source.diff"
+          sha256sum .github/workflows/ci.yml docs/runtime-hotpath-benchmarks.md \
+            testkit/hotpath_benchmark_test.go rbac/benchmark_test.go go.mod go.sum > "$out/source.sha256"
+          cp docs/runtime-hotpath-benchmarks.md "$out/configuration.md"
+          run_sample() {
+            label=$1
+            shift
+            printf '%s command:' "$label" >> "$out/commands.txt"
+            printf ' %q' "$@" >> "$out/commands.txt"
+            printf '\n%s started_utc=%s\n' "$label" "$(date -u +%FT%TZ)" >> "$out/commands.txt"
+            statuses=(0 0)
+            "$@" 2>&1 | tee "$out/$label.raw.txt" || statuses=("${PIPESTATUS[@]}")
+            printf '%s command_exit_status=%s tee_exit_status=%s finished_utc=%s\n' \
+              "$label" "${statuses[0]}" "${statuses[1]}" "$(date -u +%FT%TZ)" >> "$out/commands.txt"
+            if (( statuses[0] != 0 )); then
+              return "${statuses[0]}"
+            fi
+            return "${statuses[1]}"
+          }
+          run_sample runtime go test ./testkit -run='^$' -bench='^BenchmarkRuntimeHotPaths$' -benchtime=100x -count=5 -cpu=1 -benchmem
+          run_sample rbac go test ./rbac -run='^$' -bench='^BenchmarkCheck$' -benchtime=100x -count=5 -cpu=1 -benchmem
+          python3 - "$out" <<'PY'
+          import collections
+          import decimal
+          import pathlib
+          import sys
+
+          root = pathlib.Path(sys.argv[1])
+          suites = {
+              "runtime": ("testkit", [
+                  "BenchmarkRuntimeHotPaths/testkit/user/Login/argon2id_m19456_t2_p1",
+                  "BenchmarkRuntimeHotPaths/testkit/user/VerifyJWT/offline_HS256",
+                  "BenchmarkRuntimeHotPaths/testkit/user/AuthenticateSession/storage_HS256",
+                  "BenchmarkRuntimeHotPaths/testkit/user/Refresh/success_first_rotation",
+              ]),
+              "rbac": ("rbac", [
+                  "BenchmarkCheck/uncached_allow",
+                  "BenchmarkCheck/uncached_deny",
+                  "BenchmarkCheck/cache_hit_allow",
+                  "BenchmarkCheck/cache_hit_deny",
+                  "BenchmarkCheck/cache_miss",
+              ]),
+          }
+          total = 0
+          for label, (package, names) in suites.items():
+              lines = (root / f"{label}.raw.txt").read_text().splitlines()
+              counts = collections.Counter()
+              package_passes = 0
+              for line in lines:
+                  fields = line.split()
+                  if not fields:
+                      continue
+                  if fields[0] == "ok" and len(fields) > 1 and fields[1] == f"github.com/assurrussa/goauth/{package}":
+                      package_passes += 1
+                  if fields[0] == "FAIL" or line.startswith(("--- FAIL:", "panic:", "fatal error:")):
+                      raise SystemExit(f"{label}: failure in raw output: {line}")
+                  if not fields[0].startswith("Benchmark"):
+                      continue
+                  if len(fields) != 8 or fields[0] not in names or fields[1] != "100":
+                      raise SystemExit(f"{label}: unexpected benchmark row: {line}")
+                  if fields[3::2] != ["ns/op", "B/op", "allocs/op"]:
+                      raise SystemExit(f"{label}: missing benchmark metrics: {line}")
+                  for value in fields[2::2]:
+                      number = decimal.Decimal(value)
+                      if not number.is_finite() or number < 0:
+                          raise SystemExit(f"{label}: invalid benchmark metric: {line}")
+                  counts[fields[0]] += 1
+              if counts != collections.Counter({name: 5 for name in names}):
+                  raise SystemExit(f"{label}: missing or excess repeated rows: {dict(counts)}")
+              if lines.count("PASS") != 1 or package_passes != 1:
+                  raise SystemExit(f"{label}: missing or duplicate package success marker")
+              total += sum(counts.values())
+          print(f"PASS: {total} rows; 4 Runtime + 5 RBAC cases, 5 repetitions, 100 operations each.")
+          PY
+          test -z "$(git status --porcelain)"
+      - name: Retain raw samples and metadata
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: goauth-hotpath-baseline-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/goauth-hotpath-baseline/
+          retention-days: 90
+          if-no-files-found: error
