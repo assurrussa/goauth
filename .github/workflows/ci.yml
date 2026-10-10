@@ -72,7 +72,7 @@ jobs:
         run: |
           base="$(git merge-base HEAD origin/master)"
           printf 'Tagged lint comparison: base=%s head=%s\n' "$base" "$(git rev-parse HEAD)"
-          golangci-lint run --build-tags=integration --new-from-rev="$base" --whole-files --timeout=5m ./postgres
+          golangci-lint run --build-tags=integration --new-from-rev="$base" --whole-files --uniq-by-line=false --timeout=5m ./postgres
       - name: Runtime and RBAC benchmark smoke
         run: |
           go version
