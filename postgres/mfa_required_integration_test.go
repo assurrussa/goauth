@@ -315,7 +315,7 @@ func TestRequiredMFAVerifyRejectsWeakenedLiveSchema(t *testing.T) {
 	}
 	for name, ddl := range tests {
 		t.Run(name, func(t *testing.T) {
-			f := newMFAIntegrationFixture(t)
+			f := newMFASchemaIntegrationFixture(t)
 			_, err := f.db.ExecContext(t.Context(), ddl)
 			require.NoError(t, err)
 			require.Error(t, postgres.VerifySchema(t.Context(), f.db))

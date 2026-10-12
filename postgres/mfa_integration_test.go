@@ -29,7 +29,8 @@ type mfaIntegrationFixture struct {
 	account goauth.Account
 }
 
-func newMFAIntegrationFixture(t *testing.T) *mfaIntegrationFixture {
+// newMFASchemaIntegrationFixture verifies an empty schema without provisioning or login.
+func newMFASchemaIntegrationFixture(t *testing.T) *mfaIntegrationFixture {
 	t.Helper()
 	db := integrationDB(t)
 	resetSchema(t, db)
@@ -45,6 +46,13 @@ func newMFAIntegrationFixture(t *testing.T) *mfaIntegrationFixture {
 	f.config = config
 	f.runtime, err = postgres.NewRuntime(postgres.Config{DB: db, Runtime: config})
 	require.NoError(t, err)
+	return f
+}
+
+func newMFAIntegrationFixture(t *testing.T) *mfaIntegrationFixture {
+	t.Helper()
+	f := newMFASchemaIntegrationFixture(t)
+	var err error
 	f.account, err = f.runtime.ProvisionTrustedLocalAccount(context.Background(),
 		goauth.RegisterRequest{Email: "mfa-owner@example.test", Password: mfaIntegrationPassword})
 	require.NoError(t, err)
