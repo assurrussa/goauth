@@ -1,7 +1,8 @@
 package goauth_test
 
 import (
-	"strings"
+	"crypto/sha256"
+	"encoding/hex"
 	"testing"
 	"time"
 
@@ -15,7 +16,9 @@ import (
 const admissionPassword = "Isolated-Credential-Admission-Passphrase-42"
 
 func TestCredentialAdmissionSeparatesRepeatedSuccessFromLoginAndPasswordChange(t *testing.T) {
+	hasher := &admissionTestHasher{}
 	f, err := testkit.NewRuntime(func(config *goauth.Config) {
+		config.PasswordHasher = hasher
 		// Keep admission attempts in one window regardless of real hashing duration.
 		config.Now = func() time.Time { return time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC) }
 		config.LoginRateLimit = goauth.RateLimitPolicy{Window: time.Hour, Limit: 2}
@@ -38,6 +41,7 @@ func TestCredentialAdmissionSeparatesRepeatedSuccessFromLoginAndPasswordChange(t
 	credential.Identifier.Value = "admission@example.test"
 	_, err = f.Runtime.VerifyCredential(t.Context(), credential)
 	require.ErrorIs(t, err, goauth.ErrAuthenticationRateLimited)
+	require.Equal(t, 12, hasher.verifications, "rate-limited credential checks must not reach the hasher")
 
 	credential.Password = "wrong-synthetic-passphrase"
 	for range 2 {
@@ -47,6 +51,7 @@ func TestCredentialAdmissionSeparatesRepeatedSuccessFromLoginAndPasswordChange(t
 	credential.Password = admissionPassword
 	_, err = f.Runtime.Login(t.Context(), goauth.LoginRequest{Credential: credential})
 	require.ErrorIs(t, err, goauth.ErrAuthenticationRateLimited, "login must retain its smaller configured limit")
+	require.Equal(t, 14, hasher.verifications, "rate-limited login must not reach the hasher")
 
 	for range 2 {
 		_, err = f.Runtime.ChangePassword(t.Context(), goauth.ChangePasswordRequest{
@@ -59,10 +64,13 @@ func TestCredentialAdmissionSeparatesRepeatedSuccessFromLoginAndPasswordChange(t
 	})
 	require.ErrorIs(t, err, goauth.ErrAuthenticationRateLimited,
 		"password changes must retain their smaller configured limit")
+	require.Equal(t, 16, hasher.verifications, "rate-limited password changes must not reach the hasher")
 }
 
 func TestCredentialAdmissionDefaultsToExistingLoginPolicy(t *testing.T) {
+	hasher := &admissionTestHasher{}
 	f, err := testkit.NewRuntime(func(config *goauth.Config) {
+		config.PasswordHasher = hasher
 		// Keep admission attempts in one window regardless of real hashing duration.
 		config.Now = func() time.Time { return time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC) }
 		config.LoginRateLimit = goauth.RateLimitPolicy{Window: time.Minute, Limit: 3}
@@ -82,6 +90,7 @@ func TestCredentialAdmissionDefaultsToExistingLoginPolicy(t *testing.T) {
 	}
 	_, err = f.Runtime.VerifyCredential(t.Context(), credential)
 	require.ErrorIs(t, err, goauth.ErrAuthenticationRateLimited)
+	require.Equal(t, 3, hasher.verifications, "inherited admission must reject before the hasher")
 }
 
 func TestCredentialAdmissionRejectsUnboundedOrPartialPolicy(t *testing.T) {
@@ -99,23 +108,20 @@ func TestCredentialAdmissionRejectsUnboundedOrPartialPolicy(t *testing.T) {
 	}
 }
 
-func TestCredentialAdmissionBoundsRepeatedLegacyIdentityChecks(t *testing.T) {
-	f := localIdentityFixture(t, func(config *goauth.Config) {
-		// Keep admission attempts in one window regardless of real hashing duration.
-		config.Now = func() time.Time { return time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC) }
-		config.CredentialVerificationRateLimit = goauth.RateLimitPolicy{Window: time.Minute, Limit: 12}
-	})
-	password := strings.Repeat("x", 129)
-	request := localIdentityImport(password)
-	account, err := f.Runtime.ImportLocalIdentity(t.Context(), request)
-	require.NoError(t, err)
-	credential := goauth.Credential{Identifier: request.Identifier, Password: password}
-	for range 12 {
-		verified, err := f.Runtime.VerifyCredential(t.Context(), credential)
-		require.NoError(t, err)
-		require.Equal(t, account.Subject.ID, verified.Subject.ID)
-		require.Zero(t, verified.PrimaryEmail)
+// admissionTestHasher uses a deliberately cheap digest for synthetic test credentials only.
+// Its counter is used only by the sequential admission tests above.
+type admissionTestHasher struct{ verifications int }
+
+func (*admissionTestHasher) HashPassword(password string) (string, error) {
+	digest := sha256.Sum256([]byte(password))
+	return hex.EncodeToString(digest[:]), nil
+}
+
+func (h *admissionTestHasher) VerifyPassword(phc, password string) error {
+	h.verifications++
+	digest := sha256.Sum256([]byte(password))
+	if phc != hex.EncodeToString(digest[:]) {
+		return goauth.ErrInvalidCredentials
 	}
-	_, err = f.Runtime.VerifyCredential(t.Context(), credential)
-	require.ErrorIs(t, err, goauth.ErrAuthenticationRateLimited)
+	return nil
 }

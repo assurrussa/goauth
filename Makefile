@@ -14,6 +14,7 @@ export GOCACHE GOMODCACHE
 .DEFAULT_GOAL := full
 
 .PHONY: full prepare check tidy-check tidy generate fmt fmt-check fmt-tooling-test lint lint-fix vet test test-full test-race bench-all cover-html coverage-unit-check coverage-integration-check coverage-aggregate integration integration-up integration-down integration-local vulnerability-check externalconsumer-local externalconsumer-postgres-local externalconsumer-published release-candidate-readiness release-readiness release-tooling-test release-source-check public-module-check browser-acceptance backup-restore-check release-evidence-check public-preview-readiness
+.PHONY: integration-credential-admission
 
 GO_MODULE := $(shell awk '$$1 == "module" { print $$2; exit }' go.mod)
 GO_FILES := $(shell find . -type f -name '*.go' -not -path './.cache/*' -not -path './.go-cache/*' -not -path './tmp/*' -not -path './vendor/*')
@@ -116,9 +117,14 @@ cover-html: test-full
 	go tool cover -html=$(COVERAGE_UNIT) -o ./cover.html
 
 integration:
+	$(MAKE) integration-credential-admission
 	go test -race -tags=integration -covermode=atomic -coverprofile=$(COVERAGE_INTEGRATION) -count=1 ./postgres ./redis
 	$(MAKE) coverage-integration-check
 	$(MAKE) externalconsumer-postgres-local
+
+# Exercise the real legacy admission boundary separately from unit tests.
+integration-credential-admission:
+	go test -race -tags=integration -run '^TestCredentialAdmissionBoundsRepeatedLegacyIdentityChecks$$' -count=1 .
 
 coverage-integration-check:
 	sh ./scripts/check-coverage.sh $(COVERAGE_INTEGRATION) postgres=80 redis=80
