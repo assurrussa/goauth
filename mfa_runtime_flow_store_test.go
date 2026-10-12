@@ -19,9 +19,23 @@ import (
 )
 
 const (
-	mfaFlowPassword = "MFA-runtime-fixture-password-1"
+	mfaFlowPassword = "MFA-runtime-fixture-password-1" //nolint:gosec // G101: Public synthetic fixture, not a real password.
 	mfaFlowEmail    = "mfa-runtime@example.test"
-	mfaFlowSecret   = "JBSWY3DPEHPK3PXP"
+	mfaFlowSecret   = "JBSWY3DPEHPK3PXP" //nolint:gosec // G101: Public synthetic test TOTP secret, never a real credential.
+)
+
+const (
+	mfaCaseSecurityVersion = "security version"
+	mfaCaseBinding         = "binding"
+	mfaCaseExpiry          = "expiry"
+	mfaCaseWrongPassword   = "wrong password"
+	mfaFaultLockFactor     = "lock_factor"
+	mfaCaseEmptyBinding    = "empty binding"
+	mfaCaseExpired         = "expired"
+	mfaInvalidValue        = "invalid"
+	mfaCaseCommitError     = "commit error"
+	mfaCaseRateLimited     = "rate limited"
+	mfaFaultInvalidate     = "invalidate"
 )
 
 var errMFAFlowCommit = errors.New("MFA fixture commit failed")
@@ -156,7 +170,7 @@ func (s *mfaFlowStore) transaction(ctx context.Context, fn func(context.Context)
 func (s *mfaFlowStore) LockMFAFactor(ctx context.Context, _ goauth.SubjectID) (goauth.MFAFactorRecord, error) {
 	factor := s.writeState(ctx).factor
 	factor.Ciphertext = bytes.Clone(factor.Ciphertext)
-	return factor, s.faults["lock_factor"]
+	return factor, s.faults[mfaFaultLockFactor]
 }
 
 func (s *mfaFlowStore) EnsureMFAFactor(ctx context.Context, subject goauth.SubjectID) (goauth.MFAFactorRecord, error) {
@@ -348,7 +362,7 @@ func (s *mfaFlowStore) CancelMFAEnrollment(ctx context.Context, subject goauth.S
 }
 
 func (s *mfaFlowStore) InvalidateMFAState(ctx context.Context, subject goauth.SubjectID) error {
-	if err := s.faults["invalidate"]; err != nil {
+	if err := s.faults[mfaFaultInvalidate]; err != nil {
 		return err
 	}
 	state := s.writeState(ctx)
@@ -376,7 +390,7 @@ func (s *mfaFlowStore) CreateSession(ctx context.Context, record goauth.SessionR
 }
 
 func (s *mfaFlowStore) RecordSecurityEvent(ctx context.Context, event goauth.SecurityEvent) error {
-	if err := s.faults["audit"]; err != nil {
+	if err := s.faults[testAuditStage]; err != nil {
 		return err
 	}
 	if err := s.Store.RecordSecurityEvent(ctx, event); err != nil {
@@ -399,7 +413,7 @@ func (s *mfaFlowStore) MarkMFASessionAdmission(ctx context.Context,
 			(admission != goauth.MFASessionAdmissionFactor || !state.factor.Enabled)) {
 		return goauth.ErrMFALoginDenied
 	}
-	security, err := s.Store.IntrospectSession(ctx, session.ID)
+	security, err := s.IntrospectSession(ctx, session.ID)
 	if err != nil {
 		return err
 	}

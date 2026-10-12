@@ -128,7 +128,7 @@ func TestMFAOptionalEnrollmentRequiresReauthentication(t *testing.T) {
 		{"oversized current code", func(r *goauth.MFAEnrollmentRequest) {
 			r.CurrentCode = strings.Repeat("1", 129)
 		}, goauth.ErrMFALoginDenied},
-		{"wrong password", func(r *goauth.MFAEnrollmentRequest) { r.Password = "incorrect" }, goauth.ErrCurrentPasswordInvalid},
+		{mfaCaseWrongPassword, func(r *goauth.MFAEnrollmentRequest) { r.Password = "incorrect" }, goauth.ErrCurrentPasswordInvalid},
 		{"missing subject", func(r *goauth.MFAEnrollmentRequest) { r.Auth.SubjectID = goauth.NilSubjectID }, goauth.ErrMFALoginDenied},
 		{"missing session", func(r *goauth.MFAEnrollmentRequest) { r.Auth.SessionID = "" }, goauth.ErrMFALoginDenied},
 		{"confirmation scope", func(r *goauth.MFAEnrollmentRequest) {
@@ -152,7 +152,7 @@ func TestMFAOptionalEnrollmentRequiresReauthentication(t *testing.T) {
 }
 
 func TestMFAOptionalEnrollmentStorageFailuresWithholdSecret(t *testing.T) {
-	for _, fault := range []string{"ensure_factor", "lock_factor", "take_attempt", "save_enrollment"} {
+	for _, fault := range []string{"ensure_factor", mfaFaultLockFactor, "take_attempt", "save_enrollment"} {
 		t.Run(fault, func(t *testing.T) {
 			f := newMFAFlowFixture(t, goauth.MFAModeOptional)
 			auth, _ := mfaOptionalSession(t, f)
@@ -218,7 +218,7 @@ func TestMFAOptionalConfirmationChecksEnrollmentBindings(t *testing.T) {
 		{"oversized code", func(r *goauth.MFAEnrollmentConfirmRequest, _ *goauth.MFAEnrollmentRecord) {
 			r.Code = strings.Repeat("1", 129)
 		}},
-		{"empty binding", func(r *goauth.MFAEnrollmentConfirmRequest, _ *goauth.MFAEnrollmentRecord) {
+		{mfaCaseEmptyBinding, func(r *goauth.MFAEnrollmentConfirmRequest, _ *goauth.MFAEnrollmentRecord) {
 			r.Binding = [32]byte{}
 		}},
 		{"different browser", func(r *goauth.MFAEnrollmentConfirmRequest, _ *goauth.MFAEnrollmentRecord) {
@@ -239,7 +239,7 @@ func TestMFAOptionalConfirmationChecksEnrollmentBindings(t *testing.T) {
 		{"not yet valid", func(_ *goauth.MFAEnrollmentConfirmRequest, e *goauth.MFAEnrollmentRecord) {
 			e.CreatedAt = e.CreatedAt.Add(time.Second)
 		}},
-		{"expired", func(_ *goauth.MFAEnrollmentConfirmRequest, e *goauth.MFAEnrollmentRecord) {
+		{mfaCaseExpired, func(_ *goauth.MFAEnrollmentConfirmRequest, e *goauth.MFAEnrollmentRecord) {
 			e.ExpiresAt = e.CreatedAt
 		}},
 	} {
@@ -263,7 +263,7 @@ func TestMFAOptionalConfirmationWrongCodeCommitsAttempt(t *testing.T) {
 	auth, _ := mfaOptionalSession(t, f)
 	enrollment := mfaOptionalEnrollment(t, f, auth)
 	request := mfaOptionalConfirmation(t, f, auth, enrollment)
-	request.Code = "invalid"
+	request.Code = mfaInvalidValue
 	attempts := f.store.state.attempts
 	codes, err := f.runtime.ConfirmMFAEnrollment(t.Context(), request)
 	require.ErrorIs(t, err, goauth.ErrMFALoginDenied)
@@ -311,7 +311,7 @@ func TestMFAOptionalConfirmationFailsClosedOnDamagedSecretOrBudget(t *testing.T)
 
 func TestMFAOptionalConfirmationStorageFailureRollsBack(t *testing.T) {
 	for _, fault := range []string{
-		"lock_factor", "lock_enrollment", "take_attempt", "replace_factor", "replace_recovery", "invalidate", "audit",
+		mfaFaultLockFactor, "lock_enrollment", "take_attempt", "replace_factor", "replace_recovery", mfaFaultInvalidate, testAuditStage,
 	} {
 		t.Run(fault, func(t *testing.T) {
 			f := newMFAFlowFixture(t, goauth.MFAModeOptional)
@@ -364,7 +364,7 @@ func TestMFAOptionalEnrollmentCancellationIsSessionAndBrowserBound(t *testing.T)
 }
 
 func TestMFAOptionalCancellationStorageErrors(t *testing.T) {
-	for _, fault := range []string{"lock_factor", "cancel_enrollment"} {
+	for _, fault := range []string{mfaFaultLockFactor, "cancel_enrollment"} {
 		t.Run(fault, func(t *testing.T) {
 			f := newMFAFlowFixture(t, goauth.MFAModeOptional)
 			auth, _ := mfaOptionalSession(t, f)
@@ -470,11 +470,11 @@ func TestMFAOptionalChangesRejectInvalidProof(t *testing.T) {
 		{"oversized code", func(_ *mfaFlowFixture, r *goauth.MFAChangeRequest) {
 			r.Code = strings.Repeat("1", 129)
 		}, goauth.ErrMFALoginDenied},
-		{"wrong password", func(_ *mfaFlowFixture, r *goauth.MFAChangeRequest) {
+		{mfaCaseWrongPassword, func(_ *mfaFlowFixture, r *goauth.MFAChangeRequest) {
 			r.Password = "incorrect"
 		}, goauth.ErrCurrentPasswordInvalid},
 		{"wrong factor", func(_ *mfaFlowFixture, r *goauth.MFAChangeRequest) {
-			r.Code = "invalid"
+			r.Code = mfaInvalidValue
 		}, goauth.ErrMFALoginDenied},
 		{"disabled factor", func(f *mfaFlowFixture, _ *goauth.MFAChangeRequest) {
 			f.store.state.factor.Enabled = false
@@ -505,7 +505,7 @@ func TestMFAOptionalChangesRejectInvalidProof(t *testing.T) {
 func TestMFAOptionalChangesStorageFailuresRollBack(t *testing.T) {
 	for _, operation := range []string{"disable", "regenerate"} {
 		for _, fault := range []string{
-			"lock_factor", "take_attempt", "advance_step", "replace_factor", "replace_recovery", "invalidate", "audit",
+			mfaFaultLockFactor, "take_attempt", "advance_step", "replace_factor", "replace_recovery", mfaFaultInvalidate, testAuditStage,
 		} {
 			t.Run(operation+"/"+fault, func(t *testing.T) {
 				f := newMFAFlowFixture(t, goauth.MFAModeOptional)

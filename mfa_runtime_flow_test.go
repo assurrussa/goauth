@@ -50,13 +50,15 @@ func TestMFARuntimeRequiredLoginPublishesOnlyPending(t *testing.T) {
 }
 
 func TestMFARuntimeBeginLoginFailsClosed(t *testing.T) {
-	for _, scenario := range []string{"empty binding", "factor error", "pending error", "commit error", "expiry after commit"} {
+	for _, scenario := range []string{
+		mfaCaseEmptyBinding, "factor error", "pending error", mfaCaseCommitError, "expiry after commit",
+	} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newMFAFlowFixture(t, goauth.MFAModeRequired)
 			binding := f.binding
 			want := goauth.ErrMFALoginDenied
 			switch scenario {
-			case "empty binding":
+			case mfaCaseEmptyBinding:
 				binding = [32]byte{}
 			case "factor error":
 				f.store.faults["ensure_factor"] = errMFAFlowCommit
@@ -64,7 +66,7 @@ func TestMFARuntimeBeginLoginFailsClosed(t *testing.T) {
 			case "pending error":
 				f.store.faults["create_pending"] = errMFAFlowCommit
 				want = errMFAFlowCommit
-			case "commit error":
+			case mfaCaseCommitError:
 				f.store.failCommitAt = 1
 				want = errMFAFlowCommit
 			case "expiry after commit":
@@ -197,19 +199,19 @@ func TestMFARuntimeRequiredEnrollmentCommitsAuthorityAtomically(t *testing.T) {
 }
 
 func TestMFARuntimeEnrollmentRejectsInvalidContinuation(t *testing.T) {
-	for _, scenario := range []string{"binding", "expired", "factor revision", "security version", "factor purpose"} {
+	for _, scenario := range []string{mfaCaseBinding, mfaCaseExpired, "factor revision", mfaCaseSecurityVersion, "factor purpose"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newMFAFlowFixture(t, goauth.MFAModeRequired)
 			pending := f.begin(t)
 			binding := f.binding
 			switch scenario {
-			case "binding":
+			case mfaCaseBinding:
 				binding[0]++
-			case "expired":
+			case mfaCaseExpired:
 				f.now = pending.ExpiresAt
 			case "factor revision":
 				f.store.state.factor.Revision++
-			case "security version":
+			case mfaCaseSecurityVersion:
 				_, err := f.runtime.LogoutAll(t.Context(), f.account.Subject.ID)
 				require.NoError(t, err)
 			case "factor purpose":
@@ -231,7 +233,7 @@ func TestMFARuntimeEnrollmentDenialsCommitOnlyAttemptBudget(t *testing.T) {
 	for _, limited := range []bool{false, true} {
 		name := "incorrect code"
 		if limited {
-			name = "rate limited"
+			name = mfaCaseRateLimited
 		}
 		t.Run(name, func(t *testing.T) {
 			f := newMFAFlowFixture(t, goauth.MFAModeRequired)
@@ -242,7 +244,7 @@ func TestMFARuntimeEnrollmentDenialsCommitOnlyAttemptBudget(t *testing.T) {
 				f.store.attemptLimit = before.attempts
 				want = goauth.ErrAuthenticationRateLimited
 			}
-			result, err := f.runtime.CompleteLocalLoginEnrollment(t.Context(), pending.ID, setup.ID, f.binding, "invalid")
+			result, err := f.runtime.CompleteLocalLoginEnrollment(t.Context(), pending.ID, setup.ID, f.binding, mfaInvalidValue)
 			require.ErrorIs(t, err, want)
 			require.Empty(t, result)
 			if !limited {
@@ -258,8 +260,8 @@ func TestMFARuntimeEnrollmentDenialsCommitOnlyAttemptBudget(t *testing.T) {
 
 func TestMFARuntimeEnrollmentRollsBackEveryAuthorityWrite(t *testing.T) {
 	for _, operation := range []string{
-		"replace_factor", "replace_recovery", "consume_pending", "invalidate",
-		"create_session", "mark_admission", "audit", "commit",
+		"replace_factor", "replace_recovery", "consume_pending", mfaFaultInvalidate,
+		"create_session", "mark_admission", testAuditStage, "commit",
 	} {
 		t.Run(operation, func(t *testing.T) {
 			f := newMFAFlowFixture(t, goauth.MFAModeRequired)
@@ -321,7 +323,7 @@ func TestMFARuntimeEnrollmentWithholdsSecretsOnUncertainCommit(t *testing.T) {
 }
 
 func TestMFARuntimeEnrollmentRechecksAfterTokenPreparation(t *testing.T) {
-	for _, scenario := range []string{"binding", "setup replacement", "expiry", "factor CAS", "pending CAS"} {
+	for _, scenario := range []string{mfaCaseBinding, "setup replacement", mfaCaseExpiry, "factor CAS", "pending CAS"} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newMFAFlowFixture(t, goauth.MFAModeRequired)
 			pending, setup := f.setup(t)
@@ -332,11 +334,11 @@ func TestMFARuntimeEnrollmentRechecksAfterTokenPreparation(t *testing.T) {
 				}
 				record := f.store.state.pending[pending.ID]
 				switch scenario {
-				case "binding":
+				case mfaCaseBinding:
 					record.BindingDigest[0]++
 				case "setup replacement":
 					record.Setup.ID = mfaFlowID(7)
-				case "expiry":
+				case mfaCaseExpiry:
 					f.now = pending.ExpiresAt
 				case "factor CAS":
 					f.store.reject["replace_factor"] = true
@@ -424,7 +426,8 @@ func TestMFARuntimeOptionalLoginAndFactorCompletion(t *testing.T) {
 
 func TestMFARuntimeFactorDenialsAndRollback(t *testing.T) {
 	for _, scenario := range []string{
-		"wrong code", "rate limited", "wrong binding", "expired", "consume CAS", "session error", "audit error", "commit error",
+		"wrong code", mfaCaseRateLimited, "wrong binding", mfaCaseExpired,
+		"consume CAS", "session error", "audit error", mfaCaseCommitError,
 	} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newMFAFlowFixture(t, goauth.MFAModeRequired)
@@ -437,21 +440,21 @@ func TestMFARuntimeFactorDenialsAndRollback(t *testing.T) {
 			durableAttempt := false
 			switch scenario {
 			case "wrong code":
-				code, durableAttempt = "invalid", true
-			case "rate limited":
+				code, durableAttempt = mfaInvalidValue, true
+			case mfaCaseRateLimited:
 				f.store.attemptLimit = 0
 				want = goauth.ErrAuthenticationRateLimited
 			case "wrong binding":
 				binding[0]++
-			case "expired":
+			case mfaCaseExpired:
 				f.now = pending.ExpiresAt
 			case "consume CAS":
 				f.store.reject["consume_pending"] = true
 			case "session error":
 				f.store.faults["create_session"], want = errMFAFlowCommit, errMFAFlowCommit
 			case "audit error":
-				f.store.faults["audit"], want = errMFAFlowCommit, errMFAFlowCommit
-			case "commit error":
+				f.store.faults[testAuditStage], want = errMFAFlowCommit, errMFAFlowCommit
+			case mfaCaseCommitError:
 				f.store.failCommitAt, want = f.store.owned+2, errMFAFlowCommit
 			}
 			result, err := f.runtime.CompleteLocalLogin(t.Context(), pending.ID, binding, code)
@@ -489,9 +492,9 @@ func TestMFARuntimeEnrollmentInputAndAvailabilityGuards(t *testing.T) {
 	_, err = f.runtime.CompleteLocalLoginEnrollment(t.Context(), mfaFlowID(1), mfaFlowID(2), f.binding, "123456")
 	require.ErrorIs(t, err, goauth.ErrMFALoginDenied)
 	f = newMFAFlowFixture(t, goauth.MFAModeRequired)
-	_, err = f.runtime.BeginLocalLoginEnrollment(t.Context(), "invalid", f.binding)
+	_, err = f.runtime.BeginLocalLoginEnrollment(t.Context(), mfaInvalidValue, f.binding)
 	require.ErrorIs(t, err, goauth.ErrMFALoginDenied)
-	_, err = f.runtime.CompleteLocalLoginEnrollment(t.Context(), "invalid", "invalid", f.binding, "123456")
+	_, err = f.runtime.CompleteLocalLoginEnrollment(t.Context(), mfaInvalidValue, mfaInvalidValue, f.binding, "123456")
 	require.ErrorIs(t, err, goauth.ErrMFALoginDenied)
 	_, err = f.runtime.CompleteLocalLogin(t.Context(), mfaFlowID(1), f.binding, strings.Repeat("1", 129))
 	require.ErrorIs(t, err, goauth.ErrMFALoginDenied)
@@ -579,7 +582,7 @@ func mfaFlowRequireAudit(t *testing.T, f *mfaFlowFixture, eventType string) {
 }
 
 func TestMFARuntimeSetupErrorsDoNotPublishEnrollment(t *testing.T) {
-	for _, scenario := range []string{"attempt error", "save error", "commit error", "rate limited"} {
+	for _, scenario := range []string{"attempt error", "save error", mfaCaseCommitError, mfaCaseRateLimited} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newMFAFlowFixture(t, goauth.MFAModeRequired)
 			pending := f.begin(t)
@@ -590,9 +593,9 @@ func TestMFARuntimeSetupErrorsDoNotPublishEnrollment(t *testing.T) {
 				f.store.faults["take_attempt"] = want
 			case "save error":
 				f.store.faults["save_setup"] = want
-			case "commit error":
+			case mfaCaseCommitError:
 				f.store.failCommitAt = f.store.owned + 1
-			case "rate limited":
+			case mfaCaseRateLimited:
 				f.store.attemptLimit = 0
 				want = goauth.ErrAuthenticationRateLimited
 			}
@@ -606,7 +609,7 @@ func TestMFARuntimeSetupErrorsDoNotPublishEnrollment(t *testing.T) {
 
 func TestMFARuntimeFactorPreservesStoreReadErrors(t *testing.T) {
 	fault := errors.New("MFA read unavailable")
-	for _, operation := range []string{"find_pending", "lock_factor", "lock_pending"} {
+	for _, operation := range []string{"find_pending", mfaFaultLockFactor, "lock_pending"} {
 		t.Run(operation, func(t *testing.T) {
 			f := newMFAFlowFixture(t, goauth.MFAModeRequired)
 			f.enableFactor(t)
