@@ -6,40 +6,60 @@ acceptance criteria and sequence of the first public release.
 
 ## Version state
 
-The latest published release is [`v0.6.0`](https://github.com/assurrussa/goauth/releases/tag/v0.6.0),
-commit `ca1933747bd3399a12fff5c70debd32128b67c6d`, using schema 8.
-Unreleased master also uses schema 8.
+The latest published release is [`v0.7.0`](https://github.com/assurrussa/goauth/releases/tag/v0.7.0),
+commit `ebad6820e81b191cf5c3ccf87c0f3c7c449dc509`, using schema 8.
+The current unreleased MFA candidate uses schema 11. This document does not
+select its next tag or claim completed release checks. Existing tags must never
+be reused or moved.
 
-The selected next release is **v0.7.0**, covering the complete reviewed
-post-`v0.6.0` feature and security delta. Version selection does not mean that a
-tag or release exists. Existing tags must never be reused or moved. See the
-[release preparation record](docs/v0.7-release-preparation.md).
+The [v0.7.0 preparation record](docs/v0.7-release-preparation.md) is historical
+evidence for its recorded source, not verification of this candidate. Record the
+final source commit and separately reviewed documentation delta. Candidate
+verification does not establish exact-tag public availability, host acceptance,
+adoption or deployment.
 
-The reviewed preparation baseline is
-`da2d0a0889ceae0dcf3383d6e35cf4b70da1c65e`, tree
-`f743e8a3106978aeb3dec6878f78aae351b9eda8`. On 2026-10-10, one literal
-`make release-candidate-readiness` invocation passed with exit 0 on candidate
-tree `2f32aa180b27d40a4e2904a3067a9bc85fcdba59`. The subsequent status refresh is
-documentation-only; it was reviewed separately and was not the tree on which
-that command ran. Record the final source commit and reviewed documentation
-delta. Candidate verification does not establish exact-tag public availability,
-host acceptance, adoption or deployment.
+Upgrading from `v0.7.0` applies three additive schema steps in order:
 
-Upgrading from `v0.6.0` introduces no new database migration. Preserve existing
-auth state, identifiers, credentials, host projections, keys and security
-history. Do not reset the database or lower migration history. The
+- 8→9: local factor, recovery, attempt-budget, login-continuation and enrollment
+  storage; see [local MFA](docs/local-mfa.md).
+- 9→10: required-MFA setup fields and immutable session-admission provenance;
+  see [required MFA](docs/required-mfa.md).
+- 10→11: host-scoped email-change snapshots;
+  see [scoped email changes](docs/scoped-email-change.md).
+
+`postgres.Migrate` applies the pending steps and verifies the resulting schema
+inside its owned transaction. Preserve published migration bytes and existing
+auth state, identifiers, credentials, host projections, keys and security history.
+Do not reset the database or lower migration history. The
 [v0.6 migration guide](docs/v0.6-migration.md) remains the historical schema 3→8
-upgrade and rollback contract for older installations; it is not evidence of a
-new rehearsal. Schema steps 4 through 8 and their invariants remain in force.
+upgrade contract for older installations; it does not verify the new 8→11 path.
+
+Optional MFA remains the default. Enabling required mode rejects legacy sessions
+with unknown admission and password-only sessions on their next canonical
+authentication or refresh check; affected users must authenticate again.
+Required mode fails construction without a configured valid MFA key ring and
+compatible transactional storage. Verified external admissions remain separate. Offline
+`VerifyJWT` cannot enforce a policy change or revocation before token expiry.
+
+Before upgrading, retain a recoverable database backup and verify its restore
+procedure in disposable storage. Preserve the durable MFA encryption key ring,
+including historical keys needed by existing ciphertext, alongside the other
+required application keys. Do not generate new MFA keys on each process start.
+A database backup without its required keys does not establish recoverability.
 
 Current source requires Go 1.27.2 or newer. Hosts must rebuild with a supported
 patched compiler; a module requirement cannot patch an already-built binary.
 
-Before selecting a rollback binary, review newly enabled recovery-recipient
-policy, queued notifications, public APIs and host integration. Sharing schema 8
-does not prove that an older binary enforces a newly adopted host policy. Drain
-or invalidate affected recovery notifications before removing that policy.
-Older pre-schema-8 binaries remain unsuitable for an upgraded database.
+`postgres.Migrate` does not downgrade schemas. The published schema-8 `v0.7.0` library
+rejects schema 11 as newer than it supports; do not assume an older binary can
+run against an upgraded database. Review rollback to a schema-compatible binary
+or restoration of a pre-upgrade snapshot with its required keys, accounting for
+writes made since that snapshot. `postgres.Down` is a destructive development/
+test reset, not a production rollback mechanism. Review adopted MFA/recovery
+policies, host-scoped email changes, queued notifications and host integration
+before changing binaries; schema compatibility alone does not prove equivalent
+policy enforcement. Drain or invalidate affected recovery notifications before
+removing an adopted recovery-recipient policy.
 
 Before any selected release, run host acceptance at its exact source SHA and
 record each host commit and complete resolved module graph, including the
@@ -58,7 +78,7 @@ its own explicit scope, review and verification.
 
 The published v0.5.0/v0.5.1 code changes Runtime/store contracts and HTTP authorization defaults.
 It preserves the version-3 database and existing rows; no `Down` is required.
-That historical claim does not apply to current schema-8 master.
+That historical claim does not apply to the current schema-11 candidate.
 Read [docs/v0.5-migration.md](docs/v0.5-migration.md), including exact external
 issuer keys and custom transaction wiring. Candidate verification does not
 publish a tag, change visibility, or establish production adoption.
@@ -209,13 +229,13 @@ checks separately. The historical matrix in [docs/compatibility.md](docs/compati
 does not prove adoption of v0.5 or a newer release. Do not infer deployment from tags
 or local tests alone.
 
-### Session-bound profile candidate
+### Session-bound profile baseline
 
-The additive session-bound OIDC surface and schema 8 require the
-[session-bound compatibility and rollout checks](docs/session-bound-oidc.md).
-Keep schema 1–7 migration bytes frozen. This candidate intentionally removes
-legacy refresh Get replay side effects while preserving source compatibility;
+The schema-8 session-bound OIDC surface and its
+[compatibility and rollout checks](docs/session-bound-oidc.md) remain relevant
+to the schema-11 candidate. Keep published migration bytes frozen. That baseline
+removes legacy refresh Get replay side effects while preserving source compatibility;
 release notes must call out the inactive snapshot and authenticated mutation
-replacement. Do not publish the schema independently of its API and a verified
+replacement. Do not publish a schema change independently of its API and a verified
 host consumer. Coordinated migration/restart is required; mixed older writers
 are not supported.
