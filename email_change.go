@@ -25,6 +25,10 @@ func (r *Runtime) requestEmailChange(
 	newEmail string,
 	expected *Account,
 ) error {
+	scope, target, err := r.emailChangeTarget(ctx)
+	if err != nil {
+		return err
+	}
 	if r.notificationDelivery == NotificationDeliveryDisabled {
 		return ErrNotificationDeliveryDisabled
 	}
@@ -53,17 +57,13 @@ func (r *Runtime) requestEmailChange(
 	if account.Subject.Status != SubjectStatusActive {
 		return ErrAccountUnavailable
 	}
-	if account.PrimaryEmail.ID == "" || account.PrimaryEmail.Scheme != IdentifierSchemeEmail {
+	if scope == "" && (account.PrimaryEmail.ID == "" || account.PrimaryEmail.Scheme != IdentifierSchemeEmail) {
 		return ErrInvalidIdentifier
 	}
-	if account.PrimaryEmail.NormalizedValue == normalized.Value {
+	if scope == "" && account.PrimaryEmail.NormalizedValue == normalized.Value {
 		return ErrEmailChangeSameValue
 	}
 	code, err := r.generateEmailCode()
-	if err != nil {
-		return err
-	}
-	digest, err := r.secretCodec.DigestActive(emailChangeSecretPurpose, code)
 	if err != nil {
 		return err
 	}
@@ -80,17 +80,21 @@ func (r *Runtime) requestEmailChange(
 			return err
 		}
 		now := r.now().UTC()
-		issue, err := r.store.IssueEmailChange(txCtx, EmailChangeRecord{
+		record := EmailChangeRecord{
 			ID:                 changeID,
 			SubjectID:          subjectID,
 			NewDisplayValue:    displayEmail,
 			NewNormalizedValue: normalized.Value,
-			Digest:             digest,
 			RateDigest:         rateDigest,
 			MaxAttempts:        5,
 			ExpiresAt:          now.Add(r.emailChangeTTL),
 			CreatedAt:          now,
-		}, EmailChallengeLimits{
+		}
+		record, err = r.sealEmailChangeRecord(txCtx, target, record, account.Subject.SecurityVersion, code)
+		if err != nil {
+			return err
+		}
+		issue, err := r.issueEmailChange(txCtx, record, EmailChallengeLimits{
 			MinResendInterval: time.Minute,
 			PerHour:           5,
 			PerDay:            10,
@@ -113,10 +117,7 @@ func (r *Runtime) requestEmailChange(
 		if err := r.enqueueNotification(txCtx, "email_change", account, Notification{
 			Template: "email_change",
 			To:       displayEmail,
-			Data: map[string]string{
-				"code":                 code,
-				notificationExpiresKey: r.emailChangeTTL.String(),
-			},
+			Data:     emailChangeNotificationData(scope, code, r.emailChangeTTL),
 		}, notificationMetadata{referenceID: changeID, validUntil: now.Add(r.emailChangeTTL)}); err != nil {
 			return err
 		}
@@ -136,7 +137,11 @@ func (r *Runtime) PendingEmailChange(ctx context.Context, subjectID SubjectID) (
 	if subjectID.IsZero() {
 		return PendingEmailChange{}, ErrEmailChangeNotFound
 	}
-	pending, err := r.store.GetPendingEmailChange(ctx, subjectID, r.now().UTC())
+	scope, _, err := r.emailChangeTarget(ctx)
+	if err != nil {
+		return PendingEmailChange{}, err
+	}
+	pending, err := r.pendingEmailChange(ctx, subjectID, scope)
 	if err != nil {
 		return PendingEmailChange{}, fmt.Errorf("get pending email change: %w", err)
 	}
@@ -145,6 +150,10 @@ func (r *Runtime) PendingEmailChange(ctx context.Context, subjectID SubjectID) (
 }
 
 func (r *Runtime) ConfirmEmailChange(ctx context.Context, subjectID SubjectID, code string) (Account, error) {
+	scope, target, err := r.emailChangeTarget(ctx)
+	if err != nil {
+		return Account{}, err
+	}
 	if r.notificationDelivery == NotificationDeliveryDisabled {
 		return Account{}, ErrNotificationDeliveryDisabled
 	}
@@ -152,17 +161,8 @@ func (r *Runtime) ConfirmEmailChange(ctx context.Context, subjectID SubjectID, c
 		return Account{}, ErrInvalidConfirmationCode
 	}
 	code = strings.TrimSpace(code)
-	if len(code) != 6 {
+	if !validEmailChangeCode(code) {
 		return Account{}, ErrInvalidConfirmationCode
-	}
-	for _, ch := range code {
-		if ch < '0' || ch > '9' {
-			return Account{}, ErrInvalidConfirmationCode
-		}
-	}
-	digests, err := r.secretCodec.DigestAll(emailChangeSecretPurpose, code)
-	if err != nil {
-		return Account{}, err
 	}
 	var account Account
 	var outcomeErr error
@@ -175,10 +175,17 @@ func (r *Runtime) ConfirmEmailChange(ctx context.Context, subjectID SubjectID, c
 			return err
 		}
 		now := r.now().UTC()
-		result, err := r.store.VerifyEmailChange(txCtx, EmailChangeVerifyRequest{
-			SubjectID: subjectID,
-			Digests:   digests,
-			Now:       now,
+		record, previousEmail, err := r.emailChangeConfirmation(txCtx, previous, scope, target)
+		if err != nil {
+			return err
+		}
+		digests, err := r.emailChangeDigests(record, code)
+		if err != nil {
+			return err
+		}
+		result, err := r.verifyEmailChange(txCtx, EmailChangeVerifyRequest{
+			SubjectID: subjectID, Digests: digests, Now: now,
+			Scope: scope, RecordID: record.ID, ExpectedSecurityVersion: record.ExpectedSecurityVersion,
 		})
 		if err != nil {
 			return fmt.Errorf("verify email change: %w", err)
@@ -201,13 +208,24 @@ func (r *Runtime) ConfirmEmailChange(ctx context.Context, subjectID SubjectID, c
 			outcomeErr = ErrInvalidConfirmationCode
 			return nil
 		}
-		if err := r.enqueueNotification(txCtx, "email_changed", result.Account, Notification{
-			Template: "email_changed",
-			// The previous mailbox must learn about a recovery-address change.
-			// It receives no confirmation code or other credential.
-			To: previous.PrimaryEmail.DisplayValue,
-		}); err != nil {
-			return err
+		if target != nil {
+			if err := target.ApplyVerifiedEmailChange(
+				txCtx, subjectID, record.TargetSnapshot, record.NewNormalizedValue, now,
+			); err != nil {
+				return err
+			}
+		}
+		// An account without a previous host alias has no previous recipient.
+		if previousEmail != "" {
+			if err := r.enqueueNotification(txCtx, "email_changed", result.Account, Notification{
+				Template: "email_changed",
+				Data:     emailChangedNotificationData(scope),
+				// The previous mailbox must learn about a recovery-address change.
+				// It receives no confirmation code or other credential.
+				To: previousEmail,
+			}); err != nil {
+				return err
+			}
 		}
 		if err := r.recordAudit(txCtx, SecurityEvent{
 			Type:      SecurityEventEmailChanged,

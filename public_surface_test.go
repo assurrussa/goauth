@@ -434,3 +434,9 @@ func (publicPasswordResetRecipientResolver) PreparePasswordResetPassword(
 ) (string, error) {
 	return "", nil
 }
+
+var (
+	_ goauth.ScopedEmailChangeStore                                  = (*postgres.Store)(nil)
+	_ func(context.Context, goauth.EmailChangeScope) context.Context = goauth.WithEmailChangeScope
+	_ func(context.Context) goauth.EmailChangeScope                  = goauth.EmailChangeScopeFromContext
+)

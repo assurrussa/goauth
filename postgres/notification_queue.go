@@ -133,8 +133,9 @@ func (s *Store) notificationCurrent(ctx context.Context, event goauth.EncryptedE
     WHERE c.id = $1 AND c.subject_id = $2 AND c.consumed_at IS NULL
       AND c.expires_at > $3 AND c.attempts < c.max_attempts
       AND s.status = 'active'
+      AND (c.scope = '' OR c.expected_security_version = s.security_version)
       AND c.id = (SELECT latest.id FROM auth_email_change_records latest
-        WHERE latest.subject_id = c.subject_id
+        WHERE latest.subject_id = c.subject_id AND latest.scope = c.scope
         ORDER BY latest.created_at DESC, latest.id DESC LIMIT 1)
 )`, event.ReferenceID, event.SubjectID, now).Scan(&current)
 		return current, err

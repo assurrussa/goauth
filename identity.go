@@ -158,6 +158,7 @@ func (r *Runtime) LoginExternal(ctx context.Context, request ExternalLoginReques
 		return LoginResult{}, err
 	}
 
+	prepared.mfaAdmission = MFASessionAdmissionExternal
 	if err := r.authTransaction.InAuthTransaction(ctx, func(ctx context.Context) error {
 		if err := write(ctx); err != nil {
 			return err

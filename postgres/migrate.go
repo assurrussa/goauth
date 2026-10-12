@@ -10,7 +10,7 @@ import (
 	"fmt"
 )
 
-const schemaVersion = 8
+const schemaVersion = 11
 
 const localIdentitySchemaVersion = 4
 
@@ -71,7 +71,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 
 func applyPendingMigrations(ctx context.Context, tx *sql.Tx, state schemaState) error {
 	switch state {
-	case schemaStateV8:
+	case schemaStateV11:
 		// No schema change is needed, but still finish the transaction to release
 		// the lock before reporting a successful verification.
 	case schemaStateFuture:
@@ -105,13 +105,7 @@ func applyPendingMigrations(ctx context.Context, tx *sql.Tx, state schemaState) 
 		}
 		fallthrough
 	case schemaStateV5:
-		if err := verifyNotificationSchema(ctx, tx); err != nil {
-			return err
-		}
-		if err := verifyLocalIdentitySchema(ctx, tx); err != nil {
-			return err
-		}
-		if err := verifyNotificationExpirySchema(ctx, tx); err != nil {
+		if err := verifyPreRetirementSchema(ctx, tx); err != nil {
 			return err
 		}
 		if err := applySubjectRetirementMigration(ctx, tx); err != nil {
@@ -127,10 +121,35 @@ func applyPendingMigrations(ctx context.Context, tx *sql.Tx, state schemaState) 
 		if err := applySessionOIDCMigration(ctx, tx); err != nil {
 			return err
 		}
+		fallthrough
+	case schemaStateV8:
+		if err := applyLocalMFAMigration(ctx, tx); err != nil {
+			return err
+		}
+		fallthrough
+	case schemaStateV9:
+		if err := applyRequiredMFAMigration(ctx, tx); err != nil {
+			return err
+		}
+		fallthrough
+	case schemaStateV10:
+		if err := applyScopedEmailChangeMigration(ctx, tx); err != nil {
+			return err
+		}
 	default:
 		return errors.New("unknown goauth schema state")
 	}
 	return nil
+}
+
+func verifyPreRetirementSchema(ctx context.Context, tx *sql.Tx) error {
+	if err := verifyNotificationSchema(ctx, tx); err != nil {
+		return err
+	}
+	if err := verifyLocalIdentitySchema(ctx, tx); err != nil {
+		return err
+	}
+	return verifyNotificationExpirySchema(ctx, tx)
 }
 
 func applyBaseline(ctx context.Context, tx *sql.Tx) error {
@@ -185,7 +204,7 @@ func verifySchema(ctx context.Context, db queryRower) error {
 	if state == schemaStateFuture {
 		return ErrFutureSchema
 	}
-	if state != schemaStateV8 {
+	if state != schemaStateV11 {
 		return ErrSchemaNeedsMigration
 	}
 	if err := verifyNotificationSchema(ctx, db); err != nil {
@@ -203,7 +222,16 @@ func verifySchema(ctx context.Context, db queryRower) error {
 	if err := verifyRateEventCleanupSchema(ctx, db); err != nil {
 		return err
 	}
-	return verifySessionOIDCSchema(ctx, db)
+	if err := verifySessionOIDCSchema(ctx, db); err != nil {
+		return err
+	}
+	if err := verifyLocalMFASchema(ctx, db); err != nil {
+		return err
+	}
+	if err := verifyRequiredMFASchema(ctx, db); err != nil {
+		return err
+	}
+	return verifyScopedEmailChangeSchema(ctx, db)
 }
 
 func verifyNotificationSchema(ctx context.Context, db queryRower) error {
@@ -259,6 +287,11 @@ func Down(ctx context.Context, db *sql.DB, confirmation ResetConfirmation) error
 	}
 
 	const statement = `
+DROP TABLE IF EXISTS auth_mfa_enrollments;
+DROP TABLE IF EXISTS auth_mfa_pending;
+DROP TABLE IF EXISTS auth_mfa_budget;
+DROP TABLE IF EXISTS auth_mfa_recovery;
+DROP TABLE IF EXISTS auth_mfa_factors;
 DROP TABLE IF EXISTS auth_security_audit_events;
 DROP TABLE IF EXISTS auth_notification_deliveries;
 DROP TABLE IF EXISTS goauth_migration_history;
@@ -326,6 +359,9 @@ const (
 	schemaStateV6
 	schemaStateV7
 	schemaStateV8
+	schemaStateV9
+	schemaStateV10
+	schemaStateV11
 	schemaStateFuture
 )
 
@@ -355,7 +391,8 @@ func detectSchema(ctx context.Context, db queryRower) (schemaState, error) {
 	}
 	if version != 2 && version != notificationSchemaVersion && version != localIdentitySchemaVersion &&
 		version != notificationExpirySchemaVersion && version != subjectRetirementSchemaVersion &&
-		version != rateEventCleanupSchemaVersion && version != schemaVersion {
+		version != rateEventCleanupSchemaVersion && version != sessionOIDCSchemaVersion &&
+		version != localMFASchemaVersion && version != 10 && version != schemaVersion {
 		return schemaStateLegacy, nil
 	}
 
@@ -373,6 +410,15 @@ WHERE table_schema = 'public'
 	}
 
 	if version == schemaVersion {
+		return schemaStateV11, nil
+	}
+	if version == 10 {
+		return schemaStateV10, nil
+	}
+	if version == localMFASchemaVersion {
+		return schemaStateV9, nil
+	}
+	if version == sessionOIDCSchemaVersion {
 		return schemaStateV8, nil
 	}
 	if version == rateEventCleanupSchemaVersion {

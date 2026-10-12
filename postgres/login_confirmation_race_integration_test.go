@@ -5,6 +5,7 @@ package postgres_test
 import (
 	"context"
 	"database/sql"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -29,12 +30,20 @@ func TestPostgresLoginConfirmationSerializesAfterVerification(t *testing.T) {
 	var armed atomic.Bool
 	var preparations atomic.Int64
 	prepared := make(chan struct{}, 1)
+	resumePreparation := make(chan struct{})
+	var resumeOnce sync.Once
+	resume := func() { resumeOnce.Do(func() { close(resumePreparation) }) }
 	config.ClaimsEnricher = goauth.ClaimsEnricherFunc(func(
-		_ context.Context, _ goauth.Realm, account goauth.Account, claims map[string]any,
+		ctx context.Context, _ goauth.Realm, account goauth.Account, claims map[string]any,
 	) error {
 		claims["email_verified"] = account.EmailVerified()
 		if armed.Load() && preparations.Add(1) == 1 {
 			prepared <- struct{}{}
+			select {
+			case <-resumePreparation:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
 		return nil
 	})
@@ -47,8 +56,32 @@ func TestPostgresLoginConfirmationSerializesAfterVerification(t *testing.T) {
 	code := postgresLoginChallenge(t, db, runtime, registered.Account.Subject.ID)
 	result := make(chan postgresConfirmationLoginResult, 1)
 	armed.Store(true)
-	// Verification owns the real subject row lock while Login reads and signs
-	// the old unverified account. Confirm only after Login waits on that lock.
+	loginCtx, cancelLogin := context.WithTimeout(t.Context(), 20*time.Second)
+	loginDone := make(chan struct{})
+	defer func() {
+		cancelLogin()
+		resume()
+		select {
+		case <-loginDone:
+		case <-time.After(5 * time.Second):
+			t.Error("Login did not stop during fixture cleanup")
+		}
+	}()
+	go func() {
+		defer close(loginDone)
+		loggedIn, loginErr := runtime.Login(loginCtx, login(email, sessionPreparationPassword))
+		result <- postgresConfirmationLoginResult{login: loggedIn, err: loginErr}
+	}()
+	select {
+	case <-prepared:
+	case outcome := <-result:
+		t.Fatalf("Login stopped before preparing its initial snapshot: %v", outcome.err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("Login did not prepare its initial unverified snapshot")
+	}
+	// Let Login finish its MFA admission before pausing claims preparation.
+	// Verification then owns the real subject row lock while Login signs the
+	// old unverified account. Confirm only after Login waits on that lock.
 	err = runtime.InAuthTransaction(t.Context(), func(ctx context.Context) error {
 		executor, executorErr := runtime.SQLExecutor(ctx)
 		if executorErr != nil {
@@ -61,18 +94,10 @@ func TestPostgresLoginConfirmationSerializesAfterVerification(t *testing.T) {
 			registered.Account.Subject.ID).Scan(&subjectID, &holderPID); lockErr != nil {
 			return lockErr
 		}
-		go func() {
-			loggedIn, loginErr := runtime.Login(t.Context(), login(email, sessionPreparationPassword))
-			result <- postgresConfirmationLoginResult{login: loggedIn, err: loginErr}
-		}()
-		select {
-		case <-prepared:
-		case <-time.After(5 * time.Second):
-			t.Fatal("Login did not prepare its initial unverified snapshot")
-		}
+		resume()
 		require.Eventually(t, func() bool {
 			var blocked bool
-			queryErr := db.QueryRowContext(t.Context(), `SELECT EXISTS (
+			queryErr := db.QueryRowContext(ctx, `SELECT EXISTS (
     SELECT 1 FROM pg_stat_activity WHERE $1 = ANY(pg_blocking_pids(pid))
 )`, holderPID).Scan(&blocked)
 			return queryErr == nil && blocked

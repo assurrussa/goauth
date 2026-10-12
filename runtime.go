@@ -40,6 +40,13 @@ const (
 var ErrNotificationDeliveryDisabled = errors.New("notification delivery is disabled")
 
 type Config struct {
+	// EmailChangeTargets registers explicitly scoped host-owned address projections.
+	EmailChangeTargets map[EmailChangeScope]EmailChangeTarget
+
+	// MFAKeys enables optional local-factor verification. Nil never bypasses stored enrollment.
+	MFAKeys *KeyRing
+	MFAMode MFAMode
+
 	NotificationDelivery    NotificationDeliveryPolicy
 	Store                   RuntimeStore
 	Signing                 SigningConfig
@@ -94,6 +101,12 @@ type Config struct {
 }
 
 type Runtime struct {
+	emailChangeTargets map[EmailChangeScope]EmailChangeTarget
+
+	mfaStore MFAStore
+	mfaMode  MFAMode
+	mfaCodec *MFAFactorCodec
+
 	notificationDelivery           NotificationDeliveryPolicy
 	store                          RuntimeStore
 	identifiers                    map[IdentifierScheme]IdentifierResolver
@@ -138,6 +151,10 @@ func NewRuntime(config Config) (*Runtime, error) {
 		return nil, err
 	}
 
+	emailTargets, err := runtimeEmailChangeTargets(config.Store, config.EmailChangeTargets)
+	if err != nil {
+		return nil, err
+	}
 	jwt, err := newJWTIssuer(config.Signing, config.Now)
 	if err != nil {
 		return nil, err
@@ -176,7 +193,19 @@ func NewRuntime(config Config) (*Runtime, error) {
 		return nil, err
 	}
 
+	var mfaCodec *MFAFactorCodec
+	if config.MFAKeys != nil {
+		mfaCodec, err = NewMFAFactorCodec(*config.MFAKeys, "goauth/mfa")
+		if err != nil {
+			return nil, err
+		}
+	}
+	mfaStore, _ := config.Store.(MFAStore)
 	return &Runtime{
+		emailChangeTargets:             emailTargets,
+		mfaStore:                       mfaStore,
+		mfaMode:                        config.MFAMode,
+		mfaCodec:                       mfaCodec,
 		store:                          config.Store,
 		notificationDelivery:           config.NotificationDelivery,
 		identifiers:                    identifierResolvers,
@@ -270,32 +299,11 @@ func applyRuntimeDefaults(config Config) Config {
 }
 
 func validateRuntimeConfig(config Config) error {
-	if config.MaxConcurrentPasswordHashes < 1 || config.MaxConcurrentPasswordHashes > 64 {
-		return errors.New("password hash concurrency must be between one and 64")
+	if err := validateMFAConfig(config); err != nil {
+		return err
 	}
-	if config.AuthTransaction == nil {
-		return errors.New("auth transaction is required")
-	}
-	for _, issuer := range config.AutoLinkVerifiedEmailIssuers {
-		if issuer == "" || (issuer == "*" && len(config.AutoLinkVerifiedEmailIssuers) != 1) {
-			return errors.New("invalid auto-link issuer policy")
-		}
-	}
-	if config.AuditSink == nil {
-		return errors.New("transactional audit sink is required")
-	}
-	if config.NotificationTransaction != nil {
-		return errors.New("NotificationTransaction is retired; configure AuthTransaction")
-	}
-	if config.Store == nil {
-		return errors.New("runtime store is required")
-	}
-	if config.PasswordResetRecipientResolver != nil {
-		if _, ok := config.Store.(PasswordResetSubjectStore); !ok {
-			return errors.New("password reset recipient resolver requires a subject-bound reset store")
-		}
-	}
-	if err := validateNotificationDelivery(config); err != nil {
+
+	if err := validateRuntimeDependencies(config); err != nil {
 		return err
 	}
 	if config.AccessTTL < time.Second || config.AccessTTL > MaxAccessTokenTTL {
@@ -399,23 +407,46 @@ type LoginResult struct {
 }
 
 func (r *Runtime) Login(ctx context.Context, request LoginRequest) (LoginResult, error) {
+	account, realm, scope, err := r.verifyLocalLogin(ctx, request)
+	if err != nil {
+		return LoginResult{}, err
+	}
+	if _, ok := r.store.(MFALocalAdmissionStore); ok {
+		err = r.authTransaction.InAuthTransaction(ctx, func(txctx context.Context) error {
+			current, err := r.lockActiveAccount(txctx, account.Subject.ID)
+			if err != nil {
+				return err
+			}
+			if current.Subject.SecurityVersion != account.Subject.SecurityVersion {
+				return ErrSecurityVersionMismatch
+			}
+			return r.checkLocalMFA(txctx, current.Subject.ID)
+		})
+		if err != nil {
+			return LoginResult{}, err
+		}
+	}
+	return r.issueLoginSession(ctx, account, realm, scope)
+}
+
+func (r *Runtime) verifyLocalLogin(ctx context.Context, request LoginRequest) (Account, Realm, SessionScope, error) {
 	realm := request.Realm
 	if realm == "" {
 		realm = RealmUser
 	}
 	if err := r.validateRealm(realm); err != nil {
-		return LoginResult{}, err
+		return Account{}, "", "", err
 	}
 	identifier, err := r.normalizeIdentifier(ctx, request.Credential.Identifier)
 	if err != nil {
-		return LoginResult{}, ErrInvalidCredentials
+		return Account{}, "", "", ErrInvalidCredentials
 	}
 	allowed, err := r.takeIdentifierRateLimit(ctx, "login", identifier, r.loginRateLimit)
 	if err != nil {
-		return LoginResult{}, fmt.Errorf("check login rate limit: %w", err)
+		return Account{}, "", "", fmt.Errorf("check login rate limit: %w", err)
 	}
 	if !allowed {
-		return LoginResult{}, ErrAuthenticationRateLimited
+		return Account{}, "", "", ErrAuthenticationRateLimited
 	}
 	record, lookupErr := r.store.FindLocalAccount(ctx, identifier)
 	passwordPHC := record.PasswordPHC
@@ -426,23 +457,23 @@ func (r *Runtime) Login(ctx context.Context, request LoginRequest) (LoginResult,
 	}
 	passwordErr := r.hasher.verifyCredential(passwordPHC, request.Credential.Password, inputPolicy)
 	if lookupErr != nil && !errors.Is(lookupErr, ErrAccountNotFound) {
-		return LoginResult{}, fmt.Errorf("find local credential: %w", lookupErr)
+		return Account{}, "", "", fmt.Errorf("find local credential: %w", lookupErr)
 	}
 	if isPasswordVerificationFailure(passwordErr) {
-		return LoginResult{}, fmt.Errorf("verify password: %w", passwordErr)
+		return Account{}, "", "", fmt.Errorf("verify password: %w", passwordErr)
 	}
 	if lookupErr != nil || passwordErr != nil || record.Account.IsZero() {
 		_ = r.recordAudit(ctx, SecurityEvent{Type: SecurityEventLoginFailed, Realm: realm, At: r.now().UTC()})
-		return LoginResult{}, ErrInvalidCredentials
+		return Account{}, "", "", ErrInvalidCredentials
 	}
 	if record.Account.Subject.Status != SubjectStatusActive {
-		return LoginResult{}, ErrAccountUnavailable
+		return Account{}, "", "", ErrAccountUnavailable
 	}
 	scope, err := r.authorizeRealm(ctx, realm, record.Account)
 	if err != nil {
-		return LoginResult{}, err
+		return Account{}, "", "", err
 	}
-	return r.issueLoginSession(ctx, record.Account, realm, scope)
+	return record.Account, realm, scope, nil
 }
 
 func (r *Runtime) Refresh(ctx context.Context, rawRefreshToken string) (TokenPair, error) {
@@ -500,6 +531,9 @@ func (r *Runtime) Refresh(ctx context.Context, rawRefreshToken string) (TokenPai
 			})
 		}
 		if result.Status == RefreshRotationSucceeded {
+			if err := r.admitRequiredMFASession(ctx, result.Session); err != nil {
+				return err
+			}
 			// Detect replay before rejecting stale preparation. Returning an
 			// error here rolls back consumption and the replacement together.
 			// JWT exp has second precision.
@@ -585,6 +619,9 @@ func (r *Runtime) verifyAccessToken(ctx context.Context, rawAccessToken string, 
 		return AuthContext{}, ErrInvalidToken
 	}
 
+	if err := r.admitRequiredMFASession(ctx, security.Session); err != nil {
+		return AuthContext{}, err
+	}
 	if auth.Realm != RealmUser {
 		account, err := r.store.GetAccount(ctx, auth.SubjectID)
 		if err != nil {
@@ -626,14 +663,21 @@ func (r *Runtime) SetSubjectStatus(ctx context.Context, subjectID SubjectID, sta
 }
 
 type preparedSession struct {
-	record SessionRecord
-	tokens TokenPair
+	mfaAdmission MFASessionAdmission
+	record       SessionRecord
+	tokens       TokenPair
 }
 
 // createPreparedSession must run inside an auth transaction, so an expired pair
 // rolls back the session and any account or identity created in the same scope.
 func (r *Runtime) createPreparedSession(ctx context.Context, prepared preparedSession) error {
+	if r.mfaMode == MFAModeRequired && prepared.record.Session.Scope == SessionScopeAuthenticated && prepared.mfaAdmission == "" {
+		return ErrMFARequired
+	}
 	if err := r.store.CreateSession(ctx, prepared.record); err != nil {
+		return err
+	}
+	if err := r.markMFASessionAdmission(ctx, prepared.record.Session, prepared.mfaAdmission); err != nil {
 		return err
 	}
 	now := r.now().UTC()
@@ -770,4 +814,33 @@ func validateNotificationDelivery(config Config) error {
 		return ErrURLBuilderRequired
 	}
 	return nil
+}
+
+func validateRuntimeDependencies(config Config) error {
+	if config.MaxConcurrentPasswordHashes < 1 || config.MaxConcurrentPasswordHashes > 64 {
+		return errors.New("password hash concurrency must be between one and 64")
+	}
+	if config.AuthTransaction == nil {
+		return errors.New("auth transaction is required")
+	}
+	for _, issuer := range config.AutoLinkVerifiedEmailIssuers {
+		if issuer == "" || (issuer == "*" && len(config.AutoLinkVerifiedEmailIssuers) != 1) {
+			return errors.New("invalid auto-link issuer policy")
+		}
+	}
+	if config.AuditSink == nil {
+		return errors.New("transactional audit sink is required")
+	}
+	if config.NotificationTransaction != nil {
+		return errors.New("NotificationTransaction is retired; configure AuthTransaction")
+	}
+	if config.Store == nil {
+		return errors.New("runtime store is required")
+	}
+	if config.PasswordResetRecipientResolver != nil {
+		if _, ok := config.Store.(PasswordResetSubjectStore); !ok {
+			return errors.New("password reset recipient resolver requires a subject-bound reset store")
+		}
+	}
+	return validateNotificationDelivery(config)
 }

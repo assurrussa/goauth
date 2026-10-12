@@ -160,7 +160,7 @@ func TestLegacyPasswordVerificationDoesNotApplyNewIssuancePolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, password := range []string{"short", "password123"} {
+	for _, password := range []string{testShortPassword, "password123"} {
 		phc, err := hasher.HashPassword(password)
 		if err != nil {
 			t.Fatal(err)

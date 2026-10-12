@@ -64,7 +64,7 @@ func TestSessionOIDCRequiresManagedTransaction(t *testing.T) {
 
 func TestSessionOIDCMigrationPreservesSchema7(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, 8, schemaVersion)
+	require.Equal(t, scopedEmailChangeSchemaVersion, schemaVersion)
 	data, err := migrationFiles.ReadFile("migrations/00006_rate_event_cleanup.sql")
 	require.NoError(t, err)
 	checksum := sha256.Sum256(data)

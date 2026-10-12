@@ -221,15 +221,18 @@ type EmailChallengeStore interface {
 }
 
 type EmailChangeRecord struct {
-	ID                 string
-	SubjectID          SubjectID
-	NewDisplayValue    string
-	NewNormalizedValue string
-	Digest             SecretDigest
-	RateDigest         SecretDigest
-	MaxAttempts        int
-	ExpiresAt          time.Time
-	CreatedAt          time.Time
+	Scope                   EmailChangeScope
+	ExpectedSecurityVersion int64
+	TargetSnapshot          EmailChangeTargetSnapshot
+	ID                      string
+	SubjectID               SubjectID
+	NewDisplayValue         string
+	NewNormalizedValue      string
+	Digest                  SecretDigest
+	RateDigest              SecretDigest
+	MaxAttempts             int
+	ExpiresAt               time.Time
+	CreatedAt               time.Time
 }
 
 type EmailChangeIssueStatus string
@@ -248,13 +251,17 @@ type EmailChangeIssueResult struct {
 }
 
 type PendingEmailChange struct {
-	ID              string
-	SubjectID       SubjectID
-	NewDisplayValue string
-	Attempts        int
-	MaxAttempts     int
-	CreatedAt       time.Time
-	ExpiresAt       time.Time
+	Scope                   EmailChangeScope          `json:"-"`
+	ExpectedSecurityVersion int64                     `json:"-"`
+	TargetSnapshot          EmailChangeTargetSnapshot `json:"-"`
+	NewNormalizedValue      string                    `json:"-"`
+	ID                      string
+	SubjectID               SubjectID
+	NewDisplayValue         string
+	Attempts                int
+	MaxAttempts             int
+	CreatedAt               time.Time
+	ExpiresAt               time.Time
 }
 
 type EmailChangeVerifyStatus string
@@ -268,9 +275,12 @@ const (
 )
 
 type EmailChangeVerifyRequest struct {
-	SubjectID SubjectID
-	Digests   []SecretDigest
-	Now       time.Time
+	Scope                   EmailChangeScope
+	RecordID                string
+	ExpectedSecurityVersion int64
+	SubjectID               SubjectID
+	Digests                 []SecretDigest
+	Now                     time.Time
 }
 
 type EmailChangeVerifyResult struct {

@@ -40,6 +40,7 @@ type sessionTokenClaims struct {
 	Profile                map[string]string          `json:"authhub_profile,omitempty"`
 	Project                map[string]string          `json:"authhub_project,omitempty"`
 	Identifiers            *oidc.CanonicalIdentifiers `json:"authhub_identifiers,omitempty"`
+	MFA                    *oidc.MFAEnrollment        `json:"authhub_mfa,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -96,6 +97,11 @@ func (s *SessionService) prepareTokens(ctx context.Context, current oidc.Session
 	claims.Profile = info.Profile
 	claims.Project = info.Project
 	claims.Identifiers = info.Identifiers
+	if oidc.HasScope(scopes, oidc.ScopeProfile) && current.Projection.MFA != nil && current.Projection.MFA.Version == 1 {
+		// Advisory only. Invalid/unknown snapshots are omitted, never admission failures.
+		mfa := *current.Projection.MFA
+		claims.MFA = &mfa
+	}
 	id, err := s.base.signToken(key, claims, "JWT")
 	if err != nil {
 		return nil, oidc.SessionRefresh{}, time.Time{}, err

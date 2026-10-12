@@ -32,7 +32,9 @@ func TestPostgresSessionIssuanceExpiryRollback(t *testing.T) {
 			t.Run(tc.name+"/"+operation, func(t *testing.T) {
 				resetSchema(t, db)
 				require.NoError(t, postgres.Migrate(t.Context(), db))
-				now := time.Now().UTC().Truncate(time.Second).Add(tc.fraction)
+				// Isolate injected runtime-clock expiry from the independent database clock.
+				// Runtime setup latency must not expire this synthetic session fixture.
+				now := time.Now().UTC().Truncate(time.Second).Add(time.Hour + tc.fraction)
 				var slow bool
 				config := runtimeConfig(t)
 				config.Now = func() time.Time { return now }
@@ -164,5 +166,66 @@ DROP FUNCTION IF EXISTS goauth_test_delay_session_insert();`)
 	result, err = runtime.Register(t.Context(), request)
 	require.NoError(t, err)
 	_, err = runtime.AuthenticateSession(t.Context(), result.Tokens.AccessToken)
+	require.NoError(t, err)
+}
+
+func TestPostgresExternalSessionExpiryRollsBackIssuance(t *testing.T) {
+	db := integrationDB(t)
+	resetSchema(t, db)
+	require.NoError(t, postgres.Migrate(t.Context(), db))
+	_, err := db.ExecContext(t.Context(), `
+CREATE FUNCTION goauth_test_delay_external_session_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    PERFORM pg_sleep(1.1);
+    RETURN NEW;
+END;
+$$;
+CREATE TRIGGER goauth_test_delay_external_session BEFORE INSERT ON auth_sessions
+FOR EACH ROW EXECUTE FUNCTION goauth_test_delay_external_session_insert();`)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, err := db.ExecContext(context.Background(), `
+DROP TRIGGER IF EXISTS goauth_test_delay_external_session ON auth_sessions;
+DROP FUNCTION IF EXISTS goauth_test_delay_external_session_insert();`)
+		require.NoError(t, err)
+	})
+	config := runtimeConfig(t)
+	config.AccessTTL = time.Minute
+	config.SessionTTL = time.Second
+	runtime, err := postgres.NewRuntime(postgres.Config{
+		DB: db, Runtime: config, NotificationSender: integrationNotificationSender(),
+	})
+	require.NoError(t, err)
+	request := goauth.ExternalLoginRequest{Identity: goauth.ExternalIdentity{
+		Issuer: "https://slow-session.idp.example.test", Subject: "expired-external-session",
+		Email: "pg.slow.external.session@example.test", EmailVerified: true,
+	}}
+	result, err := runtime.LoginExternal(t.Context(), request)
+	require.ErrorIs(t, err, goauth.ErrExpiredToken)
+	require.Empty(t, result)
+	var persisted int
+	require.NoError(t, db.QueryRowContext(t.Context(), `SELECT
+    (SELECT count(*) FROM auth_subjects) +
+    (SELECT count(*) FROM auth_local_credentials) +
+    (SELECT count(*) FROM auth_identifiers) +
+    (SELECT count(*) FROM auth_basic_profiles) +
+    (SELECT count(*) FROM auth_sessions) +
+    (SELECT count(*) FROM auth_refresh_families) +
+    (SELECT count(*) FROM auth_refresh_tokens) +
+    (SELECT count(*) FROM auth_identity_links) +
+    (SELECT count(*) FROM auth_notification_deliveries)`).Scan(&persisted))
+	require.Zero(t, persisted, "expired external issuance must roll back identity, session and token state")
+	_, err = db.ExecContext(t.Context(), "DROP TRIGGER goauth_test_delay_external_session ON auth_sessions")
+	require.NoError(t, err)
+	config.SessionTTL = time.Minute
+	runtime, err = postgres.NewRuntime(postgres.Config{
+		DB: db, Runtime: config, NotificationSender: integrationNotificationSender(),
+	})
+	require.NoError(t, err)
+	result, err = runtime.LoginExternal(t.Context(), request)
+	require.NoError(t, err, "same external identity must remain usable after rollback")
+	_, err = runtime.AuthenticateSession(t.Context(), result.Tokens.AccessToken)
+	require.NoError(t, err)
+	_, err = runtime.Refresh(t.Context(), result.Tokens.RefreshToken)
 	require.NoError(t, err)
 }

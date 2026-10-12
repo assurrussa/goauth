@@ -19,6 +19,7 @@ import (
 // this additive fixture layer before they remove their own later columns.
 func removeSessionOIDCSchema(t *testing.T, db *sql.DB) {
 	t.Helper()
+	removeLocalMFASchema(t, db)
 	_, err := db.Exec(`DROP TABLE auth_oidc_authorization_codes;
  DROP TABLE auth_oidc_authorization_requests;
  DROP TRIGGER auth_oidc_token_guard ON auth_oidc_refresh_tokens;

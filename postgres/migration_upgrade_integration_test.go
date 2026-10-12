@@ -81,11 +81,14 @@ ALTER TABLE auth_local_credentials DROP COLUMN password_input_policy;`)
 		require.Equal(t, 1, preserved, "v0.2 row must survive notification migration: %s", query)
 	}
 
+	var currentVersion int
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT max(version) FROM goauth_schema_version`).Scan(&currentVersion))
+	futureVersion := currentVersion + 1
 	var originalChecksum string
 	require.NoError(t, db.QueryRowContext(ctx,
 		`SELECT checksum FROM goauth_migration_history WHERE version = 3`).Scan(&originalChecksum))
 	t.Cleanup(func() {
-		_, cleanupErr := db.ExecContext(context.Background(), `DELETE FROM goauth_schema_version WHERE version = 9`)
+		_, cleanupErr := db.ExecContext(context.Background(), `DELETE FROM goauth_schema_version WHERE version = $1`, futureVersion)
 		require.NoError(t, cleanupErr)
 		_, cleanupErr = db.ExecContext(context.Background(),
 			`UPDATE goauth_migration_history SET checksum = $1 WHERE version = 3`, originalChecksum)
@@ -95,7 +98,7 @@ ALTER TABLE auth_local_credentials DROP COLUMN password_input_policy;`)
 	require.NoError(t, err)
 	require.ErrorIs(t, postgres.VerifySchema(ctx, db), postgres.ErrSchemaChecksumMismatch)
 	require.ErrorIs(t, postgres.Migrate(ctx, db), postgres.ErrSchemaChecksumMismatch)
-	_, err = db.ExecContext(ctx, `INSERT INTO goauth_schema_version (version) VALUES (9)`)
+	_, err = db.ExecContext(ctx, `INSERT INTO goauth_schema_version (version) VALUES ($1)`, futureVersion)
 	require.NoError(t, err)
 	require.True(t, errors.Is(postgres.Migrate(ctx, db), postgres.ErrFutureSchema))
 }

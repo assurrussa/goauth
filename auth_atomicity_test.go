@@ -77,7 +77,7 @@ func TestAuthAtomicityReplayRevokesWithoutClaimsPreparation(t *testing.T) {
 
 func TestAuthAtomicityAuditFailureRollsBack(t *testing.T) {
 	t.Parallel()
-	for _, operation := range []string{"logout", atomicityLogoutAll, atomicityStatus, "auto link"} {
+	for _, operation := range []string{testLogoutOperation, atomicityLogoutAll, atomicityStatus, "auto link"} {
 		t.Run(operation, func(t *testing.T) {
 			t.Parallel()
 			var fail atomic.Bool
@@ -99,7 +99,7 @@ func TestAuthAtomicityAuditFailureRollsBack(t *testing.T) {
 			require.NoError(t, err)
 			fail.Store(true)
 			switch operation {
-			case "logout":
+			case testLogoutOperation:
 				err = fixture.Runtime.Logout(context.Background(), before.Subject.ID, loggedIn.Tokens.Session.ID)
 			case atomicityLogoutAll:
 				_, err = fixture.Runtime.LogoutAll(context.Background(), before.Subject.ID)
@@ -165,7 +165,7 @@ func TestAuthAtomicityConcurrentRefreshReplayInvalidatesWinner(t *testing.T) {
 
 func TestAuthAtomicitySessionRejectsChangedClaimsSnapshot(t *testing.T) {
 	t.Parallel()
-	for _, operation := range []string{atomicityLogoutAll, "password", atomicityStatus} {
+	for _, operation := range []string{atomicityLogoutAll, localCheckerBuiltinPassword, atomicityStatus} {
 		t.Run(operation, func(t *testing.T) {
 			t.Parallel()
 			var armed atomic.Bool
@@ -182,7 +182,7 @@ func TestAuthAtomicitySessionRejectsChangedClaimsSnapshot(t *testing.T) {
 					case atomicityLogoutAll:
 						_, err := fixture.Runtime.LogoutAll(ctx, account.Subject.ID)
 						return err
-					case "password":
+					case localCheckerBuiltinPassword:
 						_, err := fixture.Runtime.ChangePassword(ctx, goauth.ChangePasswordRequest{
 							SubjectID: account.Subject.ID, CurrentPassword: testPassword,
 							NewPassword: "Atomic-Replacement-Passphrase-2",

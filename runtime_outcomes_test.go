@@ -173,7 +173,7 @@ func TestRuntimeRejectsInvalidRecoveryAndRealmInputs(t *testing.T) {
 		registered.Account.Subject.ID,
 		goauth.EmailChallengePurpose("phone"),
 	))
-	for _, code := range []string{"", "12345", "abcdef"} {
+	for _, code := range []string{"", "12345", testNonNumericCode} {
 		_, err := fixture.Runtime.VerifyEmailChallenge(
 			context.Background(),
 			registered.Account.Subject.ID,

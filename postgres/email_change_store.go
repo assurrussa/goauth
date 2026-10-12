@@ -17,6 +17,24 @@ func (s *Store) IssueEmailChange(
 	record goauth.EmailChangeRecord,
 	limits goauth.EmailChallengeLimits,
 ) (goauth.EmailChangeIssueResult, error) {
+	if record.Scope != "" {
+		return goauth.EmailChangeIssueResult{}, goauth.ErrEmailChangeScopeUnavailable
+	}
+	return s.issueEmailChange(ctx, record, limits)
+}
+
+func (s *Store) IssueScopedEmailChange(
+	ctx context.Context, record goauth.EmailChangeRecord, limits goauth.EmailChallengeLimits,
+) (goauth.EmailChangeIssueResult, error) {
+	if record.Scope == "" || record.ExpectedSecurityVersion <= 0 || record.TargetSnapshot.Version <= 0 {
+		return goauth.EmailChangeIssueResult{}, goauth.ErrEmailChangeScopeUnavailable
+	}
+	return s.issueEmailChange(ctx, record, limits)
+}
+
+func (s *Store) issueEmailChange(
+	ctx context.Context, record goauth.EmailChangeRecord, limits goauth.EmailChallengeLimits,
+) (goauth.EmailChangeIssueResult, error) {
 	if record.ID == "" || record.SubjectID.IsZero() || record.NewDisplayValue == "" ||
 		record.NewNormalizedValue == "" || len(record.Digest.Digest) != 32 ||
 		len(record.RateDigest.Digest) != 32 || record.MaxAttempts <= 0 ||
@@ -37,20 +55,11 @@ func (s *Store) IssueEmailChange(
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, lockKey); err != nil {
 		return goauth.EmailChangeIssueResult{}, fmt.Errorf("lock email change rate limit: %w", err)
 	}
-	var currentNormalized string
-	err = tx.QueryRowContext(ctx, `
-SELECT normalized_value
-FROM auth_identifiers
-WHERE subject_id = $1 AND scheme = 'email' AND is_primary = true
-FOR UPDATE`, record.SubjectID).Scan(&currentNormalized)
-	if errors.Is(err, sql.ErrNoRows) {
-		return goauth.EmailChangeIssueResult{}, goauth.ErrAccountNotFound
-	}
-	if err != nil {
-		return goauth.EmailChangeIssueResult{}, fmt.Errorf("lock primary email identifier: %w", err)
-	}
-	if currentNormalized == record.NewNormalizedValue {
-		return goauth.EmailChangeIssueResult{Status: goauth.EmailChangeSameValue}, nil
+	if err := emailChangeIssueTarget(ctx, tx, record); err != nil {
+		if errors.Is(err, goauth.ErrEmailChangeSameValue) {
+			return goauth.EmailChangeIssueResult{Status: goauth.EmailChangeSameValue}, nil
+		}
+		return goauth.EmailChangeIssueResult{}, err
 	}
 	quota, err := readEmailQuota(ctx, tx, record.RateDigest, action, record.CreatedAt, limits)
 	if err != nil {
@@ -71,22 +80,24 @@ FOR UPDATE`, record.SubjectID).Scan(&currentNormalized)
 			RetryAt: quota.retryAt,
 		}, nil
 	}
-	var occupied bool
-	if err := tx.QueryRowContext(ctx, `
+	if record.Scope == "" {
+		var occupied bool
+		if err := tx.QueryRowContext(ctx, `
 SELECT EXISTS (
     SELECT 1
     FROM auth_identifiers
     WHERE scheme = 'email' AND normalized_value = $1 AND subject_id <> $2
 )`, record.NewNormalizedValue, record.SubjectID).Scan(&occupied); err != nil {
-		return goauth.EmailChangeIssueResult{}, fmt.Errorf("check email change uniqueness: %w", err)
-	}
-	if occupied {
-		return goauth.EmailChangeIssueResult{}, goauth.ErrIdentifierAlreadyExists
+			return goauth.EmailChangeIssueResult{}, fmt.Errorf("check email change uniqueness: %w", err)
+		}
+		if occupied {
+			return goauth.EmailChangeIssueResult{}, goauth.ErrIdentifierAlreadyExists
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `
 UPDATE auth_email_change_records
 SET consumed_at = $2
-WHERE subject_id = $1 AND consumed_at IS NULL`, record.SubjectID, record.CreatedAt); err != nil {
+WHERE subject_id = $1 AND scope = $3 AND consumed_at IS NULL`, record.SubjectID, record.CreatedAt, record.Scope); err != nil {
 		return goauth.EmailChangeIssueResult{}, fmt.Errorf("retire previous email changes: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
@@ -103,9 +114,11 @@ VALUES ($1, $2, $3, $4, $5)`,
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO auth_email_change_records (
     id, subject_id, new_display_value, new_normalized_value, key_id,
-    code_digest, attempts, max_attempts, created_at, expires_at
+    code_digest, attempts, max_attempts, created_at, expires_at,
+    scope, expected_security_version, target_version, old_normalized_value
 )
-VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8, $9)`,
+VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8, $9, $10, NULLIF($11::bigint, 0), NULLIF($12::bigint, 0),
+    CASE WHEN $10 = '' THEN NULL ELSE $13 END)`,
 		record.ID,
 		record.SubjectID,
 		record.NewDisplayValue,
@@ -115,6 +128,7 @@ VALUES ($1, $2, $3, $4, $5, $6, 0, $7, $8, $9)`,
 		record.MaxAttempts,
 		record.CreatedAt,
 		record.ExpiresAt,
+		record.Scope, record.ExpectedSecurityVersion, record.TargetSnapshot.Version, record.TargetSnapshot.NormalizedEmail,
 	); err != nil {
 		return goauth.EmailChangeIssueResult{}, transformWriteError("insert email change", err)
 	}
@@ -130,13 +144,30 @@ func (s *Store) GetPendingEmailChange(
 	subjectID goauth.SubjectID,
 	now time.Time,
 ) (goauth.PendingEmailChange, error) {
+	return s.pendingEmailChange(ctx, subjectID, "", now)
+}
+
+func (s *Store) GetPendingScopedEmailChange(
+	ctx context.Context, subjectID goauth.SubjectID, scope goauth.EmailChangeScope, now time.Time,
+) (goauth.PendingEmailChange, error) {
+	if scope == "" {
+		return goauth.PendingEmailChange{}, goauth.ErrEmailChangeScopeUnavailable
+	}
+	return s.pendingEmailChange(ctx, subjectID, scope, now)
+}
+
+func (s *Store) pendingEmailChange(
+	ctx context.Context, subjectID goauth.SubjectID, scope goauth.EmailChangeScope, now time.Time,
+) (goauth.PendingEmailChange, error) {
 	var pending goauth.PendingEmailChange
 	err := s.queryer(ctx).QueryRowContext(ctx, `
-SELECT id, subject_id, new_display_value, attempts, max_attempts, created_at, expires_at
+SELECT id, subject_id, new_display_value, attempts, max_attempts, created_at, expires_at,
+ scope, COALESCE(expected_security_version, 0), COALESCE(target_version, 0), COALESCE(old_normalized_value, ''),
+ CASE WHEN scope = '' THEN '' ELSE new_normalized_value END
 FROM auth_email_change_records
-WHERE subject_id = $1 AND consumed_at IS NULL AND expires_at > $2
+WHERE subject_id = $1 AND consumed_at IS NULL AND expires_at > $2 AND scope = $3
 ORDER BY created_at DESC, id DESC
-LIMIT 1`, subjectID, now).Scan(
+LIMIT 1`, subjectID, now, scope).Scan(
 		&pending.ID,
 		&pending.SubjectID,
 		&pending.NewDisplayValue,
@@ -144,6 +175,8 @@ LIMIT 1`, subjectID, now).Scan(
 		&pending.MaxAttempts,
 		&pending.CreatedAt,
 		&pending.ExpiresAt,
+		&pending.Scope, &pending.ExpectedSecurityVersion, &pending.TargetSnapshot.Version,
+		&pending.TargetSnapshot.NormalizedEmail, &pending.NewNormalizedValue,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return goauth.PendingEmailChange{}, goauth.ErrEmailChangeNotFound
@@ -159,6 +192,24 @@ func (s *Store) VerifyEmailChange(
 	ctx context.Context,
 	request goauth.EmailChangeVerifyRequest,
 ) (goauth.EmailChangeVerifyResult, error) {
+	if request.Scope != "" {
+		return goauth.EmailChangeVerifyResult{}, goauth.ErrEmailChangeScopeUnavailable
+	}
+	return s.verifyEmailChange(ctx, request)
+}
+
+func (s *Store) VerifyScopedEmailChange(
+	ctx context.Context, request goauth.EmailChangeVerifyRequest,
+) (goauth.EmailChangeVerifyResult, error) {
+	if request.Scope == "" || request.RecordID == "" || request.ExpectedSecurityVersion <= 0 {
+		return goauth.EmailChangeVerifyResult{}, goauth.ErrEmailChangeScopeUnavailable
+	}
+	return s.verifyEmailChange(ctx, request)
+}
+
+func (s *Store) verifyEmailChange(
+	ctx context.Context, request goauth.EmailChangeVerifyRequest,
+) (goauth.EmailChangeVerifyResult, error) {
 	started := time.Now()
 	tx, owned, err := s.beginWrite(ctx)
 	if err != nil {
@@ -170,23 +221,24 @@ func (s *Store) VerifyEmailChange(
 	}
 
 	var (
-		id           string
-		displayValue string
-		normalized   string
-		keyID        string
-		storedDigest []byte
-		attempts     int
-		maxAttempts  int
-		expiresAt    time.Time
+		id              string
+		displayValue    string
+		normalized      string
+		keyID           string
+		storedDigest    []byte
+		attempts        int
+		maxAttempts     int
+		expiresAt       time.Time
+		expectedVersion int64
 	)
 	err = tx.QueryRowContext(ctx, `
 SELECT id, new_display_value, new_normalized_value, key_id, code_digest,
-       attempts, max_attempts, expires_at
+       attempts, max_attempts, expires_at, COALESCE(expected_security_version, 0)
 FROM auth_email_change_records
-WHERE subject_id = $1 AND consumed_at IS NULL
+WHERE subject_id = $1 AND consumed_at IS NULL AND scope = $2
 ORDER BY created_at DESC, id DESC
 LIMIT 1
-FOR UPDATE`, request.SubjectID).Scan(
+FOR UPDATE`, request.SubjectID, request.Scope).Scan(
 		&id,
 		&displayValue,
 		&normalized,
@@ -194,13 +246,21 @@ FOR UPDATE`, request.SubjectID).Scan(
 		&storedDigest,
 		&attempts,
 		&maxAttempts,
-		&expiresAt,
+		&expiresAt, &expectedVersion,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return goauth.EmailChangeVerifyResult{Status: goauth.EmailChangeNotFound}, nil
 	}
 	if err != nil {
 		return goauth.EmailChangeVerifyResult{}, fmt.Errorf("lock email change record: %w", err)
+	}
+	if request.Scope != "" {
+		if id != request.RecordID || expectedVersion != request.ExpectedSecurityVersion {
+			return goauth.EmailChangeVerifyResult{}, goauth.ErrSecurityVersionMismatch
+		}
+		if err := emailChangeExpectedVersion(ctx, tx, request.SubjectID, expectedVersion); err != nil {
+			return goauth.EmailChangeVerifyResult{}, err
+		}
 	}
 	if attempts >= maxAttempts {
 		return goauth.EmailChangeVerifyResult{
@@ -216,44 +276,28 @@ FOR UPDATE`, request.SubjectID).Scan(
 		}, nil
 	}
 	if !matchesEmailChangeDigest(keyID, storedDigest, request.Digests) {
-		updated, err := tx.ExecContext(ctx, `
-UPDATE auth_email_change_records
-SET attempts = attempts + 1
-WHERE id = $1 AND consumed_at IS NULL`, id)
-		if err != nil {
-			return goauth.EmailChangeVerifyResult{}, fmt.Errorf("increment email change attempts: %w", err)
-		}
-		rows, err := updated.RowsAffected()
-		if err != nil || rows != 1 {
-			return goauth.EmailChangeVerifyResult{}, errors.New("email change attempt guard did not update exactly one row")
-		}
-		if err := finishWrite(tx, owned); err != nil {
-			return goauth.EmailChangeVerifyResult{}, fmt.Errorf("commit email change attempt: %w", err)
-		}
-
-		return goauth.EmailChangeVerifyResult{
-			Status:   goauth.EmailChangeInvalid,
-			Attempts: attempts + 1,
-		}, nil
+		return recordEmailChangeAttempt(ctx, tx, owned, id, attempts)
 	}
-	identifierUpdate, err := tx.ExecContext(ctx, `
+	if request.Scope == "" {
+		identifierUpdate, err := tx.ExecContext(ctx, `
 UPDATE auth_identifiers
 SET display_value = $2,
     normalized_value = $3,
     verified_at = $4,
     updated_at = $4
 WHERE subject_id = $1 AND scheme = 'email' AND is_primary = true`,
-		request.SubjectID,
-		displayValue,
-		normalized,
-		request.Now,
-	)
-	if err != nil {
-		return goauth.EmailChangeVerifyResult{}, transformWriteError("update primary email identifier", err)
-	}
-	rows, err := identifierUpdate.RowsAffected()
-	if err != nil || rows != 1 {
-		return goauth.EmailChangeVerifyResult{}, errors.New("email identifier guard did not update exactly one row")
+			request.SubjectID,
+			displayValue,
+			normalized,
+			request.Now,
+		)
+		if err != nil {
+			return goauth.EmailChangeVerifyResult{}, transformWriteError("update primary email identifier", err)
+		}
+		rows, err := identifierUpdate.RowsAffected()
+		if err != nil || rows != 1 {
+			return goauth.EmailChangeVerifyResult{}, errors.New("email identifier guard did not update exactly one row")
+		}
 	}
 	if _, err := tx.ExecContext(ctx, `
 UPDATE auth_subjects
@@ -268,7 +312,7 @@ WHERE id = $1 AND consumed_at IS NULL`, id, request.Now)
 	if err != nil {
 		return goauth.EmailChangeVerifyResult{}, fmt.Errorf("consume email change record: %w", err)
 	}
-	rows, err = consumed.RowsAffected()
+	rows, err := consumed.RowsAffected()
 	if err != nil || rows != 1 {
 		return goauth.EmailChangeVerifyResult{}, errors.New("email change consume guard did not update exactly one row")
 	}
@@ -301,6 +345,30 @@ WHERE subject_id = $1 AND verified_at IS NULL AND attempts < max_attempts`, requ
 	}, nil
 }
 
+func recordEmailChangeAttempt(
+	ctx context.Context, tx *sql.Tx, owned bool, id string, attempts int,
+) (goauth.EmailChangeVerifyResult, error) {
+	updated, err := tx.ExecContext(ctx, `
+UPDATE auth_email_change_records
+SET attempts = attempts + 1
+WHERE id = $1 AND consumed_at IS NULL`, id)
+	if err != nil {
+		return goauth.EmailChangeVerifyResult{}, fmt.Errorf("increment email change attempts: %w", err)
+	}
+	rows, err := updated.RowsAffected()
+	if err != nil || rows != 1 {
+		return goauth.EmailChangeVerifyResult{}, errors.New("email change attempt guard did not update exactly one row")
+	}
+	if err := finishWrite(tx, owned); err != nil {
+		return goauth.EmailChangeVerifyResult{}, fmt.Errorf("commit email change attempt: %w", err)
+	}
+
+	return goauth.EmailChangeVerifyResult{
+		Status:   goauth.EmailChangeInvalid,
+		Attempts: attempts + 1,
+	}, nil
+}
+
 func matchesEmailChangeDigest(keyID string, stored []byte, candidates []goauth.SecretDigest) bool {
 	for _, candidate := range candidates {
 		if candidate.KeyID == keyID && hmac.Equal(stored, candidate.Digest) {
@@ -309,4 +377,39 @@ func matchesEmailChangeDigest(keyID string, stored []byte, candidates []goauth.S
 	}
 
 	return false
+}
+
+func emailChangeIssueTarget(ctx context.Context, tx *sql.Tx, record goauth.EmailChangeRecord) error {
+	if record.Scope != "" {
+		if record.TargetSnapshot.NormalizedEmail == record.NewNormalizedValue {
+			return goauth.ErrEmailChangeSameValue
+		}
+		return emailChangeExpectedVersion(ctx, tx, record.SubjectID, record.ExpectedSecurityVersion)
+	}
+	var current string
+	err := tx.QueryRowContext(ctx, `
+SELECT normalized_value FROM auth_identifiers
+WHERE subject_id = $1 AND scheme = 'email' AND is_primary = true FOR UPDATE`, record.SubjectID).Scan(&current)
+	if errors.Is(err, sql.ErrNoRows) {
+		return goauth.ErrAccountNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("lock primary email identifier: %w", err)
+	}
+	if current == record.NewNormalizedValue {
+		return goauth.ErrEmailChangeSameValue
+	}
+	return nil
+}
+
+func emailChangeExpectedVersion(ctx context.Context, tx *sql.Tx, subject goauth.SubjectID, expected int64) error {
+	var current int64
+	if err := tx.QueryRowContext(ctx,
+		`SELECT security_version FROM auth_subjects WHERE id = $1`, subject).Scan(&current); err != nil {
+		return err
+	}
+	if current != expected {
+		return goauth.ErrSecurityVersionMismatch
+	}
+	return nil
 }

@@ -17,8 +17,17 @@ func (r *Runtime) sendCurrentPasswordResetNotification(
 			ID: event.ID, Notification: notification, ValidUntil: event.ValidUntil, EncryptedEvent: event,
 		})
 	}
-	if r.passwordResetRecipientResolver == nil ||
-		(event.Type != "password_reset" && event.Type != "password_reset_success") {
+	if event.Type != "password_reset" && event.Type != "password_reset_success" {
+		return send(ctx)
+	}
+	// The notification has already passed AEAD verification. Never inherit
+	// recovery authority from a worker's ambient context.
+	var err error
+	ctx, err = goauth.PasswordResetNotificationContext(ctx, notification)
+	if err != nil {
+		return errPasswordResetNotificationStale
+	}
+	if r.passwordResetRecipientResolver == nil {
 		return send(ctx)
 	}
 	return r.store.InAuthTransaction(ctx, func(txCtx context.Context) error {

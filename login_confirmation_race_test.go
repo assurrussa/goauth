@@ -257,7 +257,7 @@ func TestLoginConfirmationDoesNotBypassCredentialsOrRealmGates(t *testing.T) {
 
 func TestLoginConfirmationRetryRejectsChangedIdentity(t *testing.T) {
 	t.Parallel()
-	for _, changed := range []string{"subject", "email ID", "email subject", "email scheme", "email value"} {
+	for _, changed := range []string{testSubjectMutation, "email ID", "email subject", "email scheme", "email value"} {
 		t.Run(changed, func(t *testing.T) {
 			t.Parallel()
 			var store *loginConfirmationStore
@@ -270,7 +270,7 @@ func TestLoginConfirmationRetryRejectsChangedIdentity(t *testing.T) {
 			registered := registerAccount(t, fixture, email)
 			changeIdentity := func(account goauth.Account) goauth.Account {
 				switch changed {
-				case "subject":
+				case testSubjectMutation:
 					account.Subject.ID = goauth.NewSubjectID()
 				case "email ID":
 					account.PrimaryEmail.ID = "replacement-email-id"

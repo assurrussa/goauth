@@ -13,9 +13,10 @@ import (
 )
 
 const (
-	authContextLocalKey = "goauth.v2.auth_context"
-	acceptedResponseKey = "accepted"
-	maxRequestBodyBytes = 1 << 20
+	authContextLocalKey              = "goauth.v2.auth_context"
+	acceptedResponseKey              = "accepted"
+	authenticationUnavailableMessage = "authentication temporarily unavailable"
+	maxRequestBodyBytes              = 1 << 20
 )
 
 type Runtime interface {
@@ -305,13 +306,19 @@ func mapError(err error) (status int, code, message string) {
 	case errors.Is(err, goauth.ErrOperationOutcomeUnknown):
 		// A canceled commit may have persisted; its cause must not imply safe retry.
 		return gofiber.StatusServiceUnavailable, "operation_outcome_unknown", "operation outcome is unknown; authenticate again"
+	case errors.Is(err, goauth.ErrMFARequired):
+		return gofiber.StatusUnauthorized, "mfa_required", "second factor required"
+	case errors.Is(err, goauth.ErrMFALoginDenied):
+		return gofiber.StatusUnauthorized, "mfa_login_denied", "invalid or expired authentication challenge"
+	case errors.Is(err, goauth.ErrMFAUnavailable):
+		return gofiber.StatusServiceUnavailable, "mfa_unavailable", authenticationUnavailableMessage
 	case errors.Is(err, goauth.ErrNotificationDeliveryDisabled):
 		return gofiber.StatusNotImplemented, "notification_delivery_disabled", "notification delivery is disabled"
 	case errors.Is(err, goauth.ErrPasswordHashOverloaded):
-		return gofiber.StatusServiceUnavailable, "password_hash_overloaded", "authentication temporarily unavailable"
+		return gofiber.StatusServiceUnavailable, "password_hash_overloaded", authenticationUnavailableMessage
 	case errors.Is(err, goauth.ErrPasswordVerificationUnavailable),
 		errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		return gofiber.StatusServiceUnavailable, "authentication_unavailable", "authentication temporarily unavailable"
+		return gofiber.StatusServiceUnavailable, "authentication_unavailable", authenticationUnavailableMessage
 	case errors.Is(err, goauth.ErrAuthenticationRateLimited):
 		return gofiber.StatusTooManyRequests, "authentication_rate_limited", "too many authentication attempts"
 	case errors.Is(err, goauth.ErrInvalidRealm):

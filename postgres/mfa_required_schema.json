@@ -1,0 +1,273 @@
+{
+  "constraints": [
+    {
+      "table": "auth_mfa_budget",
+      "name": "auth_mfa_budget_attempts_check",
+      "definition": "CHECK (((attempts >= 1) AND (attempts <= 10)))"
+    },
+    {
+      "table": "auth_mfa_budget",
+      "name": "auth_mfa_budget_pkey",
+      "definition": "PRIMARY KEY (subject_id)"
+    },
+    {
+      "table": "auth_mfa_budget",
+      "name": "auth_mfa_budget_subject_id_fkey",
+      "definition": "FOREIGN KEY (subject_id) REFERENCES auth_subjects(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "auth_mfa_enrollments",
+      "name": "auth_mfa_enrollments_binding_check",
+      "definition": "CHECK ((octet_length(binding) = 32))"
+    },
+    {
+      "table": "auth_mfa_enrollments",
+      "name": "auth_mfa_enrollments_check",
+      "definition": "CHECK (((expires_at > created_at) AND (expires_at <= (created_at + '00:05:00'::interval))))"
+    },
+    {
+      "table": "auth_mfa_enrollments",
+      "name": "auth_mfa_enrollments_id_check",
+      "definition": "CHECK ((length(id) = 43))"
+    },
+    {
+      "table": "auth_mfa_enrollments",
+      "name": "auth_mfa_enrollments_key_id_check",
+      "definition": "CHECK (((length(key_id) >= 1) AND (length(key_id) <= 64)))"
+    },
+    {
+      "table": "auth_mfa_enrollments",
+      "name": "auth_mfa_enrollments_pkey",
+      "definition": "PRIMARY KEY (subject_id)"
+    },
+    {
+      "table": "auth_mfa_enrollments",
+      "name": "auth_mfa_enrollments_revision_check",
+      "definition": "CHECK ((revision > 0))"
+    },
+    {
+      "table": "auth_mfa_enrollments",
+      "name": "auth_mfa_enrollments_secret_check",
+      "definition": "CHECK ((octet_length(secret) >= 28))"
+    },
+    {
+      "table": "auth_mfa_enrollments",
+      "name": "auth_mfa_enrollments_security_version_check",
+      "definition": "CHECK ((security_version > 0))"
+    },
+    {
+      "table": "auth_mfa_enrollments",
+      "name": "auth_mfa_enrollments_session_id_fkey",
+      "definition": "FOREIGN KEY (session_id) REFERENCES auth_sessions(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "auth_mfa_enrollments",
+      "name": "auth_mfa_enrollments_subject_id_fkey",
+      "definition": "FOREIGN KEY (subject_id) REFERENCES auth_mfa_factors(subject_id) ON DELETE CASCADE"
+    },
+    {
+      "table": "auth_mfa_factors",
+      "name": "auth_mfa_factors_check",
+      "definition": "CHECK (((enabled AND (key_id <> ''::text) AND (octet_length(secret) >= 28)) OR ((NOT enabled) AND (key_id = ''::text) AND (octet_length(secret) = 0))))"
+    },
+    {
+      "table": "auth_mfa_factors",
+      "name": "auth_mfa_factors_factor_id_check",
+      "definition": "CHECK (((length(factor_id) >= 1) AND (length(factor_id) <= 128)))"
+    },
+    {
+      "table": "auth_mfa_factors",
+      "name": "auth_mfa_factors_key_id_check",
+      "definition": "CHECK ((length(key_id) <= 64))"
+    },
+    {
+      "table": "auth_mfa_factors",
+      "name": "auth_mfa_factors_last_step_check",
+      "definition": "CHECK ((last_step >= '-1'::integer))"
+    },
+    {
+      "table": "auth_mfa_factors",
+      "name": "auth_mfa_factors_pkey",
+      "definition": "PRIMARY KEY (subject_id)"
+    },
+    {
+      "table": "auth_mfa_factors",
+      "name": "auth_mfa_factors_revision_check",
+      "definition": "CHECK ((revision > 0))"
+    },
+    {
+      "table": "auth_mfa_factors",
+      "name": "auth_mfa_factors_subject_id_fkey",
+      "definition": "FOREIGN KEY (subject_id) REFERENCES auth_subjects(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "auth_mfa_pending",
+      "name": "auth_mfa_pending_binding_check",
+      "definition": "CHECK ((octet_length(binding) = 32))"
+    },
+    {
+      "table": "auth_mfa_pending",
+      "name": "auth_mfa_pending_check",
+      "definition": "CHECK (((expires_at > authenticated_at) AND (expires_at <= (authenticated_at + '00:03:00'::interval))))"
+    },
+    {
+      "table": "auth_mfa_pending",
+      "name": "auth_mfa_pending_factor_revision_check",
+      "definition": "CHECK ((factor_revision > 0))"
+    },
+    {
+      "table": "auth_mfa_pending",
+      "name": "auth_mfa_pending_id_check",
+      "definition": "CHECK ((length(id) = 43))"
+    },
+    {
+      "table": "auth_mfa_pending",
+      "name": "auth_mfa_pending_kind_check",
+      "definition": "CHECK ((kind = ANY (ARRAY['factor'::text, 'enrollment'::text])))"
+    },
+    {
+      "table": "auth_mfa_pending",
+      "name": "auth_mfa_pending_pkey",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table": "auth_mfa_pending",
+      "name": "auth_mfa_pending_realm_check",
+      "definition": "CHECK ((realm ~ '^[a-z][a-z0-9_-]{0,31}$'::text))"
+    },
+    {
+      "table": "auth_mfa_pending",
+      "name": "auth_mfa_pending_security_version_check",
+      "definition": "CHECK ((security_version > 0))"
+    },
+    {
+      "table": "auth_mfa_pending",
+      "name": "auth_mfa_pending_setup_check",
+      "definition": "CHECK ((((setup_id = ''::text) AND (setup_key_id = ''::text) AND (octet_length(setup_secret) = 0) AND (octet_length(setup_recovery) = 0)) OR ((kind = 'enrollment'::text) AND (length(setup_id) = 43) AND ((length(setup_key_id) >= 1) AND (length(setup_key_id) <= 64)) AND (octet_length(setup_secret) >= 28) AND (octet_length(setup_recovery) = 320))))"
+    },
+    {
+      "table": "auth_mfa_pending",
+      "name": "auth_mfa_pending_subject_id_fkey",
+      "definition": "FOREIGN KEY (subject_id) REFERENCES auth_mfa_factors(subject_id) ON DELETE CASCADE"
+    },
+    {
+      "table": "auth_mfa_pending",
+      "name": "auth_mfa_pending_subject_id_realm_key",
+      "definition": "UNIQUE (subject_id, realm)"
+    },
+    {
+      "table": "auth_mfa_recovery",
+      "name": "auth_mfa_recovery_digest_check",
+      "definition": "CHECK ((octet_length(digest) = 32))"
+    },
+    {
+      "table": "auth_mfa_recovery",
+      "name": "auth_mfa_recovery_pkey",
+      "definition": "PRIMARY KEY (subject_id, digest)"
+    },
+    {
+      "table": "auth_mfa_recovery",
+      "name": "auth_mfa_recovery_subject_id_fkey",
+      "definition": "FOREIGN KEY (subject_id) REFERENCES auth_mfa_factors(subject_id) ON DELETE CASCADE"
+    },
+    {
+      "table": "auth_sessions",
+      "name": "auth_sessions_mfa_admission_check",
+      "definition": "CHECK ((mfa_admission = ANY (ARRAY['unknown'::text, 'factor'::text, 'external'::text])))"
+    }
+  ],
+  "defaults": [
+    {
+      "table": "auth_mfa_factors",
+      "column": "enabled",
+      "default": "false"
+    },
+    {
+      "table": "auth_mfa_factors",
+      "column": "key_id",
+      "default": "''::text"
+    },
+    {
+      "table": "auth_mfa_factors",
+      "column": "last_step",
+      "default": "'-1'::integer"
+    },
+    {
+      "table": "auth_mfa_factors",
+      "column": "secret",
+      "default": "'\\x'::bytea"
+    },
+    {
+      "table": "auth_mfa_pending",
+      "column": "kind",
+      "default": "'factor'::text"
+    },
+    {
+      "table": "auth_mfa_pending",
+      "column": "setup_id",
+      "default": "''::text"
+    },
+    {
+      "table": "auth_mfa_pending",
+      "column": "setup_key_id",
+      "default": "''::text"
+    },
+    {
+      "table": "auth_mfa_pending",
+      "column": "setup_recovery",
+      "default": "'\\x'::bytea"
+    },
+    {
+      "table": "auth_mfa_pending",
+      "column": "setup_secret",
+      "default": "'\\x'::bytea"
+    },
+    {
+      "table": "auth_sessions",
+      "column": "mfa_admission",
+      "default": "'unknown'::text"
+    }
+  ],
+  "indexes": [
+    {
+      "table": "auth_mfa_budget",
+      "name": "auth_mfa_budget_pkey",
+      "definition": "CREATE UNIQUE INDEX auth_mfa_budget_pkey ON public.auth_mfa_budget USING btree (subject_id)"
+    },
+    {
+      "table": "auth_mfa_enrollments",
+      "name": "auth_mfa_enrollments_expiry_idx",
+      "definition": "CREATE INDEX auth_mfa_enrollments_expiry_idx ON public.auth_mfa_enrollments USING btree (expires_at)"
+    },
+    {
+      "table": "auth_mfa_enrollments",
+      "name": "auth_mfa_enrollments_pkey",
+      "definition": "CREATE UNIQUE INDEX auth_mfa_enrollments_pkey ON public.auth_mfa_enrollments USING btree (subject_id)"
+    },
+    {
+      "table": "auth_mfa_factors",
+      "name": "auth_mfa_factors_pkey",
+      "definition": "CREATE UNIQUE INDEX auth_mfa_factors_pkey ON public.auth_mfa_factors USING btree (subject_id)"
+    },
+    {
+      "table": "auth_mfa_pending",
+      "name": "auth_mfa_pending_expiry_idx",
+      "definition": "CREATE INDEX auth_mfa_pending_expiry_idx ON public.auth_mfa_pending USING btree (expires_at)"
+    },
+    {
+      "table": "auth_mfa_pending",
+      "name": "auth_mfa_pending_pkey",
+      "definition": "CREATE UNIQUE INDEX auth_mfa_pending_pkey ON public.auth_mfa_pending USING btree (id)"
+    },
+    {
+      "table": "auth_mfa_pending",
+      "name": "auth_mfa_pending_subject_id_realm_key",
+      "definition": "CREATE UNIQUE INDEX auth_mfa_pending_subject_id_realm_key ON public.auth_mfa_pending USING btree (subject_id, realm)"
+    },
+    {
+      "table": "auth_mfa_recovery",
+      "name": "auth_mfa_recovery_pkey",
+      "definition": "CREATE UNIQUE INDEX auth_mfa_recovery_pkey ON public.auth_mfa_recovery USING btree (subject_id, digest)"
+    }
+  ]
+}

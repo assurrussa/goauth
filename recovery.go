@@ -77,7 +77,7 @@ func (r *Runtime) RequestPasswordResetWithReceipt(
 		record.Account.PrimaryEmail.ID == "" || record.Account.PrimaryEmail.Scheme != IdentifierSchemeEmail {
 		return nil
 	}
-	token, digest, err := r.secretCodec.Generate(passwordResetSecretPurpose)
+	token, digest, err := r.secretCodec.Generate(passwordResetPurpose(ctx))
 	if err != nil {
 		return err
 	}
@@ -107,10 +107,10 @@ func (r *Runtime) RequestPasswordResetWithReceipt(
 		if err := r.enqueueNotification(txCtx, passwordResetNotificationType, record.Account, Notification{
 			Template: passwordResetNotificationType,
 			To:       record.Account.PrimaryEmail.DisplayValue,
-			Data: map[string]string{
+			Data: passwordResetNotificationData(txCtx, map[string]string{
 				"reset_url":            resetURL,
 				notificationExpiresKey: r.passwordResetTTL.String(),
-			},
+			}),
 		}, notificationMetadata{referenceID: token.selector, validUntil: now.Add(r.passwordResetTTL)}); err != nil {
 			return err
 		}
@@ -137,7 +137,7 @@ func (r *Runtime) ResetPassword(ctx context.Context, rawToken, newPassword strin
 			return err
 		}
 	}
-	token, digest, err := r.secretCodec.Parse(strings.TrimSpace(rawToken), passwordResetSecretPurpose)
+	token, digest, err := r.secretCodec.Parse(strings.TrimSpace(rawToken), passwordResetPurpose(ctx))
 	if err != nil {
 		return ErrInvalidToken
 	}
@@ -184,6 +184,7 @@ func (r *Runtime) ResetPassword(ctx context.Context, rawToken, newPassword strin
 		if err := r.enqueueNotification(txCtx, "password_reset_success", result.Account, Notification{
 			Template: "password_reset_success",
 			To:       recipient,
+			Data:     passwordResetNotificationData(txCtx, nil),
 		}); err != nil {
 			return err
 		}

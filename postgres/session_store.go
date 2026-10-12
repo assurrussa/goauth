@@ -44,9 +44,9 @@ func (s *Store) CreateSession(ctx context.Context, record goauth.SessionRecord) 
 
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO auth_sessions (
-    id, subject_id, realm, scope, security_version, created_at, expires_at, revoked_at
+    id, subject_id, realm, scope, security_version, created_at, expires_at, revoked_at, mfa_admission
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'unknown')`,
 		record.Session.ID,
 		record.Session.SubjectID,
 		record.Session.Realm,

@@ -153,7 +153,8 @@ func TestLoginRealmResponses(t *testing.T) {
 			require.NoError(t, err)
 			request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/login", strings.NewReader(string(body)))
 			request.Header.Set("Content-Type", "application/json")
-			response, err := app.Test(request)
+			// Functional auth checks use the go test package timeout as their watchdog.
+			response, err := app.Test(request, basefiber.TestConfig{Timeout: 0, FailOnTimeout: true})
 			require.NoError(t, err)
 			data, err := io.ReadAll(response.Body)
 			require.NoError(t, err)
