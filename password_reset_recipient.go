@@ -71,7 +71,7 @@ func (r *Runtime) requestPasswordResetForRecipient(
 		record.PasswordPHC == "" || record.Account.Subject.SecurityVersion < 1 {
 		return nil
 	}
-	token, digest, err := r.secretCodec.Generate(passwordResetSecretPurpose)
+	token, digest, err := r.secretCodec.Generate(passwordResetPurpose(ctx))
 	if err != nil {
 		return err
 	}
@@ -110,7 +110,9 @@ func (r *Runtime) requestPasswordResetForRecipient(
 		}
 		if err := r.enqueueNotification(txCtx, passwordResetNotificationType, account, Notification{
 			Template: passwordResetNotificationType, To: recipient,
-			Data: map[string]string{"reset_url": resetURL, notificationExpiresKey: r.passwordResetTTL.String()},
+			Data: passwordResetNotificationData(txCtx, map[string]string{
+				"reset_url": resetURL, notificationExpiresKey: r.passwordResetTTL.String(),
+			}),
 		}, notificationMetadata{referenceID: token.selector, validUntil: now.Add(r.passwordResetTTL)}); err != nil {
 			return err
 		}

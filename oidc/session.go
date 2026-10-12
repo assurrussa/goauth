@@ -54,7 +54,18 @@ type CanonicalIdentifiers struct {
 	EmailAlias string `json:"email_alias,omitempty"`
 }
 
+// MFAEnrollment is an optional host-authoritative issuance snapshot for display.
+// It is not authentication strength, an admission decision, or a session pin.
+// Version 1 requires both booleans; hosts must read enrollment under the same
+// subject lock as issuance/refresh. Missing or unknown versions suppress hints.
+type MFAEnrollment struct {
+	Version        int  `json:"version"`
+	Enrolled       bool `json:"enrolled"`
+	SetupAvailable bool `json:"setup_available"`
+}
+
 type SessionProjection struct {
+	MFA         *MFAEnrollment
 	Identifiers *CanonicalIdentifiers
 	ProjectID   string
 	Profile     map[string]string

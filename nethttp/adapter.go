@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	authContextLocalKey = "goauth.v2.auth_context"
-	acceptedResponseKey = "accepted"
+	authenticationUnavailableMessage = "authentication temporarily unavailable"
+	authContextLocalKey              = "goauth.v2.auth_context"
+	acceptedResponseKey              = "accepted"
 )
 
 type Runtime interface {
@@ -318,13 +319,19 @@ func mapError(err error) (status int, code, message string) {
 	case errors.Is(err, goauth.ErrOperationOutcomeUnknown):
 		// A canceled commit may have persisted; its cause must not imply safe retry.
 		return http.StatusServiceUnavailable, "operation_outcome_unknown", "operation outcome unknown"
+	case errors.Is(err, goauth.ErrMFARequired):
+		return http.StatusUnauthorized, "mfa_required", "second factor required"
+	case errors.Is(err, goauth.ErrMFALoginDenied):
+		return http.StatusUnauthorized, "mfa_login_denied", "invalid or expired authentication challenge"
+	case errors.Is(err, goauth.ErrMFAUnavailable):
+		return http.StatusServiceUnavailable, "mfa_unavailable", authenticationUnavailableMessage
 	case errors.Is(err, goauth.ErrNotificationDeliveryDisabled):
 		return http.StatusNotImplemented, "notification_delivery_disabled", "notification delivery is disabled"
 	case errors.Is(err, goauth.ErrPasswordHashOverloaded):
-		return http.StatusServiceUnavailable, "password_hash_overloaded", "authentication temporarily unavailable"
+		return http.StatusServiceUnavailable, "password_hash_overloaded", authenticationUnavailableMessage
 	case errors.Is(err, goauth.ErrPasswordVerificationUnavailable),
 		errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		return http.StatusServiceUnavailable, "authentication_unavailable", "authentication temporarily unavailable"
+		return http.StatusServiceUnavailable, "authentication_unavailable", authenticationUnavailableMessage
 	case errors.Is(err, goauth.ErrAuthenticationRateLimited):
 		return http.StatusTooManyRequests, "authentication_rate_limited", "too many authentication attempts"
 	case errors.Is(err, goauth.ErrInvalidRealm):

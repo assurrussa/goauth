@@ -28,6 +28,7 @@ type Config struct {
 // Runtime owns a fully assembled goauth Runtime and, when constructed from a
 // DSN, the database handle opened for it.
 type Runtime struct {
+	emailChangeTargets map[goauth.EmailChangeScope]goauth.EmailChangeTarget
 	*goauth.Runtime
 	db                             *sql.DB
 	store                          *Store
@@ -117,7 +118,12 @@ func NewRuntime(config Config) (*Runtime, error) {
 		return nil, fmt.Errorf("verify goauth PostgreSQL schema: %w", err)
 	}
 
+	emailTargets := make(map[goauth.EmailChangeScope]goauth.EmailChangeTarget, len(config.Runtime.EmailChangeTargets))
+	for scope, target := range config.Runtime.EmailChangeTargets {
+		emailTargets[scope] = target
+	}
 	return &Runtime{
+		emailChangeTargets:             emailTargets,
 		Runtime:                        coreRuntime,
 		db:                             db,
 		store:                          store,

@@ -74,7 +74,7 @@ func TestPasswordProfileAndLogoutTypedOutcomes(t *testing.T) {
 	_, err = fixture.Runtime.ChangePassword(context.Background(), goauth.ChangePasswordRequest{
 		SubjectID:       registered.Account.Subject.ID,
 		CurrentPassword: testPassword,
-		NewPassword:     "short",
+		NewPassword:     testShortPassword,
 	})
 	require.ErrorIs(t, err, goauth.ErrInvalidPassword)
 	_, err = fixture.Runtime.ChangePassword(context.Background(), goauth.ChangePasswordRequest{
@@ -182,7 +182,7 @@ func TestEmailChangeTypedOutcomesAndLimits(t *testing.T) {
 	now = now.Add(time.Minute + time.Second)
 	require.ErrorIs(t, send(5), goauth.ErrConfirmationRateLimited)
 
-	for _, malformed := range []string{"", "12345", "abcdef"} {
+	for _, malformed := range []string{"", "12345", testNonNumericCode} {
 		_, err = fixture.Runtime.ConfirmEmailChange(
 			context.Background(),
 			registered.Account.Subject.ID,

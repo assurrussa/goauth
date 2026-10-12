@@ -173,48 +173,143 @@ type ChangePasswordRequest struct {
 	NewPassword     string
 }
 
+// PreparedPasswordChange is an opaque, runtime-bound proof of password
+// verification and replacement hashing. It expires after five minutes. Hosts
+// must keep it in process and must never log, serialize or send it to a client.
+// Completion still requires host-owned session authorization.
+type PreparedPasswordChange struct {
+	runtime             *Runtime
+	account             Account
+	expectedPHC         string
+	expectedInputPolicy PasswordInputPolicy
+	replacementPHC      string
+	expiresAt           time.Time
+}
+
+// String avoids exposing credential hashes through ordinary formatting.
+func (PreparedPasswordChange) String() string { return "[prepared password change]" }
+
+// GoString avoids exposing credential hashes through Go-syntax formatting.
+func (PreparedPasswordChange) GoString() string { return "[prepared password change]" }
+
 func (r *Runtime) ChangePassword(ctx context.Context, request ChangePasswordRequest) (Account, error) {
+	proof, err := r.PreparePasswordChange(ctx, request)
+	if err != nil {
+		return Account{}, err
+	}
+	return r.CompletePasswordChange(ctx, request.SubjectID, proof)
+}
+
+// PreparePasswordChange performs durable password-attempt admission and hashing
+// outside a host transaction. SubjectID must come from the authenticated actor,
+// never from an unauthenticated form. No plaintext password is retained.
+func (r *Runtime) PreparePasswordChange(ctx context.Context, request ChangePasswordRequest) (*PreparedPasswordChange, error) {
+	return r.preparePasswordChange(ctx, request, r)
+}
+
+// PreparePasswordChangeWithIssuer uses a trusted host-selected runtime only for
+// replacement policy and bounded hashing. Current-credential verification,
+// durable admission, proof binding, notification and audit remain with r.
+// Never select the issuer from request input. It grants no account-write authority.
+func (r *Runtime) PreparePasswordChangeWithIssuer(ctx context.Context, request ChangePasswordRequest,
+	issuer *Runtime,
+) (*PreparedPasswordChange, error) {
+	if issuer == nil || issuer.hasher == nil {
+		return nil, ErrPasswordVerificationUnavailable
+	}
+	return r.preparePasswordChange(ctx, request, issuer)
+}
+
+func (r *Runtime) preparePasswordChange(ctx context.Context, request ChangePasswordRequest,
+	issuer *Runtime,
+) (*PreparedPasswordChange, error) {
+	expiresAt := r.now().UTC().Add(5 * time.Minute)
 	if request.SubjectID.IsZero() {
-		return Account{}, ErrAccountNotFound
+		return nil, ErrAccountNotFound
 	}
 	if err := r.passwordPolicy.Validate(request.NewPassword); err != nil {
-		return Account{}, err
+		return nil, err
+	}
+	if err := issuer.passwordPolicy.Validate(request.NewPassword); err != nil {
+		return nil, err
 	}
 	record, err := r.store.GetLocalAccount(ctx, request.SubjectID)
 	if err != nil {
 		if errors.Is(err, ErrAccountNotFound) {
-			return Account{}, ErrCurrentPasswordInvalid
+			return nil, ErrCurrentPasswordInvalid
 		}
-		return Account{}, fmt.Errorf("get local credential: %w", err)
+		return nil, fmt.Errorf("get local credential: %w", err)
+	}
+	if record.Account.Subject.ID != request.SubjectID || record.PasswordPHC == "" {
+		return nil, ErrCurrentPasswordInvalid
+	}
+	if record.Account.Subject.Status != SubjectStatusActive {
+		return nil, ErrAccountUnavailable
 	}
 	if err := r.limitPasswordChange(ctx, request.SubjectID); err != nil {
-		return Account{}, fmt.Errorf("check password change rate limit: %w", err)
+		return nil, fmt.Errorf("check password change rate limit: %w", err)
 	}
 	if err := r.hasher.verifyCredential(record.PasswordPHC, request.CurrentPassword, record.PasswordInputPolicy); err != nil {
 		if isPasswordVerificationFailure(err) {
-			return Account{}, fmt.Errorf("verify current password: %w", err)
+			return nil, fmt.Errorf("verify current password: %w", err)
 		}
-		return Account{}, ErrCurrentPasswordInvalid
+		return nil, ErrCurrentPasswordInvalid
 	}
 	passwordErr := r.hasher.verifyCredential(record.PasswordPHC, request.NewPassword, record.PasswordInputPolicy)
 	if passwordErr == nil {
-		return Account{}, ErrPasswordUnchanged
+		return nil, ErrPasswordUnchanged
 	}
 	if isPasswordVerificationFailure(passwordErr) {
-		return Account{}, fmt.Errorf("compare replacement password: %w", passwordErr)
+		return nil, fmt.Errorf("compare replacement password: %w", passwordErr)
 	}
-	passwordPHC, err := r.hasher.HashPassword(request.NewPassword)
+	passwordPHC, err := issuer.hasher.HashPassword(request.NewPassword)
 	if err != nil {
-		return Account{}, fmt.Errorf("hash replacement password: %w", err)
+		return nil, fmt.Errorf("hash replacement password: %w", err)
 	}
-	now := r.now().UTC()
+	return &PreparedPasswordChange{
+		runtime: r, account: record.Account, expectedPHC: record.PasswordPHC,
+		replacementPHC: passwordPHC, expectedInputPolicy: record.PasswordInputPolicy, expiresAt: expiresAt,
+	}, nil
+}
+
+// CompletePasswordChange joins the host auth transaction, revalidates the proof
+// under the subject lock, and performs the existing atomic password update,
+// session invalidation, notification and audit. The host must authorize its
+// current live session and any required second factor in this same transaction.
+// The expected subject prevents a proof from being applied to a different actor.
+// Success inside an outer transaction is provisional until that owner commits.
+func (r *Runtime) CompletePasswordChange(ctx context.Context, subjectID SubjectID,
+	proof *PreparedPasswordChange,
+) (Account, error) {
+	if proof == nil || proof.runtime != r || subjectID.IsZero() ||
+		proof.account.Subject.ID != subjectID || !r.now().Before(proof.expiresAt) {
+		return Account{}, ErrCurrentPasswordInvalid
+	}
 	var account Account
 	var outcomeErr error
-	err = r.inNotificationTransaction(ctx, func(txCtx context.Context) error {
+	err := r.inNotificationTransaction(ctx, func(txCtx context.Context) error {
+		if err := r.lockExpectedAccount(txCtx, proof.account); err != nil {
+			if errors.Is(err, ErrSecurityVersionMismatch) {
+				return ErrPasswordChangeConflict
+			}
+			return err
+		}
+		// Lock waiting must not extend the recent-authentication window.
+		if !r.now().Before(proof.expiresAt) {
+			return ErrCurrentPasswordInvalid
+		}
+		current, err := r.store.GetLocalAccount(txCtx, subjectID)
+		if err != nil {
+			return err
+		}
+		if current.PasswordPHC != proof.expectedPHC || current.PasswordInputPolicy != proof.expectedInputPolicy {
+			return ErrPasswordChangeConflict
+		}
+		now := r.now().UTC()
 		result, err := r.store.ChangePassword(txCtx, PasswordChangeStoreRequest{
-			SubjectID:           request.SubjectID,
-			ExpectedPasswordPHC: record.PasswordPHC,
-			NewPasswordPHC:      passwordPHC,
+			SubjectID:           subjectID,
+			ExpectedPasswordPHC: proof.expectedPHC,
+			NewPasswordPHC:      proof.replacementPHC,
 			Now:                 now,
 		})
 		if err != nil {
@@ -239,7 +334,7 @@ func (r *Runtime) ChangePassword(ctx context.Context, request ChangePasswordRequ
 		}
 		if err := r.recordAudit(txCtx, SecurityEvent{
 			Type:      SecurityEventPasswordChanged,
-			SubjectID: request.SubjectID,
+			SubjectID: subjectID,
 			At:        now,
 		}); err != nil {
 			return err

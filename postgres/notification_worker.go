@@ -209,9 +209,9 @@ func (r *Runtime) deliverNotification(ctx context.Context, claim notificationCla
 	if sendCtx.Err() != nil {
 		return r.finishNotificationSendFailure(ctx, claim)
 	}
-	err = r.sendCurrentPasswordResetNotification(sendCtx, claim.event, notification)
+	err = r.sendCurrentEmailChangeNotification(sendCtx, claim.event, notification)
 	cancel()
-	if errors.Is(err, errPasswordResetNotificationStale) {
+	if errors.Is(err, errPasswordResetNotificationStale) || errors.Is(err, errEmailChangeNotificationStale) {
 		return r.store.finishNotification(ctx, claim, notificationExpired, "stale", time.Time{})
 	}
 	if errors.Is(err, goauth.ErrNotificationRejected) {

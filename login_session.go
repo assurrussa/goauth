@@ -35,6 +35,9 @@ func (r *Runtime) issueLoginSession(
 				// signing again. Never alter the scope of an already signed pair.
 				return nil
 			}
+			if err := r.checkLocalMFA(ctx, current.Subject.ID); err != nil {
+				return err
+			}
 			return r.createPreparedSession(ctx, prepared)
 		})
 		if err != nil {

@@ -153,13 +153,13 @@ func TestTrustedLocalPasswordNotificationPolicy(t *testing.T) {
 }
 
 func TestTrustedLocalPasswordFailuresRollBack(t *testing.T) {
-	for _, stage := range []string{"audit", "notification", "host"} {
+	for _, stage := range []string{testAuditStage, testNotificationStage, testHostStage} {
 		t.Run(stage, func(t *testing.T) {
 			failure := errors.New("injected trusted set failure")
 			var transaction goauth.AuthTransaction
 			f := localIdentityFixture(t, func(c *goauth.Config) {
 				transaction = c.AuthTransaction
-				if stage == "audit" {
+				if stage == testAuditStage {
 					base := c.AuditSink
 					c.AuditSink = goauth.AuditSinkFunc(func(ctx context.Context, event goauth.SecurityEvent) error {
 						if event.Type == goauth.SecurityEventTrustedLocalPasswordSet {
@@ -168,7 +168,7 @@ func TestTrustedLocalPasswordFailuresRollBack(t *testing.T) {
 						return base.RecordSecurityEvent(ctx, event)
 					})
 				}
-				if stage == "notification" {
+				if stage == testNotificationStage {
 					c.NotificationRenderer = goauth.NotificationRendererFunc(func(context.Context, goauth.Notification) ([]byte, error) {
 						return nil, failure
 					})
@@ -183,7 +183,7 @@ func TestTrustedLocalPasswordFailuresRollBack(t *testing.T) {
 			before, err := f.Store.GetLocalAccount(t.Context(), original.Subject.ID)
 			require.NoError(t, err)
 			request := goauth.SetTrustedLocalPasswordRequest{SubjectID: original.Subject.ID, NewPassword: trustedSetPassword}
-			if stage == "host" {
+			if stage == testHostStage {
 				err = transaction.InAuthTransaction(t.Context(), func(ctx context.Context) error {
 					changed, err := f.Runtime.SetTrustedLocalPassword(ctx, request)
 					require.NoError(t, err)
@@ -246,7 +246,7 @@ func (h *trustedSetHookHasher) HashPassword(password string) (string, error) {
 }
 
 func TestTrustedLocalPasswordRechecksStateAfterHashing(t *testing.T) {
-	for _, mutation := range []string{"replace credential", "status", "logout all"} {
+	for _, mutation := range []string{"replace credential", atomicityStatus, atomicityLogoutAll} {
 		t.Run(mutation, func(t *testing.T) {
 			base, err := goauth.NewArgon2idHasher(goauth.Argon2idConfig{})
 			require.NoError(t, err)
@@ -264,7 +264,7 @@ func TestTrustedLocalPasswordRechecksStateAfterHashing(t *testing.T) {
 					_, mutationErr = f.Runtime.ChangePassword(t.Context(), goauth.ChangePasswordRequest{
 						SubjectID: original.Subject.ID, CurrentPassword: testPassword, NewPassword: "Concurrent-Password-Winner-42",
 					})
-				case "status":
+				case atomicityStatus:
 					_, mutationErr = f.Runtime.SetSubjectStatus(t.Context(), original.Subject.ID, goauth.SubjectStatusDisabled)
 				default:
 					_, mutationErr = f.Runtime.LogoutAll(t.Context(), original.Subject.ID)

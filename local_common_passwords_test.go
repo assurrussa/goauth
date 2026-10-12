@@ -79,7 +79,7 @@ func TestLocalCommonPasswordCheckerEmptySetAndRepeatedOption(t *testing.T) {
 		require.False(t, empty.IsCommonPassword(""))
 		policy := goauth.PasswordPolicy{Blocklist: empty}
 		require.NoError(t, policy.Validate(localCheckerBuiltinPassword))
-		require.ErrorIs(t, policy.Validate("short"), goauth.ErrInvalidPassword)
+		require.ErrorIs(t, policy.Validate(testShortPassword), goauth.ErrInvalidPassword)
 
 		builtins, err := goauth.NewLocalCommonPasswordChecker(
 			passwords, goauth.WithBuiltInCommonPasswords(), goauth.WithBuiltInCommonPasswords(),
@@ -170,7 +170,7 @@ func TestLocalCommonPasswordCheckerIsIssuancePolicyOnly(t *testing.T) {
 		Email: "local-checker-new@example.test", Password: password,
 	})
 	require.ErrorIs(t, err, goauth.ErrCommonPassword)
-	require.ErrorIs(t, config.PasswordPolicy.Validate("short"), goauth.ErrInvalidPassword)
+	require.ErrorIs(t, config.PasswordPolicy.Validate(testShortPassword), goauth.ErrInvalidPassword)
 	require.ErrorIs(t, config.PasswordPolicy.Validate(strings.Repeat("x", 129)), goauth.ErrInvalidPassword)
 	require.ErrorIs(t, config.PasswordPolicy.Validate("invalid\xff"), goauth.ErrInvalidPassword)
 	config.PasswordPolicy.DisableBlocklist = true
