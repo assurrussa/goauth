@@ -68,10 +68,24 @@ func (s *Store) MarkMFASessionAdmission(ctx context.Context, session goauth.Sess
 	if err != nil {
 		return err
 	}
-	if n != 1 {
-		return goauth.ErrMFALoginDenied
+	if n == 1 {
+		return nil
 	}
-	return nil
+	// Preserve the session-issuance expiry contract without treating other
+	// provenance denials as expiry. The subject lock still protects this row.
+	var expired bool
+	err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM auth_sessions
+ WHERE id=$1 AND subject_id=$2 AND realm=$3 AND security_version=$4
+ AND mfa_admission='unknown' AND revoked_at IS NULL AND expires_at<=clock_timestamp()
+ AND ($5='external' OR EXISTS(SELECT 1 FROM auth_mfa_factors WHERE subject_id=$2 AND enabled)))`,
+		session.ID, session.SubjectID, session.Realm, session.SecurityVersion, admission).Scan(&expired)
+	if err != nil {
+		return err
+	}
+	if expired {
+		return goauth.ErrExpiredToken
+	}
+	return goauth.ErrMFALoginDenied
 }
 
 func (s *Store) AdmitRequiredMFASession(ctx context.Context, session goauth.Session) error {

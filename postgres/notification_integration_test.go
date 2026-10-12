@@ -823,8 +823,16 @@ func managedNotificationRuntimeWithWorker(t *testing.T, db *sql.DB, sender goaut
 	require.NoError(t, postgres.Migrate(context.Background(), db))
 	config := runtimeConfig(t)
 	config.EventSink = nil
+	// Notification behavior, not the production startup deadline, is under test.
+	// Bound real hashing and schema verification by a fixture budget and the test deadline.
+	startupTimeout := 30 * time.Second
+	if deadline, ok := t.Deadline(); ok {
+		startupTimeout = min(startupTimeout, time.Until(deadline))
+	}
+	require.Positive(t, startupTimeout, "test deadline elapsed before notification runtime setup")
 	runtime, err := postgres.NewRuntime(postgres.Config{
 		DB:                 db,
+		ConnectionTimeout:  startupTimeout,
 		Runtime:            config,
 		NotificationSender: sender,
 		NotificationWorker: worker,
