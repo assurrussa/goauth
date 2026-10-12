@@ -50,7 +50,8 @@ func TestJSONRegisterAndRealmMiddleware(t *testing.T) {
 	registerBody := `{"email":"fiber.user@example.test","password":"Unique-Fiber-Passphrase-1","displayName":"Fiber User"}`
 	request := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/register", strings.NewReader(registerBody))
 	request.Header.Set(basefiber.HeaderContentType, basefiber.MIMEApplicationJSON)
-	response, err := app.Test(request)
+	// Functional auth checks use the go test package timeout as their watchdog.
+	response, err := app.Test(request, basefiber.TestConfig{Timeout: 0, FailOnTimeout: true})
 	require.NoError(t, err)
 	defer func() { require.NoError(t, response.Body.Close()) }()
 	require.Equal(t, basefiber.StatusCreated, response.StatusCode)
@@ -65,14 +66,14 @@ func TestJSONRegisterAndRealmMiddleware(t *testing.T) {
 
 	confirmationRequest := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/confirmation", nil)
 	confirmationRequest.Header.Set(basefiber.HeaderAuthorization, "Bearer "+accessToken)
-	confirmationResponse, err := app.Test(confirmationRequest)
+	confirmationResponse, err := app.Test(confirmationRequest, basefiber.TestConfig{Timeout: 0, FailOnTimeout: true})
 	require.NoError(t, err)
 	defer func() { require.NoError(t, confirmationResponse.Body.Close()) }()
 	require.Equal(t, basefiber.StatusOK, confirmationResponse.StatusCode)
 
 	authenticatedRequest := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/authenticated", nil)
 	authenticatedRequest.Header.Set(basefiber.HeaderAuthorization, "Bearer "+accessToken)
-	authenticatedResponse, err := app.Test(authenticatedRequest)
+	authenticatedResponse, err := app.Test(authenticatedRequest, basefiber.TestConfig{Timeout: 0, FailOnTimeout: true})
 	require.NoError(t, err)
 	defer func() { require.NoError(t, authenticatedResponse.Body.Close()) }()
 	require.Equal(t, basefiber.StatusForbidden, authenticatedResponse.StatusCode)

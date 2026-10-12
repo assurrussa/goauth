@@ -16,6 +16,8 @@ const admissionPassword = "Isolated-Credential-Admission-Passphrase-42"
 
 func TestCredentialAdmissionSeparatesRepeatedSuccessFromLoginAndPasswordChange(t *testing.T) {
 	f, err := testkit.NewRuntime(func(config *goauth.Config) {
+		// Keep admission attempts in one window regardless of real hashing duration.
+		config.Now = func() time.Time { return time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC) }
 		config.LoginRateLimit = goauth.RateLimitPolicy{Window: time.Hour, Limit: 2}
 		config.CredentialVerificationRateLimit = goauth.RateLimitPolicy{Window: time.Minute, Limit: 12}
 	})
@@ -61,6 +63,8 @@ func TestCredentialAdmissionSeparatesRepeatedSuccessFromLoginAndPasswordChange(t
 
 func TestCredentialAdmissionDefaultsToExistingLoginPolicy(t *testing.T) {
 	f, err := testkit.NewRuntime(func(config *goauth.Config) {
+		// Keep admission attempts in one window regardless of real hashing duration.
+		config.Now = func() time.Time { return time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC) }
 		config.LoginRateLimit = goauth.RateLimitPolicy{Window: time.Minute, Limit: 3}
 	})
 	require.NoError(t, err)
@@ -97,6 +101,8 @@ func TestCredentialAdmissionRejectsUnboundedOrPartialPolicy(t *testing.T) {
 
 func TestCredentialAdmissionBoundsRepeatedLegacyIdentityChecks(t *testing.T) {
 	f := localIdentityFixture(t, func(config *goauth.Config) {
+		// Keep admission attempts in one window regardless of real hashing duration.
+		config.Now = func() time.Time { return time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC) }
 		config.CredentialVerificationRateLimit = goauth.RateLimitPolicy{Window: time.Minute, Limit: 12}
 	})
 	password := strings.Repeat("x", 129)
