@@ -51,7 +51,7 @@ func TestMFARuntimeRequiredLoginPublishesOnlyPending(t *testing.T) {
 
 func TestMFARuntimeBeginLoginFailsClosed(t *testing.T) {
 	for _, scenario := range []string{
-		mfaCaseEmptyBinding, "factor error", "pending error", mfaCaseCommitError, "expiry after commit",
+		mfaCaseEmptyBinding, "factor error", "pending error", mfaCaseCommitError, mfaCaseExpiryAfterCommit,
 	} {
 		t.Run(scenario, func(t *testing.T) {
 			f := newMFAFlowFixture(t, goauth.MFAModeRequired)
@@ -61,7 +61,7 @@ func TestMFARuntimeBeginLoginFailsClosed(t *testing.T) {
 			case mfaCaseEmptyBinding:
 				binding = [32]byte{}
 			case "factor error":
-				f.store.faults["ensure_factor"] = errMFAFlowCommit
+				f.store.faults[mfaFaultEnsureFactor] = errMFAFlowCommit
 				want = errMFAFlowCommit
 			case "pending error":
 				f.store.faults["create_pending"] = errMFAFlowCommit
@@ -69,7 +69,7 @@ func TestMFARuntimeBeginLoginFailsClosed(t *testing.T) {
 			case mfaCaseCommitError:
 				f.store.failCommitAt = 1
 				want = errMFAFlowCommit
-			case "expiry after commit":
+			case mfaCaseExpiryAfterCommit:
 				f.store.afterOwnedCommit = func(int) { f.now = f.now.Add(goauth.MFALoginLifetime) }
 			}
 			result, err := f.runtime.BeginLocalLogin(t.Context(), f.request, binding)
@@ -77,7 +77,7 @@ func TestMFARuntimeBeginLoginFailsClosed(t *testing.T) {
 			require.Empty(t, result)
 			require.Empty(t, f.store.state.sessions)
 			require.Empty(t, f.store.state.admissions)
-			if scenario != "expiry after commit" {
+			if scenario != mfaCaseExpiryAfterCommit {
 				require.Empty(t, f.store.state.pending)
 				require.Empty(t, f.store.state.factor)
 			}
@@ -177,7 +177,7 @@ func TestMFARuntimeRequiredEnrollmentCommitsAuthorityAtomically(t *testing.T) {
 	auth, err := f.runtime.AuthenticateSession(t.Context(), result.Tokens.AccessToken)
 	require.NoError(t, err)
 	require.Equal(t, result.Tokens.Session.ID, auth.SessionID)
-	mfaFlowRequireAudit(t, f, "mfa.enrolled")
+	mfaFlowRequireAudit(t, f, mfaEventEnrolled)
 	mfaFlowRequireAudit(t, f, "mfa.login")
 
 	replay, err := f.runtime.CompleteLocalLoginEnrollment(t.Context(), pending.ID, setup.ID, f.binding, code)
@@ -260,8 +260,8 @@ func TestMFARuntimeEnrollmentDenialsCommitOnlyAttemptBudget(t *testing.T) {
 
 func TestMFARuntimeEnrollmentRollsBackEveryAuthorityWrite(t *testing.T) {
 	for _, operation := range []string{
-		"replace_factor", "replace_recovery", "consume_pending", mfaFaultInvalidate,
-		"create_session", "mark_admission", testAuditStage, "commit",
+		mfaFaultReplaceFactor, mfaFaultReplaceRecovery, mfaFaultConsumePending, mfaFaultInvalidate,
+		mfaFaultCreateSession, "mark_admission", testAuditStage, "commit",
 	} {
 		t.Run(operation, func(t *testing.T) {
 			f := newMFAFlowFixture(t, goauth.MFAModeRequired)
@@ -341,9 +341,9 @@ func TestMFARuntimeEnrollmentRechecksAfterTokenPreparation(t *testing.T) {
 				case mfaCaseExpiry:
 					f.now = pending.ExpiresAt
 				case "factor CAS":
-					f.store.reject["replace_factor"] = true
+					f.store.reject[mfaFaultReplaceFactor] = true
 				case "pending CAS":
-					f.store.reject["consume_pending"] = true
+					f.store.reject[mfaFaultConsumePending] = true
 				}
 				f.store.state.pending[pending.ID] = record
 			}
@@ -449,9 +449,9 @@ func TestMFARuntimeFactorDenialsAndRollback(t *testing.T) {
 			case mfaCaseExpired:
 				f.now = pending.ExpiresAt
 			case "consume CAS":
-				f.store.reject["consume_pending"] = true
+				f.store.reject[mfaFaultConsumePending] = true
 			case "session error":
-				f.store.faults["create_session"], want = errMFAFlowCommit, errMFAFlowCommit
+				f.store.faults[mfaFaultCreateSession], want = errMFAFlowCommit, errMFAFlowCommit
 			case "audit error":
 				f.store.faults[testAuditStage], want = errMFAFlowCommit, errMFAFlowCommit
 			case mfaCaseCommitError:
@@ -590,7 +590,7 @@ func TestMFARuntimeSetupErrorsDoNotPublishEnrollment(t *testing.T) {
 			want := errMFAFlowCommit
 			switch scenario {
 			case "attempt error":
-				f.store.faults["take_attempt"] = want
+				f.store.faults[mfaFaultTakeAttempt] = want
 			case "save error":
 				f.store.faults["save_setup"] = want
 			case mfaCaseCommitError:

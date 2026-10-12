@@ -25,17 +25,27 @@ const (
 )
 
 const (
-	mfaCaseSecurityVersion = "security version"
-	mfaCaseBinding         = "binding"
-	mfaCaseExpiry          = "expiry"
-	mfaCaseWrongPassword   = "wrong password"
-	mfaFaultLockFactor     = "lock_factor"
-	mfaCaseEmptyBinding    = "empty binding"
-	mfaCaseExpired         = "expired"
-	mfaInvalidValue        = "invalid"
-	mfaCaseCommitError     = "commit error"
-	mfaCaseRateLimited     = "rate limited"
-	mfaFaultInvalidate     = "invalidate"
+	mfaFaultTakeAttempt      = "take_attempt"
+	mfaFaultReplaceFactor    = "replace_factor"
+	mfaCaseExpiryAfterCommit = "expiry after commit"
+	mfaFaultConsumePending   = "consume_pending"
+	mfaFaultReplaceRecovery  = "replace_recovery"
+	mfaEventEnrolled         = "mfa.enrolled"
+	mfaFaultEnsureFactor     = "ensure_factor"
+	mfaFaultAdvanceStep      = "advance_step"
+	mfaFaultCreateSession    = "create_session"
+	mfaHashPrefix            = "fixture:"
+	mfaCaseSecurityVersion   = "security version"
+	mfaCaseBinding           = "binding"
+	mfaCaseExpiry            = "expiry"
+	mfaCaseWrongPassword     = "wrong password"
+	mfaFaultLockFactor       = "lock_factor"
+	mfaCaseEmptyBinding      = "empty binding"
+	mfaCaseExpired           = "expired"
+	mfaInvalidValue          = "invalid"
+	mfaCaseCommitError       = "commit error"
+	mfaCaseRateLimited       = "rate limited"
+	mfaFaultInvalidate       = "invalidate"
 )
 
 var errMFAFlowCommit = errors.New("MFA fixture commit failed")
@@ -174,7 +184,7 @@ func (s *mfaFlowStore) LockMFAFactor(ctx context.Context, _ goauth.SubjectID) (g
 }
 
 func (s *mfaFlowStore) EnsureMFAFactor(ctx context.Context, subject goauth.SubjectID) (goauth.MFAFactorRecord, error) {
-	if err := s.faults["ensure_factor"]; err != nil {
+	if err := s.faults[mfaFaultEnsureFactor]; err != nil {
 		return goauth.MFAFactorRecord{}, err
 	}
 	state := s.writeState(ctx)
@@ -189,7 +199,7 @@ func (s *mfaFlowStore) LocalMFARequired(ctx context.Context, _ goauth.SubjectID)
 }
 
 func (s *mfaFlowStore) TakeMFAAttempt(ctx context.Context, _ goauth.SubjectID) (bool, error) {
-	if err := s.faults["take_attempt"]; err != nil {
+	if err := s.faults[mfaFaultTakeAttempt]; err != nil {
 		return false, err
 	}
 	state := s.writeState(ctx)
@@ -203,12 +213,12 @@ func (s *mfaFlowStore) TakeMFAAttempt(ctx context.Context, _ goauth.SubjectID) (
 func (s *mfaFlowStore) AdvanceMFAStep(ctx context.Context, _ goauth.SubjectID,
 	factorID string, revision, previous, next int64,
 ) (bool, error) {
-	if err := s.faults["advance_step"]; err != nil {
+	if err := s.faults[mfaFaultAdvanceStep]; err != nil {
 		return false, err
 	}
 	state := s.writeState(ctx)
 	factor := state.factor
-	if s.reject["advance_step"] || !factor.Enabled || factor.ID != factorID ||
+	if s.reject[mfaFaultAdvanceStep] || !factor.Enabled || factor.ID != factorID ||
 		factor.Revision != revision || factor.LastStep != previous || next <= previous {
 		return false, nil
 	}
@@ -272,11 +282,11 @@ func (s *mfaFlowStore) LockMFALogin(ctx context.Context, id string) (goauth.MFAL
 }
 
 func (s *mfaFlowStore) ConsumeMFALogin(ctx context.Context, pending goauth.MFALoginPending) (bool, error) {
-	if err := s.faults["consume_pending"]; err != nil {
+	if err := s.faults[mfaFaultConsumePending]; err != nil {
 		return false, err
 	}
 	state := s.writeState(ctx)
-	if s.reject["consume_pending"] || !reflect.DeepEqual(state.pending[pending.ID], pending) {
+	if s.reject[mfaFaultConsumePending] || !reflect.DeepEqual(state.pending[pending.ID], pending) {
 		return false, nil
 	}
 	delete(state.pending, pending.ID)
@@ -302,11 +312,11 @@ func (s *mfaFlowStore) SaveMFALoginSetup(ctx context.Context,
 func (s *mfaFlowStore) ReplaceMFAFactor(ctx context.Context, _ goauth.SubjectID,
 	previous, next goauth.MFAFactorRecord,
 ) (bool, error) {
-	if err := s.faults["replace_factor"]; err != nil {
+	if err := s.faults[mfaFaultReplaceFactor]; err != nil {
 		return false, err
 	}
 	state := s.writeState(ctx)
-	if s.reject["replace_factor"] || !reflect.DeepEqual(state.factor, previous) ||
+	if s.reject[mfaFaultReplaceFactor] || !reflect.DeepEqual(state.factor, previous) ||
 		next.ID == "" || next.Revision != previous.Revision+1 {
 		return false, nil
 	}
@@ -316,7 +326,7 @@ func (s *mfaFlowStore) ReplaceMFAFactor(ctx context.Context, _ goauth.SubjectID,
 }
 
 func (s *mfaFlowStore) ReplaceMFARecovery(ctx context.Context, _ goauth.SubjectID, digests [][]byte) error {
-	if err := s.faults["replace_recovery"]; err != nil {
+	if err := s.faults[mfaFaultReplaceRecovery]; err != nil {
 		return err
 	}
 	state := s.writeState(ctx)
@@ -378,7 +388,7 @@ func (s *mfaFlowStore) InvalidateMFAState(ctx context.Context, subject goauth.Su
 }
 
 func (s *mfaFlowStore) CreateSession(ctx context.Context, record goauth.SessionRecord) error {
-	if err := s.faults["create_session"]; err != nil {
+	if err := s.faults[mfaFaultCreateSession]; err != nil {
 		return err
 	}
 	if err := s.Store.CreateSession(ctx, record); err != nil {
@@ -439,10 +449,12 @@ func (s *mfaFlowStore) AdmitRequiredMFASession(ctx context.Context, session goau
 
 type mfaFlowHasher struct{}
 
-func (mfaFlowHasher) HashPassword(password string) (string, error) { return "fixture:" + password, nil }
+func (mfaFlowHasher) HashPassword(password string) (string, error) {
+	return mfaHashPrefix + password, nil
+}
 
 func (mfaFlowHasher) VerifyPassword(phc, password string) error {
-	if phc != "fixture:"+password {
+	if phc != mfaHashPrefix+password {
 		return goauth.ErrInvalidCredentials
 	}
 	return nil
@@ -497,7 +509,7 @@ func newMFAFlowFixture(t *testing.T, mode goauth.MFAMode, options ...func(*goaut
 	require.NoError(t, err)
 	f.runtime = fixture.Runtime
 	_, err = f.store.CreateLocalAccount(t.Context(), goauth.LocalAccountRecord{
-		Account: f.account, PasswordPHC: "fixture:" + mfaFlowPassword,
+		Account: f.account, PasswordPHC: mfaHashPrefix + mfaFlowPassword,
 	})
 	require.NoError(t, err)
 	f.request = goauth.LoginRequest{

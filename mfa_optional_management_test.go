@@ -102,7 +102,7 @@ func TestMFAOptionalEnrollmentLifecycle(t *testing.T) {
 	require.Equal(t, int64(2), f.store.state.factor.Revision)
 	require.Equal(t, f.now.Unix()/30, f.store.state.factor.LastStep)
 	mfaOptionalRecoveryDigests(t, f, codes)
-	mfaOptionalInvalidated(t, f, tokens, "mfa.enrolled")
+	mfaOptionalInvalidated(t, f, tokens, mfaEventEnrolled)
 	_, err = f.runtime.AuthenticateSession(t.Context(), otherTokens.AccessToken)
 	require.ErrorIs(t, err, goauth.ErrSessionRevoked)
 
@@ -152,7 +152,7 @@ func TestMFAOptionalEnrollmentRequiresReauthentication(t *testing.T) {
 }
 
 func TestMFAOptionalEnrollmentStorageFailuresWithholdSecret(t *testing.T) {
-	for _, fault := range []string{"ensure_factor", mfaFaultLockFactor, "take_attempt", "save_enrollment"} {
+	for _, fault := range []string{mfaFaultEnsureFactor, mfaFaultLockFactor, mfaFaultTakeAttempt, "save_enrollment"} {
 		t.Run(fault, func(t *testing.T) {
 			f := newMFAFlowFixture(t, goauth.MFAModeOptional)
 			auth, _ := mfaOptionalSession(t, f)
@@ -311,7 +311,8 @@ func TestMFAOptionalConfirmationFailsClosedOnDamagedSecretOrBudget(t *testing.T)
 
 func TestMFAOptionalConfirmationStorageFailureRollsBack(t *testing.T) {
 	for _, fault := range []string{
-		mfaFaultLockFactor, "lock_enrollment", "take_attempt", "replace_factor", "replace_recovery", mfaFaultInvalidate, testAuditStage,
+		mfaFaultLockFactor, "lock_enrollment", mfaFaultTakeAttempt, mfaFaultReplaceFactor,
+		mfaFaultReplaceRecovery, mfaFaultInvalidate, testAuditStage,
 	} {
 		t.Run(fault, func(t *testing.T) {
 			f := newMFAFlowFixture(t, goauth.MFAModeOptional)
@@ -333,7 +334,7 @@ func TestMFAOptionalConfirmationRejectsLostFactorCAS(t *testing.T) {
 	f := newMFAFlowFixture(t, goauth.MFAModeOptional)
 	auth, _ := mfaOptionalSession(t, f)
 	enrollment := mfaOptionalEnrollment(t, f, auth)
-	f.store.reject["replace_factor"] = true
+	f.store.reject[mfaFaultReplaceFactor] = true
 	before := f.store.state.clone()
 	codes, err := f.runtime.ConfirmMFAEnrollment(t.Context(), mfaOptionalConfirmation(t, f, auth, enrollment))
 	require.ErrorIs(t, err, goauth.ErrMFALoginDenied)
@@ -401,7 +402,7 @@ func TestMFAOptionalReplacementRequiresCurrentFactor(t *testing.T) {
 	require.NotEqual(t, previous.ID, f.store.state.factor.ID)
 	require.Equal(t, previous.Revision+1, f.store.state.factor.Revision)
 	mfaOptionalRecoveryDigests(t, f, codes)
-	mfaOptionalInvalidated(t, f, tokens, "mfa.enrolled")
+	mfaOptionalInvalidated(t, f, tokens, mfaEventEnrolled)
 }
 
 func TestMFAOptionalRegenerateRecoveryInvalidatesOldCodesAndSessions(t *testing.T) {
@@ -505,7 +506,8 @@ func TestMFAOptionalChangesRejectInvalidProof(t *testing.T) {
 func TestMFAOptionalChangesStorageFailuresRollBack(t *testing.T) {
 	for _, operation := range []string{"disable", "regenerate"} {
 		for _, fault := range []string{
-			mfaFaultLockFactor, "take_attempt", "advance_step", "replace_factor", "replace_recovery", mfaFaultInvalidate, testAuditStage,
+			mfaFaultLockFactor, mfaFaultTakeAttempt, mfaFaultAdvanceStep, mfaFaultReplaceFactor,
+			mfaFaultReplaceRecovery, mfaFaultInvalidate, testAuditStage,
 		} {
 			t.Run(operation+"/"+fault, func(t *testing.T) {
 				f := newMFAFlowFixture(t, goauth.MFAModeOptional)
@@ -537,7 +539,7 @@ func TestMFAOptionalChangesRejectLostFactorCAS(t *testing.T) {
 	f := newMFAFlowFixture(t, goauth.MFAModeOptional)
 	auth, _ := mfaOptionalSession(t, f)
 	f.enableFactor(t)
-	f.store.reject["replace_factor"] = true
+	f.store.reject[mfaFaultReplaceFactor] = true
 	before := f.store.state.clone()
 	err := f.runtime.DisableMFA(t.Context(), goauth.MFAChangeRequest{
 		Auth: auth, Password: mfaFlowPassword, Code: mfaFlowCode(t, mfaFlowSecret, f.now),
@@ -589,7 +591,7 @@ func TestMFAOptionalConfirmationUnknownCommitWithholdsRecovery(t *testing.T) {
 	require.Empty(t, codes)
 	require.True(t, f.store.state.factor.Enabled)
 	require.Len(t, f.store.state.recovery, 10)
-	mfaOptionalInvalidated(t, f, tokens, "mfa.enrolled")
+	mfaOptionalInvalidated(t, f, tokens, mfaEventEnrolled)
 }
 
 func TestMFAOptionalRecoveryUnknownCommitWithholdsNewCodes(t *testing.T) {
