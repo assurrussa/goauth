@@ -18,19 +18,21 @@ import (
 const lifecycleDeliveryID = "00000000-0000-4000-8000-000000000001"
 
 type lifecycleDriver struct {
-	count                                 int64
+	count                                  int64
 	execErr, countErr, commitErr           error
 	begins, commits, rollbacks, executions int
-	query                                 string
-	args                                  []driver.NamedValue
+	query                                  string
+	args                                   []driver.NamedValue
 }
 
-type lifecycleConn struct{ *lifecycleDriver }
-type lifecycleTx struct{ *lifecycleDriver }
-type lifecycleResult struct {
-	count int64
-	err   error
-}
+type (
+	lifecycleConn   struct{ *lifecycleDriver }
+	lifecycleTx     struct{ *lifecycleDriver }
+	lifecycleResult struct {
+		count int64
+		err   error
+	}
+)
 
 func (d *lifecycleDriver) Connect(context.Context) (driver.Conn, error) {
 	return &lifecycleConn{d}, nil
@@ -199,7 +201,7 @@ func TestNotificationLifecycleErrorsWithholdResults(t *testing.T) {
 	}{
 		{"statement", lifecycleDriver{count: 1, execErr: failure}, false},
 		{"count", lifecycleDriver{count: 1, countErr: failure}, false},
-		{"unknown commit", lifecycleDriver{count: 1, commitErr: failure}, true},
+		{"unknown lifecycle commit", lifecycleDriver{count: 1, commitErr: failure}, true},
 		{"known commit", lifecycleDriver{count: 1, commitErr: &pgconn.PgError{Code: "40001"}}, false},
 		{"out of bounds count", lifecycleDriver{count: 2}, false},
 	} {

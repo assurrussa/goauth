@@ -3,7 +3,8 @@ package externalconsumerprobe
 const notificationOutcomeProbeTest = `
 func TestNotificationOutcomeSurfaceExternalConsumer(t *testing.T) {
  var cancel func(*postgres.Runtime, context.Context, string) (bool, error) = (*postgres.Runtime).CancelNotification
- var cleanup func(*postgres.Runtime, context.Context, time.Duration, int) (int64, error) = (*postgres.Runtime).CleanupNotificationReceipts
+ var cleanup func(*postgres.Runtime, context.Context, time.Duration, int) (int64, error) =
+  (*postgres.Runtime).CleanupNotificationReceipts
  if changed, err := cancel(nil, t.Context(), "00000000-0000-4000-8000-000000000001"); changed || err == nil {
   t.Fatal("cancellation accepted an uninitialized Runtime")
  }

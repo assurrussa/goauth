@@ -374,6 +374,14 @@ const (
 	schemaStateFuture
 )
 
+func supportedSchemaVersion(version int) bool {
+	return version == 2 || version == notificationSchemaVersion || version == localIdentitySchemaVersion ||
+		version == notificationExpirySchemaVersion || version == subjectRetirementSchemaVersion ||
+		version == rateEventCleanupSchemaVersion || version == sessionOIDCSchemaVersion ||
+		version == localMFASchemaVersion || version == 10 || version == scopedEmailChangeSchemaVersion ||
+		version == schemaVersion
+}
+
 func detectSchema(ctx context.Context, db queryRower) (schemaState, error) {
 	var subjectsTable sql.NullString
 	if err := db.QueryRowContext(ctx, `SELECT to_regclass('public.auth_subjects')::text`).Scan(&subjectsTable); err != nil {
@@ -398,11 +406,7 @@ func detectSchema(ctx context.Context, db queryRower) (schemaState, error) {
 	if version > schemaVersion {
 		return schemaStateFuture, nil
 	}
-	if version != 2 && version != notificationSchemaVersion && version != localIdentitySchemaVersion &&
-		version != notificationExpirySchemaVersion && version != subjectRetirementSchemaVersion &&
-		version != rateEventCleanupSchemaVersion && version != sessionOIDCSchemaVersion &&
-		version != localMFASchemaVersion && version != 10 && version != scopedEmailChangeSchemaVersion &&
-		version != schemaVersion {
+	if !supportedSchemaVersion(version) {
 		return schemaStateLegacy, nil
 	}
 
