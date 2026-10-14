@@ -13,13 +13,56 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// PostgreSQL reports per-loop row averages as JSON numbers, including decimals.
+// Keep fractional values intact when checking total work against the batch limit.
 type cleanupPlan struct {
 	NodeType    string        `json:"Node Type"`
 	SubplanName string        `json:"Subplan Name"`
 	IndexName   string        `json:"Index Name"`
-	ActualRows  int           `json:"Actual Rows"`
-	ActualLoops int           `json:"Actual Loops"`
+	ActualRows  float64       `json:"Actual Rows"`
+	ActualLoops float64       `json:"Actual Loops"`
 	Plans       []cleanupPlan `json:"Plans"`
+}
+
+func TestCleanupPlanDecodesNumericCounters(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		raw   string
+		rows  float64
+		loops float64
+	}{
+		{name: "integer", raw: `{"Actual Rows":1,"Actual Loops":2}`, rows: 1, loops: 2},
+		{name: "decimal", raw: `{"Actual Rows":0.00,"Actual Loops":1.00}`, rows: 0, loops: 1},
+		{name: "fractional", raw: `{"Actual Rows":0.50,"Actual Loops":2}`, rows: 0.5, loops: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var plan cleanupPlan
+			require.NoError(t, json.Unmarshal([]byte(tc.raw), &plan))
+			requireExactPlanCounter(t, tc.rows, plan.ActualRows)
+			requireExactPlanCounter(t, tc.loops, plan.ActualLoops)
+			requireExactPlanCounter(t, tc.rows*tc.loops, plan.ActualRows*plan.ActualLoops)
+		})
+	}
+}
+
+func TestCleanupPlanRejectsMalformedNumericCounters(t *testing.T) {
+	for _, raw := range []string{
+		`{"Actual Rows":"1","Actual Loops":1}`,
+		`{"Actual Rows":1,"Actual Loops":"1"}`,
+		`{"Actual Rows":{},"Actual Loops":1}`,
+		`{"Actual Rows":1e400,"Actual Loops":1}`,
+	} {
+		var plan cleanupPlan
+		require.Error(t, json.Unmarshal([]byte(raw), &plan), raw)
+	}
+}
+
+func requireExactPlanCounter(t *testing.T, expected, actual float64) {
+	t.Helper()
+	// These bounded counters must match exactly; tolerances could hide excess work.
+	if actual != expected {
+		t.Fatalf("query-plan counter: expected %v, got %v", expected, actual)
+	}
 }
 
 func walkCleanupPlan(plan cleanupPlan, visit func(cleanupPlan)) {
@@ -65,18 +108,18 @@ SELECT 'plan',decode(repeat('00',32),'hex'),'plan',$1::timestamptz - n*interval 
 			if node.SubplanName == "CTE candidates" {
 				candidates = true
 				require.Equal(t, "Limit", node.NodeType)
-				require.Equal(t, limit, node.ActualRows)
+				requireExactPlanCounter(t, float64(limit), node.ActualRows)
 				require.Len(t, node.Plans, 1)
 				require.Equal(t, "auth_rate_limit_events_retention_idx", node.Plans[0].IndexName)
-				require.Equal(t, limit, node.Plans[0].ActualRows)
+				requireExactPlanCounter(t, float64(limit), node.Plans[0].ActualRows)
 			}
 			if node.NodeType == "Tid Scan" {
 				boundedDelete = true
-				require.Equal(t, limit, node.ActualRows*node.ActualLoops)
+				requireExactPlanCounter(t, float64(limit), node.ActualRows*node.ActualLoops)
 			}
 			if node.NodeType == "LockRows" {
 				lockRows = true
-				require.LessOrEqual(t, node.ActualRows*node.ActualLoops, limit)
+				require.LessOrEqual(t, node.ActualRows*node.ActualLoops, float64(limit))
 				require.Len(t, node.Plans, 1)
 				require.Equal(t, "auth_rate_limit_events_pkey", node.Plans[0].IndexName)
 			}
