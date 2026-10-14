@@ -196,3 +196,10 @@ explicit terminal rejection stops further managed sender calls.
   Keep pending operations on the same Hub project and idempotency namespace;
   switching an uncertain operation to SMTP or another gateway risks duplicates.
   A missing or incompatible confidential endpoint must fail closed.
+
+## Operator lifecycle controls
+
+Schema 12 adds transaction-aware `CancelNotification` and bounded,
+queue-only `CleanupNotificationReceipts`. See [notification lifecycle](notification-lifecycle.md)
+for eligibility, lease fencing, conservative receipt retention and the required
+future-only interpretation of cancellation.

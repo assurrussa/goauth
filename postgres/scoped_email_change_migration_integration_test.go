@@ -14,6 +14,7 @@ import (
 
 func removeScopedEmailSchema(t *testing.T, db *sql.DB) {
 	t.Helper()
+	removeNotificationLifecycleSchema(t, db)
 	_, err := db.ExecContext(t.Context(), `
 ALTER TABLE auth_email_change_records DROP COLUMN scope,DROP COLUMN expected_security_version,
  DROP COLUMN target_version,DROP COLUMN old_normalized_value;

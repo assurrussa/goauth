@@ -25,6 +25,7 @@ const (
 	notificationDelivered = "delivered"
 	notificationExhausted = "exhausted"
 	notificationExpired   = "expired"
+	notificationCancelled = "cancelled"
 )
 
 func (s *Store) EnqueueEncrypted(ctx context.Context, event goauth.EncryptedEvent) error {
@@ -245,6 +246,8 @@ SELECT state, count(*) FROM auth_notification_deliveries GROUP BY state`)
 			stats.Exhausted = count
 		case notificationExpired:
 			stats.Expired = count
+		case notificationCancelled:
+			stats.Cancelled = count
 		}
 	}
 	if err := rows.Err(); err != nil {
