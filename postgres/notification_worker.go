@@ -70,6 +70,7 @@ type NotificationQueueStats struct {
 	// Exhausted includes an exhausted retry budget or explicit terminal sender rejection.
 	Exhausted      int64
 	Expired        int64
+	Cancelled      int64
 	OldestQueuedAt *time.Time
 	WorkerRunning  bool
 }

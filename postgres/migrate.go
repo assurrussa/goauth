@@ -10,7 +10,7 @@ import (
 	"fmt"
 )
 
-const schemaVersion = 11
+const schemaVersion = 12
 
 const localIdentitySchemaVersion = 4
 
@@ -71,7 +71,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 
 func applyPendingMigrations(ctx context.Context, tx *sql.Tx, state schemaState) error {
 	switch state {
-	case schemaStateV11:
+	case schemaStateV12:
 		// No schema change is needed, but still finish the transaction to release
 		// the lock before reporting a successful verification.
 	case schemaStateFuture:
@@ -134,6 +134,11 @@ func applyPendingMigrations(ctx context.Context, tx *sql.Tx, state schemaState) 
 		fallthrough
 	case schemaStateV10:
 		if err := applyScopedEmailChangeMigration(ctx, tx); err != nil {
+			return err
+		}
+		fallthrough
+	case schemaStateV11:
+		if err := applyNotificationLifecycleMigration(ctx, tx); err != nil {
 			return err
 		}
 	default:
@@ -204,7 +209,7 @@ func verifySchema(ctx context.Context, db queryRower) error {
 	if state == schemaStateFuture {
 		return ErrFutureSchema
 	}
-	if state != schemaStateV11 {
+	if state != schemaStateV12 {
 		return ErrSchemaNeedsMigration
 	}
 	if err := verifyNotificationSchema(ctx, db); err != nil {
@@ -231,7 +236,10 @@ func verifySchema(ctx context.Context, db queryRower) error {
 	if err := verifyRequiredMFASchema(ctx, db); err != nil {
 		return err
 	}
-	return verifyScopedEmailChangeSchema(ctx, db)
+	if err := verifyScopedEmailChangeSchema(ctx, db); err != nil {
+		return err
+	}
+	return verifyNotificationLifecycleSchema(ctx, db)
 }
 
 func verifyNotificationSchema(ctx context.Context, db queryRower) error {
@@ -362,8 +370,17 @@ const (
 	schemaStateV9
 	schemaStateV10
 	schemaStateV11
+	schemaStateV12
 	schemaStateFuture
 )
+
+func supportedSchemaVersion(version int) bool {
+	return version == 2 || version == notificationSchemaVersion || version == localIdentitySchemaVersion ||
+		version == notificationExpirySchemaVersion || version == subjectRetirementSchemaVersion ||
+		version == rateEventCleanupSchemaVersion || version == sessionOIDCSchemaVersion ||
+		version == localMFASchemaVersion || version == 10 || version == scopedEmailChangeSchemaVersion ||
+		version == schemaVersion
+}
 
 func detectSchema(ctx context.Context, db queryRower) (schemaState, error) {
 	var subjectsTable sql.NullString
@@ -389,10 +406,7 @@ func detectSchema(ctx context.Context, db queryRower) (schemaState, error) {
 	if version > schemaVersion {
 		return schemaStateFuture, nil
 	}
-	if version != 2 && version != notificationSchemaVersion && version != localIdentitySchemaVersion &&
-		version != notificationExpirySchemaVersion && version != subjectRetirementSchemaVersion &&
-		version != rateEventCleanupSchemaVersion && version != sessionOIDCSchemaVersion &&
-		version != localMFASchemaVersion && version != 10 && version != schemaVersion {
+	if !supportedSchemaVersion(version) {
 		return schemaStateLegacy, nil
 	}
 
@@ -410,6 +424,9 @@ WHERE table_schema = 'public'
 	}
 
 	if version == schemaVersion {
+		return schemaStateV12, nil
+	}
+	if version == scopedEmailChangeSchemaVersion {
 		return schemaStateV11, nil
 	}
 	if version == 10 {

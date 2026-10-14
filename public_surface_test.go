@@ -48,6 +48,12 @@ var _ func(
 
 var _ func() goauth.LocalCommonPasswordCheckerOption = goauth.WithBuiltInCommonPasswords
 
+var _ func(*postgres.Runtime, context.Context, string) (bool, error) = (*postgres.Runtime).CancelNotification
+
+var _ func(
+	*postgres.Runtime, context.Context, time.Duration, int,
+) (int64, error) = (*postgres.Runtime).CleanupNotificationReceipts
+
 type publicCacheInvalidator struct{}
 
 var _ func(
@@ -101,6 +107,7 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = postgres.CleanupBatchResult{CleanupResult: postgres.CleanupResult{}, OIDCRequests: 0, OIDCCodes: 0}
 	_ = (*postgres.Runtime).CleanupBatch
 	_ = (*postgres.Runtime).ExpireNotifications
+	_ = postgres.NotificationQueueStats{Cancelled: 0}
 	_ = goauth.ErrNotificationDeliveryDisabled
 	_ = goauth.Config{NotificationDelivery: goauth.NotificationDeliveryDisabled}
 	_ = (*postgres.Runtime).InAuthTransaction
