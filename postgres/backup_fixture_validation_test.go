@@ -6,6 +6,7 @@ import (
 )
 
 func TestBackupFixtureURL(t *testing.T) {
+	//nolint:gosec // G101: public disposable fixture credentials, never an application secret.
 	const valid = "postgres://goauth:goauth@127.0.0.1:55433/goauth_integration?sslmode=disable"
 	for _, tc := range []struct {
 		name, raw, port, project string
@@ -36,7 +37,12 @@ func TestBackupFixtureURL(t *testing.T) {
 }
 
 func TestBackupFixtureContainer(t *testing.T) {
-	const valid = `[{"Id":"owned","State":{"Running":true},"Config":{"Labels":{"com.docker.compose.project":"goauth-v02-integration-backup","com.docker.compose.service":"postgres","com.docker.compose.oneoff":"False"},"Env":["POSTGRES_DB=goauth_integration","POSTGRES_USER=goauth","POSTGRES_PASSWORD=goauth"]},"NetworkSettings":{"Ports":{"5432/tcp":[{"HostIp":"127.0.0.1","HostPort":"55433"}]}}}]`
+	const binding = `{"HostIp":"127.0.0.1","HostPort":"55433"}`
+	const valid = `[{"Id":"owned","State":{"Running":true},"Config":{"Labels":{` +
+		`"com.docker.compose.project":"goauth-v02-integration-backup",` +
+		`"com.docker.compose.service":"postgres","com.docker.compose.oneoff":"False"},` +
+		`"Env":["POSTGRES_DB=goauth_integration","POSTGRES_USER=goauth","POSTGRES_PASSWORD=goauth"]},` +
+		`"NetworkSettings":{"Ports":{"5432/tcp":[` + binding + `]}}}]`
 	for _, tc := range []struct {
 		name, data string
 		valid      bool
@@ -52,7 +58,11 @@ func TestBackupFixtureContainer(t *testing.T) {
 		{"different password", strings.ReplaceAll(valid, "POSTGRES_PASSWORD=goauth", "POSTGRES_PASSWORD=secret"), false},
 		{"public binding", strings.ReplaceAll(valid, "127.0.0.1", "0.0.0.0"), false},
 		{"different port", strings.ReplaceAll(valid, "55433", "55432"), false},
-		{"multiple bindings", strings.ReplaceAll(valid, `{"HostIp":"127.0.0.1","HostPort":"55433"}`, `{"HostIp":"127.0.0.1","HostPort":"55433"},{"HostIp":"0.0.0.0","HostPort":"55433"}`), false},
+		{
+			"multiple bindings",
+			strings.ReplaceAll(valid, binding, binding+`,{"HostIp":"0.0.0.0","HostPort":"55433"}`),
+			false,
+		},
 		{"no containers", "[]", false},
 		{"multiple containers", "[" + strings.Trim(valid, "[]") + "," + strings.Trim(valid, "[]") + "]", false},
 		{"malformed", "{", false},
