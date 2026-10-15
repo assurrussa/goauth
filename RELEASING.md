@@ -6,9 +6,8 @@ acceptance criteria and sequence of the first public release.
 
 ## Version state
 
-The latest published release is [`v0.7.0`](https://github.com/assurrussa/goauth/releases/tag/v0.7.0),
-commit `ebad6820e81b191cf5c3ccf87c0f3c7c449dc509`, using schema 8.
-The current unreleased MFA candidate uses schema 11. This document does not
+The latest published release is [`v0.9.0`](https://github.com/assurrussa/goauth/releases/tag/v0.9.0),
+using schema 12. The current unreleased sender-diagnostics candidate uses schema 13. This document does not
 select its next tag or claim completed release checks. Existing tags must never
 be reused or moved.
 
@@ -18,7 +17,13 @@ final source commit and separately reviewed documentation delta. Candidate
 verification does not establish exact-tag public availability, host acceptance,
 adoption or deployment.
 
-Upgrading from `v0.7.0` applies three additive schema steps in order:
+Upgrading from `v0.9.0` applies the additive schema 12→13 step: five nullable
+sender-diagnostic fields, with no historical backfill. The optional
+`NotificationDiagnosticError` contract preserves existing sender compatibility
+and retry behavior; missing diagnostics mean unavailable, not delivery success.
+See [safe sender diagnostics](docs/notification-delivery.md#safe-sender-diagnostics-schema-13).
+
+For installations still on `v0.7.0`, the preceding additive steps remain:
 
 - 8→9: local factor, recovery, attempt-budget, login-continuation and enrollment
   storage; see [local MFA](docs/local-mfa.md).
@@ -26,13 +31,15 @@ Upgrading from `v0.7.0` applies three additive schema steps in order:
   see [required MFA](docs/required-mfa.md).
 - 10→11: host-scoped email-change snapshots;
   see [scoped email changes](docs/scoped-email-change.md).
+- 11→12: notification cancellation and bounded receipt cleanup;
+  see [notification lifecycle](docs/notification-lifecycle.md).
 
 `postgres.Migrate` applies the pending steps and verifies the resulting schema
 inside its owned transaction. Preserve published migration bytes and existing
 auth state, identifiers, credentials, host projections, keys and security history.
 Do not reset the database or lower migration history. The
 [v0.6 migration guide](docs/v0.6-migration.md) remains the historical schema 3→8
-upgrade contract for older installations; it does not verify the new 8→11 path.
+upgrade contract for older installations; it does not verify the current upgrade path.
 
 Optional MFA remains the default. Enabling required mode rejects legacy sessions
 with unknown admission and password-only sessions on their next canonical
@@ -50,8 +57,13 @@ A database backup without its required keys does not establish recoverability.
 Current source requires Go 1.27.2 or newer. Hosts must rebuild with a supported
 patched compiler; a module requirement cannot patch an already-built binary.
 
-`postgres.Migrate` does not downgrade schemas. The published schema-8 `v0.7.0` library
-rejects schema 11 as newer than it supports; do not assume an older binary can
+Stop and join old notification workers and coordinate application writers before
+migration; resume them only with the schema-13-compatible binary. Mixed older
+writers/workers are not a supported rollout. Preserve queued envelopes, key
+rings, delivery IDs and original deadlines; migration must not resend mail.
+
+`postgres.Migrate` does not downgrade schemas. The published schema-12 `v0.9.0` library
+rejects schema 13 as newer than it supports; do not assume an older binary can
 run against an upgraded database. Review rollback to a schema-compatible binary
 or restoration of a pre-upgrade snapshot with its required keys, accounting for
 writes made since that snapshot. `postgres.Down` is a destructive development/
@@ -78,7 +90,7 @@ its own explicit scope, review and verification.
 
 The published v0.5.0/v0.5.1 code changes Runtime/store contracts and HTTP authorization defaults.
 It preserves the version-3 database and existing rows; no `Down` is required.
-That historical claim does not apply to the current schema-11 candidate.
+That historical claim does not apply to the current schema-13 candidate.
 Read [docs/v0.5-migration.md](docs/v0.5-migration.md), including exact external
 issuer keys and custom transaction wiring. Candidate verification does not
 publish a tag, change visibility, or establish production adoption.
@@ -233,7 +245,7 @@ or local tests alone.
 
 The schema-8 session-bound OIDC surface and its
 [compatibility and rollout checks](docs/session-bound-oidc.md) remain relevant
-to the schema-11 candidate. Keep published migration bytes frozen. That baseline
+to the schema-13 candidate. Keep published migration bytes frozen. That baseline
 removes legacy refresh Get replay side effects while preserving source compatibility;
 release notes must call out the inactive snapshot and authenticated mutation
 replacement. Do not publish a schema change independently of its API and a verified

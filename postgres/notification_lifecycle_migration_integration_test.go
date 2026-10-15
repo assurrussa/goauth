@@ -19,6 +19,7 @@ import (
 // in reverse order so their recorded versions describe the actual schema.
 func removeNotificationLifecycleSchema(t *testing.T, db *sql.DB) {
 	t.Helper()
+	removeNotificationSenderDiagnosticsSchema(t, db)
 	_, err := db.ExecContext(t.Context(), `
 DROP INDEX auth_notification_deliveries_receipt_cleanup_idx;
 ALTER TABLE auth_notification_deliveries
@@ -35,8 +36,8 @@ func TestNotificationLifecycleMigrationPreservesReceiptsAndHistory(t *testing.T)
 	id := f.insert(t, "pending", f.now.Add(time.Hour), 2, false)
 	oldID := f.insert(t, "exhausted", f.now.Add(-24*time.Hour), 10, true)
 	removeNotificationLifecycleSchema(t, f.db)
-	before := notificationLifecycleSnapshot(t, f.db, id)
-	oldBefore := notificationLifecycleSnapshot(t, f.db, oldID)
+	before := notificationPreSenderSnapshot(t, f.db, id)
+	oldBefore := notificationPreSenderSnapshot(t, f.db, oldID)
 	var historyBefore, historyAfter string
 	const history = "SELECT jsonb_agg(to_jsonb(h) ORDER BY version)::text FROM goauth_migration_history h WHERE version<=11"
 	require.NoError(t, f.db.QueryRowContext(t.Context(), history).Scan(&historyBefore))
@@ -44,8 +45,8 @@ func TestNotificationLifecycleMigrationPreservesReceiptsAndHistory(t *testing.T)
 	require.NoError(t, postgres.Migrate(t.Context(), f.db))
 	require.NoError(t, postgres.Migrate(t.Context(), f.db))
 	require.NoError(t, postgres.VerifySchema(t.Context(), f.db))
-	require.Equal(t, before, notificationLifecycleSnapshot(t, f.db, id))
-	require.Equal(t, oldBefore, notificationLifecycleSnapshot(t, f.db, oldID))
+	require.Equal(t, before, notificationPreSenderSnapshot(t, f.db, id))
+	require.Equal(t, oldBefore, notificationPreSenderSnapshot(t, f.db, oldID))
 	require.NoError(t, f.db.QueryRowContext(t.Context(), history).Scan(&historyAfter))
 	require.Equal(t, historyBefore, historyAfter)
 	data, err := os.ReadFile("migrations/00011_notification_lifecycle.sql")

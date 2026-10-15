@@ -16,7 +16,7 @@ func TestRateEventCleanupMigrationPreservesRetirementBaseline(t *testing.T) {
 	require.Equal(t, 5, notificationExpirySchemaVersion)
 	require.Equal(t, 6, subjectRetirementSchemaVersion)
 	require.Equal(t, 7, rateEventCleanupSchemaVersion)
-	require.Equal(t, notificationLifecycleSchemaVersion, schemaVersion)
+	require.Equal(t, notificationSenderDiagnosticsSchemaVersion, schemaVersion)
 	data, err := migrationFiles.ReadFile("migrations/00005_subject_retirement.sql")
 	require.NoError(t, err)
 	checksum := sha256.Sum256(data)

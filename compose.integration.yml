@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: goauth
       POSTGRES_PASSWORD: goauth
     ports:
-      - "127.0.0.1:55432:5432"
+      - "127.0.0.1:${GOAUTH_TEST_POSTGRES_PORT:-55432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U goauth -d goauth_integration"]
       interval: 1s

@@ -27,6 +27,25 @@ type NotificationDelivery struct {
 	ValidUntil     time.Time
 }
 
+// NotificationDiagnostic is a bounded, transport-safe explanation of a sender
+// failure. It must never contain an address, URL, response body, credential or
+// raw error. PostgreSQL independently validates every tuple before persisting it.
+// HTTPStatus is zero when no HTTP response was observed. This is an observation
+// of one attempt, never proof of delivery or a change to retry policy.
+type NotificationDiagnostic struct {
+	Outcome    string
+	Code       string
+	HTTPStatus int
+}
+
+// NotificationDiagnosticError optionally enriches a sender error. Existing
+// NotificationSender implementations remain compatible. Wrapped errors are
+// supported via errors.As; rejection still requires ErrNotificationRejected.
+type NotificationDiagnosticError interface {
+	error
+	NotificationDiagnostic() NotificationDiagnostic
+}
+
 // NotificationSender is the only delivery integration required from a host
 // using the PostgreSQL managed notification queue.
 type NotificationSender interface {

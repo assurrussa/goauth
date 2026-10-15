@@ -24,16 +24,18 @@ import (
 )
 
 const (
+	deadlineReclaimedOwner     = "new-owner"
 	deadlineBeforeSend         = "before_send"
 	deadlineReservationTimeout = "reservation_timeout"
 	deadlineSenderFailure      = "sender_failure"
 )
 
 type deadlineDelivery struct {
-	event    goauth.EncryptedEvent
-	token    string
-	attempts int64
-	state    string
+	event      goauth.EncryptedEvent
+	token      string
+	attempts   int64
+	state      string
+	diagnostic []driver.Value
 }
 
 type deadlineDriver struct {
@@ -127,6 +129,10 @@ func (c *deadlineConn) ExecContext(ctx context.Context, query string, args []dri
 			if !ok {
 				return nil, errors.New("invalid delivery state")
 			}
+			d.diagnostic = nil
+			for _, arg := range args[7:] {
+				d.diagnostic = append(d.diagnostic, arg.Value)
+			}
 			d.state = state
 			d.token = ""
 			if i == 1 && c.state.secondFinished != nil {
@@ -140,6 +146,7 @@ func (c *deadlineConn) ExecContext(ctx context.Context, query string, args []dri
 
 func (c *deadlineConn) reserve(ctx context.Context, i int) (driver.Result, error) {
 	d := &c.state.deliveries[i]
+	d.diagnostic = nil
 	if i == 0 {
 		if c.state.reserveErr != nil {
 			if c.state.mode == "storage_timeout" {
@@ -167,7 +174,7 @@ func (c *deadlineConn) reserve(ctx context.Context, i int) (driver.Result, error
 			<-ctx.Done()
 			return nil, ctx.Err()
 		case "lease_lost":
-			d.token = "new-owner"
+			d.token = deadlineReclaimedOwner
 			<-ctx.Done()
 			return nil, ctx.Err()
 		}

@@ -57,15 +57,25 @@ func TestNotificationExpiryIndexUpgradesV4AndBoundsSelection(t *testing.T) {
  'synthetic','\x01',CASE WHEN i<=30000 THEN NULL ELSE '\x01'::bytea END,'\x01',$2,$2::timestamptz+interval '1 day',
  CASE WHEN i<=30000 THEN 'delivered' ELSE 'pending' END,$2 FROM generate_series(1,35000) i`, subject, now)
 	require.NoError(t, err)
+	// Compare the same legacy columns on both sides of the additive schema upgrade.
+	const retainedSnapshot = `SELECT md5(string_agg((to_jsonb(n) - ARRAY[
+ 'last_sender_outcome','last_sender_code','last_sender_http_status',
+ 'last_sender_attempt','last_sender_observed_at'])::text,'' ORDER BY id))
+ FROM auth_notification_deliveries n`
 	var before string
-	require.NoError(t, db.QueryRow(`SELECT md5(string_agg(row_to_json(n)::text,'' ORDER BY id)) FROM auth_notification_deliveries n`).Scan(&before))
+	require.NoError(t, db.QueryRowContext(t.Context(), retainedSnapshot).Scan(&before))
 	require.ErrorIs(t, postgres.VerifySchema(t.Context(), db), postgres.ErrSchemaNeedsMigration)
 	require.NoError(t, postgres.Migrate(t.Context(), db))
 	require.NoError(t, postgres.Migrate(t.Context(), db))
 	require.NoError(t, postgres.VerifySchema(t.Context(), db))
 	var after string
-	require.NoError(t, db.QueryRow(`SELECT md5(string_agg(row_to_json(n)::text,'' ORDER BY id)) FROM auth_notification_deliveries n`).Scan(&after))
+	require.NoError(t, db.QueryRowContext(t.Context(), retainedSnapshot).Scan(&after))
 	require.Equal(t, before, after, "migration must not rewrite retained notification data")
+	var diagnostics int
+	require.NoError(t, db.QueryRowContext(t.Context(), `SELECT count(*) FROM auth_notification_deliveries
+ WHERE last_sender_outcome IS NOT NULL OR last_sender_code IS NOT NULL OR last_sender_http_status IS NOT NULL
+ OR last_sender_attempt IS NOT NULL OR last_sender_observed_at IS NOT NULL`).Scan(&diagnostics))
+	require.Zero(t, diagnostics, "migration must not fabricate diagnostics for retained notification data")
 	_, err = db.Exec(`ANALYZE auth_notification_deliveries`)
 	require.NoError(t, err)
 	locked, err := db.BeginTx(t.Context(), nil)

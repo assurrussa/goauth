@@ -212,6 +212,8 @@ func (r *Runtime) deliverNotification(ctx context.Context, claim notificationCla
 	}
 	err = r.sendCurrentEmailChangeNotification(sendCtx, claim.event, notification)
 	cancel()
+	claim.diagnostic = notificationSenderDiagnostic(err)
+	claim.observedAt = r.notificationNow().UTC()
 	if errors.Is(err, errPasswordResetNotificationStale) || errors.Is(err, errEmailChangeNotificationStale) {
 		return r.store.finishNotification(ctx, claim, notificationExpired, "stale", time.Time{})
 	}

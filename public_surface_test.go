@@ -200,6 +200,8 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = goauth.NotificationDelivery{
 		ID: "", EncryptedEvent: goauth.EncryptedEvent{}, Notification: goauth.Notification{}, ValidUntil: time.Time{},
 	}
+	_ = goauth.NotificationDiagnostic{Outcome: "", Code: "", HTTPStatus: 0}
+	var _ goauth.NotificationDiagnosticError
 	_ = goauth.NotificationSenderFunc(nil)
 	var sender goauth.NotificationSender = goauth.NotificationSenderFunc(nil)
 	_ = sender
