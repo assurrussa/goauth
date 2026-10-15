@@ -143,9 +143,7 @@ func applyPendingMigrations(ctx context.Context, tx *sql.Tx, state schemaState) 
 		}
 		fallthrough
 	case schemaStateV12:
-		if err := applyNotificationSenderDiagnosticsMigration(ctx, tx); err != nil {
-			return err
-		}
+		return applyNotificationSenderDiagnosticsMigration(ctx, tx)
 	default:
 		return errors.New("unknown goauth schema state")
 	}

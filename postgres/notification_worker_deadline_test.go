@@ -24,6 +24,7 @@ import (
 )
 
 const (
+	deadlineReclaimedOwner     = "new-owner"
 	deadlineBeforeSend         = "before_send"
 	deadlineReservationTimeout = "reservation_timeout"
 	deadlineSenderFailure      = "sender_failure"
@@ -173,7 +174,7 @@ func (c *deadlineConn) reserve(ctx context.Context, i int) (driver.Result, error
 			<-ctx.Done()
 			return nil, ctx.Err()
 		case "lease_lost":
-			d.token = "new-owner"
+			d.token = deadlineReclaimedOwner
 			<-ctx.Done()
 			return nil, ctx.Err()
 		}

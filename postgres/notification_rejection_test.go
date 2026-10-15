@@ -53,14 +53,14 @@ func TestNotificationExpiryRejectsForeignTransaction(t *testing.T) {
 func TestManagedSenderRejectionCannotOverwriteReclaimedLease(t *testing.T) {
 	d := &deadlineDriver{deliveries: []deadlineDelivery{{event: deadlineEvent(t, "reclaimed", time.Now().Add(time.Hour))}}}
 	r := deadlineRuntime(t, d, goauth.NotificationSenderFunc(func(context.Context, goauth.NotificationDelivery) error {
-		d.deliveries[0].token = "new-owner"
+		d.deliveries[0].token = deadlineReclaimedOwner
 		return goauth.ErrNotificationRejected
 	}))
 	claim, err := r.store.claimNotification(t.Context(), time.Now(), time.Minute)
 	require.NoError(t, err)
 	require.NoError(t, r.deliverNotification(t.Context(), claim))
 	require.Equal(t, notificationLeased, d.deliveries[0].state)
-	require.Equal(t, "new-owner", d.deliveries[0].token)
+	require.Equal(t, deadlineReclaimedOwner, d.deliveries[0].token)
 }
 
 func TestManagedSenderRejectionSettlesAfterParentCancellation(t *testing.T) {
