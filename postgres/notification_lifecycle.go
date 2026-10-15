@@ -63,7 +63,9 @@ func (r *Runtime) CancelNotification(ctx context.Context, id string) (bool, erro
 const notificationCancellationSQL = `
 UPDATE auth_notification_deliveries
 SET state='cancelled', last_failure='operator_cancelled', ciphertext=NULL, nonce='\x'::bytea, additional_data='\x'::bytea,
- lease_token=NULL, leased_until=NULL
+ lease_token=NULL, leased_until=NULL,
+ last_sender_outcome=NULL, last_sender_code=NULL, last_sender_http_status=NULL,
+ last_sender_attempt=NULL, last_sender_observed_at=NULL
 WHERE id=$1 AND state IN ('pending', 'blocked') AND ciphertext IS NOT NULL
  AND lease_token IS NULL AND leased_until IS NULL
  AND valid_until > $2 AND delete_after > $2 AND attempts < $3`

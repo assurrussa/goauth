@@ -16,6 +16,8 @@ type notificationClaim struct {
 	event      goauth.EncryptedEvent
 	leaseToken string
 	attempts   int
+	diagnostic *goauth.NotificationDiagnostic
+	observedAt time.Time
 }
 
 const (
@@ -59,7 +61,9 @@ func (s *Store) DeleteExpiredEncrypted(ctx context.Context, before time.Time) (i
 	result, err := s.notificationExecer(ctx).ExecContext(ctx, `
 UPDATE auth_notification_deliveries
 SET state = 'expired', ciphertext = NULL, nonce = '\x'::bytea,
-    additional_data = '\x'::bytea, lease_token = NULL, leased_until = NULL
+    additional_data = '\x'::bytea, lease_token = NULL, leased_until = NULL,
+ last_sender_outcome = NULL, last_sender_code = NULL, last_sender_http_status = NULL,
+ last_sender_attempt = NULL, last_sender_observed_at = NULL
 WHERE ciphertext IS NOT NULL AND (valid_until <= $1 OR delete_after <= $1)`, before)
 	if err != nil {
 		return 0, fmt.Errorf("expire managed notifications: %w", err)
@@ -152,7 +156,9 @@ func (s *Store) reserveNotificationSend(
 ) (bool, error) {
 	result, err := s.db.ExecContext(ctx, `
 UPDATE auth_notification_deliveries
-SET attempts = attempts + 1, leased_until = $5
+SET attempts = attempts + 1, leased_until = $5,
+ last_sender_outcome = NULL, last_sender_code = NULL, last_sender_http_status = NULL,
+ last_sender_attempt = NULL, last_sender_observed_at = NULL
 WHERE id = $1 AND lease_token = $2 AND state = 'leased' AND attempts < $3
   AND leased_until > $4 AND valid_until > $4 AND delete_after > $4`,
 		claim.event.ID, claim.leaseToken, maxAttempts, now, now.Add(lease))
@@ -189,6 +195,14 @@ func (s *Store) finishNotificationResult(
 	if !next.IsZero() {
 		nextAttempt = next
 	}
+	var outcome, code, status, observed any
+	if claim.diagnostic != nil && (failure == "sender" || failure == "sender_rejected") &&
+		(state == notificationPending || state == notificationExhausted) && !claim.observedAt.IsZero() {
+		outcome, code, observed = claim.diagnostic.Outcome, claim.diagnostic.Code, claim.observedAt
+		if claim.diagnostic.HTTPStatus != 0 {
+			status = claim.diagnostic.HTTPStatus
+		}
+	}
 	clearPayload := state == notificationDelivered || state == notificationExhausted || state == notificationExpired
 	result, err := s.db.ExecContext(ctx, `
 UPDATE auth_notification_deliveries
@@ -198,9 +212,12 @@ SET state = $3,
     ciphertext = CASE WHEN $7 THEN NULL ELSE ciphertext END,
     nonce = CASE WHEN $7 THEN '\x'::bytea ELSE nonce END,
     additional_data = CASE WHEN $7 THEN '\x'::bytea ELSE additional_data END,
-    lease_token = NULL, leased_until = NULL
+    lease_token = NULL, leased_until = NULL,
+    last_sender_outcome = $8, last_sender_code = $9, last_sender_http_status = $10,
+    last_sender_attempt = CASE WHEN $8::varchar IS NOT NULL THEN attempts ELSE NULL END,
+    last_sender_observed_at = $11
 WHERE id = $1 AND lease_token = $2 AND state = 'leased'`,
-		claim.event.ID, claim.leaseToken, state, nextAttempt, failure, deliveredAt, clearPayload)
+		claim.event.ID, claim.leaseToken, state, nextAttempt, failure, deliveredAt, clearPayload, outcome, code, status, observed)
 	if err != nil {
 		return false, fmt.Errorf("finish managed notification: %w", err)
 	}

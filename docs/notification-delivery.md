@@ -203,3 +203,36 @@ Schema 12 adds transaction-aware `CancelNotification` and bounded,
 queue-only `CleanupNotificationReceipts`. See [notification lifecycle](notification-lifecycle.md)
 for eligibility, lease fencing, conservative receipt retention and the required
 future-only interpretation of cancellation.
+
+## Safe sender diagnostics (schema 13)
+
+Senders may optionally return an error implementing `goauth.NotificationDiagnosticError`.
+Its `NotificationDiagnostic()` result contains only `Outcome`, `Code`, and an
+`HTTPStatus` (zero when no response was observed). This is source-compatible with
+existing senders. PostgreSQL independently rejects unknown strings, contradictory
+outcome/code/status combinations, and a terminal outcome without
+`errors.Is(err, goauth.ErrNotificationRejected)` (or a nonterminal outcome with
+that sentinel). Never put addresses, tokens, URLs, response bodies or raw errors
+in these fields. Unknown or unsupported diagnostics are omitted entirely.
+
+For a valid sender failure, the worker persists `last_sender_outcome`,
+`last_sender_code`, `last_sender_http_status`, `last_sender_attempt` and
+`last_sender_observed_at` in the same lease-token-checked statement as queue
+settlement. The attempt number comes from the reserved database counter. A late
+completion cannot overwrite a newer lease or expired row. New send reservations,
+accepted sends, non-sender settlement, cancellation and expiry clear these fields.
+Legacy rows and legacy sender errors have all five fields NULL. There is no
+backfill, extra send, retry-policy change or delivery confirmation.
+
+Allowed outcomes are `not_sent`, `retryable`, `unknown`, `rejected`, and
+`simulated`. Admission errors use their exact status (`unauthorized`: 401/403,
+`endpoint_unavailable`: 404/405, `quota_exceeded`: 429, `request_too_large`: 413,
+`idempotency_conflict`: 409). Local validation/cancellation/expiry use zero;
+`invalid_request` also permits 400 and `expired` permits 410. Unknown network
+failure is `request_failed`/zero, dispatching is 202, and ambiguous dispatch is
+409. `invalid_response` permits HTTP statuses 100–599 except definitive admission
+statuses. Temporary rejection is 503; terminal rejection is 422; simulation is
+200. Only fixed documented codes are accepted. Diagnostics describe one attempt,
+not the overall delivery result: a retry or earlier ambiguous outcome can still
+have reached the provider. Hosts must not infer inbox delivery or reissue secrets
+from these fields. Hosts should show unavailable for NULL diagnostics.

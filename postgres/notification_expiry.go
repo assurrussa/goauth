@@ -48,5 +48,7 @@ WITH expired AS (
 )
 UPDATE auth_notification_deliveries n
 SET state='expired', ciphertext=NULL, nonce='\x'::bytea, additional_data='\x'::bytea,
- lease_token=NULL, leased_until=NULL
+ lease_token=NULL, leased_until=NULL,
+ last_sender_outcome=NULL, last_sender_code=NULL, last_sender_http_status=NULL,
+ last_sender_attempt=NULL, last_sender_observed_at=NULL
 FROM expired e WHERE n.id=e.id`
