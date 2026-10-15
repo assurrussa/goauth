@@ -22,7 +22,9 @@ GO_FILES := $(shell find . -type f -name '*.go' -not -path './.cache/*' -not -pa
 VERSION ?=
 # Keep SHA-bound evidence outside the clean checkout; no stale default manifest.
 EVIDENCE ?=
-GOAUTH_TEST_POSTGRES_DSN ?= postgres://goauth:goauth@127.0.0.1:55432/goauth_integration?sslmode=disable
+GOAUTH_TEST_POSTGRES_PORT ?= 55432
+GOAUTH_TEST_COMPOSE_PROJECT ?= goauth-v02-integration
+GOAUTH_TEST_POSTGRES_DSN ?= postgres://goauth:goauth@127.0.0.1:$(GOAUTH_TEST_POSTGRES_PORT)/goauth_integration?sslmode=disable
 GOAUTH_TEST_REDIS_ADDRESS ?= 127.0.0.1:56379
 COVERAGE_UNIT ?= coverage.unit.out
 COVERAGE_INTEGRATION ?= coverage.integration.out
@@ -32,6 +34,8 @@ export EVIDENCE
 export GOCACHE
 export GOMODCACHE
 export GOPATH
+export GOAUTH_TEST_POSTGRES_PORT
+export GOAUTH_TEST_COMPOSE_PROJECT
 export GOAUTH_TEST_POSTGRES_DSN
 export GOAUTH_TEST_REDIS_ADDRESS
 
@@ -134,10 +138,10 @@ coverage-aggregate:
 	go tool cover -func=$(COVERAGE_AGGREGATE)
 
 integration-up:
-	docker compose -f compose.integration.yml -p goauth-v02-integration up -d --wait
+	docker compose -f compose.integration.yml -p "$(GOAUTH_TEST_COMPOSE_PROJECT)" up -d --wait
 
 integration-down:
-	docker compose -f compose.integration.yml -p goauth-v02-integration down -v
+	docker compose -f compose.integration.yml -p "$(GOAUTH_TEST_COMPOSE_PROJECT)" down -v
 
 # Explicit invocations must fail when their tools/engine are missing.
 browser-acceptance:
@@ -149,7 +153,7 @@ backup-restore-check:
 integration-local: integration-up
 	@status=0; \
 		$(MAKE) integration || status=$$?; \
-		docker compose -f compose.integration.yml -p goauth-v02-integration down -v || status=$$?; \
+		docker compose -f compose.integration.yml -p "$(GOAUTH_TEST_COMPOSE_PROJECT)" down -v || status=$$?; \
 		exit $$status
 
 vulnerability-check:

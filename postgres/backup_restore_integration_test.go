@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -26,16 +25,36 @@ func TestPostgresBackupRestore(t *testing.T) {
 	if os.Getenv("GOAUTH_TEST_BACKUP_RESTORE") != "1" {
 		t.Skip("explicit backup-restore gate required")
 	}
-	u, err := url.Parse(os.Getenv("GOAUTH_TEST_POSTGRES_DSN"))
+	port := os.Getenv("GOAUTH_TEST_POSTGRES_PORT")
+	if port == "" {
+		port = "55432"
+	}
+	project := os.Getenv("GOAUTH_TEST_COMPOSE_PROJECT")
+	if project == "" {
+		project = backupFixtureProject
+	}
+	u, err := backupFixtureURL(os.Getenv("GOAUTH_TEST_POSTGRES_DSN"), port, project)
 	require.NoError(t, err)
-	require.Equal(t, "127.0.0.1:55432", u.Host, "backup fixture must use the disposable Compose project")
-	require.NotNil(t, u.User)
-	require.Equal(t, "goauth", u.User.Username())
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	ids, err := exec.CommandContext(ctx, "docker", "compose", "-f", "../compose.integration.yml", "-p", project, "ps", "--status", "running", "-q", "postgres").Output()
+	require.NoError(t, err, "resolve disposable Compose fixture")
+	containerIDs := strings.Fields(string(ids))
+	require.Len(t, containerIDs, 1, "backup fixture requires exactly one running postgres container")
+	containerID := containerIDs[0]
+	inspection, err := exec.CommandContext(ctx, "docker", "inspect", containerID).Output()
+	require.NoError(t, err, "inspect disposable Compose fixture")
+	require.NoError(t, validateBackupContainer(inspection, containerID, project, port))
 	admin, err := sql.Open("pgx", u.String())
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, admin.Close()) })
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel()
+	// A remote Docker context must not make the loopback DSN target another server.
+	var serverID string
+	require.NoError(t, admin.QueryRowContext(ctx, "SELECT system_identifier::text FROM pg_control_system()").Scan(&serverID))
+	fixtureID, err := exec.CommandContext(ctx, "docker", "exec", containerID, "psql", "--username=goauth", "--dbname=goauth_integration", "-At", "-c", "SELECT system_identifier::text FROM pg_control_system()").Output()
+	require.NoError(t, err, "read disposable fixture server identity")
+	require.NotEmpty(t, serverID)
+	require.Equal(t, serverID, strings.TrimSpace(string(fixtureID)), "DSN and inspected container must identify the same PostgreSQL server")
 	sourceName := "goauth_backup_" + strings.ReplaceAll(goauth.NewSubjectID().String(), "-", "")
 	restoredName := sourceName + "_restored"
 	for _, name := range []string{sourceName, restoredName} {
@@ -61,11 +80,11 @@ func TestPostgresBackupRestore(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, original.RequestPasswordReset(ctx, account.PrimaryEmail.DisplayValue))
 	require.NoError(t, original.Close())
-	dump := exec.CommandContext(ctx, "docker", "compose", "-f", "../compose.integration.yml", "-p", "goauth-v02-integration", "exec", "-T", "postgres", "pg_dump", "--username=goauth", "--dbname="+sourceName, "--format=custom", "--no-owner")
+	dump := exec.CommandContext(ctx, "docker", "exec", "-i", containerID, "pg_dump", "--username=goauth", "--dbname="+sourceName, "--format=custom", "--no-owner")
 	backup, err := dump.Output()
 	require.NoError(t, err, "pg_dump must succeed")
 	require.NotEmpty(t, backup)
-	restore := exec.CommandContext(ctx, "docker", "compose", "-f", "../compose.integration.yml", "-p", "goauth-v02-integration", "exec", "-T", "postgres", "pg_restore", "--username=goauth", "--dbname="+restoredName, "--no-owner", "--exit-on-error")
+	restore := exec.CommandContext(ctx, "docker", "exec", "-i", containerID, "pg_restore", "--username=goauth", "--dbname="+restoredName, "--no-owner", "--exit-on-error")
 	restore.Stdin = bytes.NewReader(backup)
 	require.NoError(t, restore.Run(), "pg_restore must succeed")
 	restoredURL := *u

@@ -194,3 +194,28 @@ signup, email verification, login/protected access, refresh and logout. The
 browser host also exposes password reset/change and email change. Verify CSRF
 rejection and that `/api` never accepts cookies as bearer credentials. Keep
 actual browser checks distinct from httptest and published-consumer evidence.
+
+## Isolated backup fixture on an alternate port
+
+The backup gate defaults to project `goauth-v02-integration` and IPv4 loopback
+port 55432. If that port is occupied, leave the existing container untouched.
+Explicitly select a fresh project with the `goauth-v02-integration-` prefix
+and an unused unprivileged port. For a PostgreSQL-only backup check:
+
+```sh
+export GOAUTH_TEST_COMPOSE_PROJECT=goauth-v02-integration-backup
+export GOAUTH_TEST_POSTGRES_PORT=55433
+export GOAUTH_TEST_POSTGRES_DSN="postgres://goauth:goauth@127.0.0.1:${GOAUTH_TEST_POSTGRES_PORT}/goauth_integration?sslmode=disable"
+docker compose -f compose.integration.yml -p "$GOAUTH_TEST_COMPOSE_PROJECT" up -d --wait postgres
+make backup-restore-check
+# Remove only this disposable project after the gate, including on failure.
+docker compose -f compose.integration.yml -p "$GOAUTH_TEST_COMPOSE_PROJECT" down -v
+```
+
+The gate requires the exact fixture database and credentials, checks the single
+running container's Compose project/service labels and loopback port binding,
+and compares the server identity reached through the DSN with that container
+before creating databases. URL parameters that redirect PostgreSQL connections
+are rejected. Dump and restore execute in the inspected container by ID; cleanup
+drops only the uniquely named databases created by the test. This configuration
+does not authorize using an existing application database or remote server.
