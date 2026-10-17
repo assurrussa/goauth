@@ -17,6 +17,7 @@ import (
 
 func removeNotificationSenderDiagnosticsSchema(t *testing.T, db *sql.DB) {
 	t.Helper()
+	removeAssistedRecoverySchema(t, db)
 	_, err := db.ExecContext(t.Context(), `ALTER TABLE auth_notification_deliveries
  DROP COLUMN last_sender_outcome, DROP COLUMN last_sender_code, DROP COLUMN last_sender_http_status,
  DROP COLUMN last_sender_attempt, DROP COLUMN last_sender_observed_at;

@@ -111,6 +111,15 @@ func (s *Store) notificationCurrent(ctx context.Context, event goauth.EncryptedE
 	}
 	var current bool
 	switch event.Type {
+	case "assisted_recovery":
+		err := s.queryer(ctx).QueryRowContext(ctx, `SELECT EXISTS (
+ SELECT 1 FROM auth_assisted_recovery r JOIN auth_subjects s ON s.id=r.subject_id
+ WHERE r.selector=$1 AND r.subject_id=$2 AND r.expires_at>$3 AND s.status='active'
+ AND s.retired_at IS NULL AND s.security_version=r.security_version
+ AND (r.scope<>'' OR EXISTS(SELECT 1 FROM auth_identifiers i WHERE i.subject_id=s.id
+ AND i.scheme='email' AND i.is_primary AND i.normalized_value=r.old_email))
+)`, event.ReferenceID, event.SubjectID, now).Scan(&current)
+		return current, err
 	case "password_reset":
 		err := s.queryer(ctx).QueryRowContext(ctx, `SELECT EXISTS (
     SELECT 1 FROM auth_password_reset_records

@@ -10,7 +10,7 @@ import (
 	"fmt"
 )
 
-const schemaVersion = 13
+const schemaVersion = 14
 
 const localIdentitySchemaVersion = 4
 
@@ -71,7 +71,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 
 func applyPendingMigrations(ctx context.Context, tx *sql.Tx, state schemaState) error {
 	switch state {
-	case schemaStateV13:
+	case schemaStateV14:
 		// No schema change is needed, but still finish the transaction to release
 		// the lock before reporting a successful verification.
 	case schemaStateFuture:
@@ -138,16 +138,29 @@ func applyPendingMigrations(ctx context.Context, tx *sql.Tx, state schemaState) 
 		}
 		fallthrough
 	case schemaStateV11:
-		if err := applyNotificationLifecycleMigration(ctx, tx); err != nil {
-			return err
-		}
-		fallthrough
+		return applyLifecycleRecoveryMigrations(ctx, tx)
 	case schemaStateV12:
-		return applyNotificationSenderDiagnosticsMigration(ctx, tx)
+		return applyFinalRecoveryMigrations(ctx, tx)
+	case schemaStateV13:
+		return applyAssistedRecoveryMigration(ctx, tx)
 	default:
 		return errors.New("unknown goauth schema state")
 	}
 	return nil
+}
+
+func applyLifecycleRecoveryMigrations(ctx context.Context, tx *sql.Tx) error {
+	if err := applyNotificationLifecycleMigration(ctx, tx); err != nil {
+		return err
+	}
+	return applyFinalRecoveryMigrations(ctx, tx)
+}
+
+func applyFinalRecoveryMigrations(ctx context.Context, tx *sql.Tx) error {
+	if err := applyNotificationSenderDiagnosticsMigration(ctx, tx); err != nil {
+		return err
+	}
+	return applyAssistedRecoveryMigration(ctx, tx)
 }
 
 func verifyPreRetirementSchema(ctx context.Context, tx *sql.Tx) error {
@@ -212,7 +225,7 @@ func verifySchema(ctx context.Context, db queryRower) error {
 	if state == schemaStateFuture {
 		return ErrFutureSchema
 	}
-	if state != schemaStateV13 {
+	if state != schemaStateV14 {
 		return ErrSchemaNeedsMigration
 	}
 	if err := verifyNotificationSchema(ctx, db); err != nil {
@@ -245,7 +258,10 @@ func verifySchema(ctx context.Context, db queryRower) error {
 	if err := verifyNotificationLifecycleSchema(ctx, db); err != nil {
 		return err
 	}
-	return verifyNotificationSenderDiagnosticsSchema(ctx, db)
+	if err := verifyNotificationSenderDiagnosticsSchema(ctx, db); err != nil {
+		return err
+	}
+	return verifyAssistedRecoverySchema(ctx, db)
 }
 
 func verifyNotificationSchema(ctx context.Context, db queryRower) error {
@@ -301,6 +317,7 @@ func Down(ctx context.Context, db *sql.DB, confirmation ResetConfirmation) error
 	}
 
 	const statement = `
+DROP TABLE IF EXISTS auth_assisted_recovery;
 DROP TABLE IF EXISTS auth_mfa_enrollments;
 DROP TABLE IF EXISTS auth_mfa_pending;
 DROP TABLE IF EXISTS auth_mfa_budget;
@@ -378,6 +395,7 @@ const (
 	schemaStateV11
 	schemaStateV12
 	schemaStateV13
+	schemaStateV14
 	schemaStateFuture
 )
 
@@ -386,7 +404,8 @@ func supportedSchemaVersion(version int) bool {
 		version == notificationExpirySchemaVersion || version == subjectRetirementSchemaVersion ||
 		version == rateEventCleanupSchemaVersion || version == sessionOIDCSchemaVersion ||
 		version == localMFASchemaVersion || version == 10 || version == scopedEmailChangeSchemaVersion ||
-		version == notificationLifecycleSchemaVersion || version == schemaVersion
+		version == notificationLifecycleSchemaVersion || version == notificationSenderDiagnosticsSchemaVersion ||
+		version == schemaVersion
 }
 
 func detectSchema(ctx context.Context, db queryRower) (schemaState, error) {
@@ -399,7 +418,8 @@ func detectSchema(ctx context.Context, db queryRower) (schemaState, error) {
 	}
 
 	var versionTable sql.NullString
-	if err := db.QueryRowContext(ctx, `SELECT to_regclass('public.goauth_schema_version')::text`).Scan(&versionTable); err != nil {
+	if err := db.QueryRowContext(ctx,
+		`SELECT to_regclass('public.goauth_schema_version')::text`).Scan(&versionTable); err != nil {
 		return schemaStateEmpty, fmt.Errorf("detect goauth schema version table: %w", err)
 	}
 	if !versionTable.Valid || versionTable.String == "" {
@@ -431,6 +451,9 @@ WHERE table_schema = 'public'
 	}
 
 	if version == schemaVersion {
+		return schemaStateV14, nil
+	}
+	if version == notificationSenderDiagnosticsSchemaVersion {
 		return schemaStateV13, nil
 	}
 	if version == notificationLifecycleSchemaVersion {
