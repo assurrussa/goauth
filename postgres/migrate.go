@@ -138,21 +138,29 @@ func applyPendingMigrations(ctx context.Context, tx *sql.Tx, state schemaState) 
 		}
 		fallthrough
 	case schemaStateV11:
-		if err := applyNotificationLifecycleMigration(ctx, tx); err != nil {
-			return err
-		}
-		fallthrough
+		return applyLifecycleRecoveryMigrations(ctx, tx)
 	case schemaStateV12:
-		if err := applyNotificationSenderDiagnosticsMigration(ctx, tx); err != nil {
-			return err
-		}
-		fallthrough
+		return applyFinalRecoveryMigrations(ctx, tx)
 	case schemaStateV13:
 		return applyAssistedRecoveryMigration(ctx, tx)
 	default:
 		return errors.New("unknown goauth schema state")
 	}
 	return nil
+}
+
+func applyLifecycleRecoveryMigrations(ctx context.Context, tx *sql.Tx) error {
+	if err := applyNotificationLifecycleMigration(ctx, tx); err != nil {
+		return err
+	}
+	return applyFinalRecoveryMigrations(ctx, tx)
+}
+
+func applyFinalRecoveryMigrations(ctx context.Context, tx *sql.Tx) error {
+	if err := applyNotificationSenderDiagnosticsMigration(ctx, tx); err != nil {
+		return err
+	}
+	return applyAssistedRecoveryMigration(ctx, tx)
 }
 
 func verifyPreRetirementSchema(ctx context.Context, tx *sql.Tx) error {
@@ -396,7 +404,8 @@ func supportedSchemaVersion(version int) bool {
 		version == notificationExpirySchemaVersion || version == subjectRetirementSchemaVersion ||
 		version == rateEventCleanupSchemaVersion || version == sessionOIDCSchemaVersion ||
 		version == localMFASchemaVersion || version == 10 || version == scopedEmailChangeSchemaVersion ||
-		version == notificationLifecycleSchemaVersion || version == notificationSenderDiagnosticsSchemaVersion || version == schemaVersion
+		version == notificationLifecycleSchemaVersion || version == notificationSenderDiagnosticsSchemaVersion ||
+		version == schemaVersion
 }
 
 func detectSchema(ctx context.Context, db queryRower) (schemaState, error) {
@@ -409,7 +418,8 @@ func detectSchema(ctx context.Context, db queryRower) (schemaState, error) {
 	}
 
 	var versionTable sql.NullString
-	if err := db.QueryRowContext(ctx, `SELECT to_regclass('public.goauth_schema_version')::text`).Scan(&versionTable); err != nil {
+	if err := db.QueryRowContext(ctx,
+		`SELECT to_regclass('public.goauth_schema_version')::text`).Scan(&versionTable); err != nil {
 		return schemaStateEmpty, fmt.Errorf("detect goauth schema version table: %w", err)
 	}
 	if !versionTable.Valid || versionTable.String == "" {

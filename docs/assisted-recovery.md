@@ -46,10 +46,12 @@ requires the owner's existing MFA. Loss of MFA is a separate support procedure.
 
 ## Verification status
 
-Focused unit and PostgreSQL integration tests are supplied for validation,
-authorization denial, unchanged initiation, single-use concurrent completion,
-credential/session invalidation, old-email notification and existing-factor
-preservation. These candidate tests have not executed in the source-editing
-environment: a Go toolchain and writable build/test environment are unavailable.
-Run formatting and the repository's aggregate checks, then the relevant isolated
-PostgreSQL integration suite, before review, release or deployment.
+Local validation on macOS (2026-10-17, Go 1.27.2) passed `make check`,
+`go build -mod=readonly ./...`, and `make integration` against disposable
+PostgreSQL/Redis. The integration gate includes schema upgrades, single-use
+concurrent completion, existing-MFA preservation and fail-closed missing keys,
+credential/session invalidation, old-email notification, and the PostgreSQL
+external consumer probe. Unit coverage is 80.9%; PostgreSQL coverage is 81.4%.
+Configuration-denial and schema-14 upgrade/idempotency/checksum regressions are
+included. No release, deployment, or independent review is implied by these
+local results.
