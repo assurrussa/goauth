@@ -10,7 +10,7 @@ import (
 	"fmt"
 )
 
-const schemaVersion = 13
+const schemaVersion = 14
 
 const localIdentitySchemaVersion = 4
 
@@ -71,7 +71,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 
 func applyPendingMigrations(ctx context.Context, tx *sql.Tx, state schemaState) error {
 	switch state {
-	case schemaStateV13:
+	case schemaStateV14:
 		// No schema change is needed, but still finish the transaction to release
 		// the lock before reporting a successful verification.
 	case schemaStateFuture:
@@ -143,7 +143,12 @@ func applyPendingMigrations(ctx context.Context, tx *sql.Tx, state schemaState) 
 		}
 		fallthrough
 	case schemaStateV12:
-		return applyNotificationSenderDiagnosticsMigration(ctx, tx)
+		if err := applyNotificationSenderDiagnosticsMigration(ctx, tx); err != nil {
+			return err
+		}
+		fallthrough
+	case schemaStateV13:
+		return applyAssistedRecoveryMigration(ctx, tx)
 	default:
 		return errors.New("unknown goauth schema state")
 	}
@@ -212,7 +217,7 @@ func verifySchema(ctx context.Context, db queryRower) error {
 	if state == schemaStateFuture {
 		return ErrFutureSchema
 	}
-	if state != schemaStateV13 {
+	if state != schemaStateV14 {
 		return ErrSchemaNeedsMigration
 	}
 	if err := verifyNotificationSchema(ctx, db); err != nil {
@@ -245,7 +250,10 @@ func verifySchema(ctx context.Context, db queryRower) error {
 	if err := verifyNotificationLifecycleSchema(ctx, db); err != nil {
 		return err
 	}
-	return verifyNotificationSenderDiagnosticsSchema(ctx, db)
+	if err := verifyNotificationSenderDiagnosticsSchema(ctx, db); err != nil {
+		return err
+	}
+	return verifyAssistedRecoverySchema(ctx, db)
 }
 
 func verifyNotificationSchema(ctx context.Context, db queryRower) error {
@@ -301,6 +309,7 @@ func Down(ctx context.Context, db *sql.DB, confirmation ResetConfirmation) error
 	}
 
 	const statement = `
+DROP TABLE IF EXISTS auth_assisted_recovery;
 DROP TABLE IF EXISTS auth_mfa_enrollments;
 DROP TABLE IF EXISTS auth_mfa_pending;
 DROP TABLE IF EXISTS auth_mfa_budget;
@@ -378,6 +387,7 @@ const (
 	schemaStateV11
 	schemaStateV12
 	schemaStateV13
+	schemaStateV14
 	schemaStateFuture
 )
 
@@ -386,7 +396,7 @@ func supportedSchemaVersion(version int) bool {
 		version == notificationExpirySchemaVersion || version == subjectRetirementSchemaVersion ||
 		version == rateEventCleanupSchemaVersion || version == sessionOIDCSchemaVersion ||
 		version == localMFASchemaVersion || version == 10 || version == scopedEmailChangeSchemaVersion ||
-		version == notificationLifecycleSchemaVersion || version == schemaVersion
+		version == notificationLifecycleSchemaVersion || version == notificationSenderDiagnosticsSchemaVersion || version == schemaVersion
 }
 
 func detectSchema(ctx context.Context, db queryRower) (schemaState, error) {
@@ -431,6 +441,9 @@ WHERE table_schema = 'public'
 	}
 
 	if version == schemaVersion {
+		return schemaStateV14, nil
+	}
+	if version == notificationSenderDiagnosticsSchemaVersion {
 		return schemaStateV13, nil
 	}
 	if version == notificationLifecycleSchemaVersion {

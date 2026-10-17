@@ -449,3 +449,12 @@ var (
 	_ func(context.Context, goauth.EmailChangeScope) context.Context = goauth.WithEmailChangeScope
 	_ func(context.Context) goauth.EmailChangeScope                  = goauth.EmailChangeScopeFromContext
 )
+
+var (
+ _ goauth.AssistedRecoveryStore = (*postgres.Store)(nil)
+ _ func(*goauth.Runtime, goauth.AssistedRecoveryAuthorization, string) (*goauth.AssistedRecovery,error) = goauth.NewAssistedRecovery
+ _ func(*goauth.Runtime, goauth.AssistedRecoveryAuthorization, string, string, goauth.AssistedRecoveryTarget) (*goauth.AssistedRecovery,error) = goauth.NewScopedAssistedRecovery
+ _ func(*goauth.AssistedRecovery, context.Context, goauth.AssistedRecoveryRequest) error = (*goauth.AssistedRecovery).Initiate
+ _ func(*goauth.AssistedRecovery, context.Context, goauth.AssistedRecoveryCompletion) error = (*goauth.AssistedRecovery).Complete
+ _ func(*goauth.AssistedRecovery, context.Context, goauth.AssistedRecoveryOwnerRequest, goauth.AssistedRecoveryOwnerAuthorization) error = (*goauth.AssistedRecovery).InitiateOwner
+)
