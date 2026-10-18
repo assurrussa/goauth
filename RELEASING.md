@@ -6,10 +6,10 @@ acceptance criteria and sequence of the first public release.
 
 ## Version state
 
-The latest published release is [`v0.9.0`](https://github.com/assurrussa/goauth/releases/tag/v0.9.0),
-using schema 12. The current unreleased sender-diagnostics candidate uses schema 13. This document does not
-select its next tag or claim completed release checks. Existing tags must never
-be reused or moved.
+The latest published release is [`v0.10.0`](https://github.com/assurrussa/goauth/releases/tag/v0.10.0),
+using schema 13. The selected `v0.11.0` candidate uses schema 14 for opt-in
+assisted recovery. Selection does not claim completed release checks. Existing
+tags must never be reused or moved.
 
 The [v0.7.0 preparation record](docs/v0.7-release-preparation.md) is historical
 evidence for its recorded source, not verification of this candidate. Record the
@@ -17,11 +17,17 @@ final source commit and separately reviewed documentation delta. Candidate
 verification does not establish exact-tag public availability, host acceptance,
 adoption or deployment.
 
-Upgrading from `v0.9.0` applies the additive schema 12→13 step: five nullable
-sender-diagnostic fields, with no historical backfill. The optional
-`NotificationDiagnosticError` contract preserves existing sender compatibility
-and retry behavior; missing diagnostics mean unavailable, not delivery success.
-See [safe sender diagnostics](docs/notification-delivery.md#safe-sender-diagnostics-schema-13).
+Upgrading from `v0.10.0` applies the additive schema 13→14 step for assisted
+recovery invitations. The opt-in service preserves existing MFA and requires
+explicit authorization, managed transactions and encrypted notification delivery.
+See [assisted recovery](docs/assisted-recovery.md) for its authority and lifecycle
+contract. Password reset authenticates tokens before expensive hashing when the
+store supports the existing preparation interface; legacy custom-store fallback
+remains compatible.
+
+For installations still on `v0.9.0`, schema 12→13 adds five nullable sender-diagnostic
+fields without historical backfill. See
+[safe sender diagnostics](docs/notification-delivery.md#safe-sender-diagnostics-schema-13).
 
 For installations still on `v0.7.0`, the preceding additive steps remain:
 
@@ -58,12 +64,12 @@ Current source requires Go 1.27.2 or newer. Hosts must rebuild with a supported
 patched compiler; a module requirement cannot patch an already-built binary.
 
 Stop and join old notification workers and coordinate application writers before
-migration; resume them only with the schema-13-compatible binary. Mixed older
+migration; resume them only with the schema-14-compatible binary. Mixed older
 writers/workers are not a supported rollout. Preserve queued envelopes, key
 rings, delivery IDs and original deadlines; migration must not resend mail.
 
-`postgres.Migrate` does not downgrade schemas. The published schema-12 `v0.9.0` library
-rejects schema 13 as newer than it supports; do not assume an older binary can
+`postgres.Migrate` does not downgrade schemas. The published schema-13 `v0.10.0` library
+rejects schema 14 as newer than it supports; do not assume an older binary can
 run against an upgraded database. Review rollback to a schema-compatible binary
 or restoration of a pre-upgrade snapshot with its required keys, accounting for
 writes made since that snapshot. `postgres.Down` is a destructive development/
@@ -90,7 +96,7 @@ its own explicit scope, review and verification.
 
 The published v0.5.0/v0.5.1 code changes Runtime/store contracts and HTTP authorization defaults.
 It preserves the version-3 database and existing rows; no `Down` is required.
-That historical claim does not apply to the current schema-13 candidate.
+That historical claim does not apply to the current schema-14 candidate.
 Read [docs/v0.5-migration.md](docs/v0.5-migration.md), including exact external
 issuer keys and custom transaction wiring. Candidate verification does not
 publish a tag, change visibility, or establish production adoption.
@@ -245,7 +251,7 @@ or local tests alone.
 
 The schema-8 session-bound OIDC surface and its
 [compatibility and rollout checks](docs/session-bound-oidc.md) remain relevant
-to the schema-13 candidate. Keep published migration bytes frozen. That baseline
+to the schema-14 candidate. Keep published migration bytes frozen. That baseline
 removes legacy refresh Get replay side effects while preserving source compatibility;
 release notes must call out the inactive snapshot and authenticated mutation
 replacement. Do not publish a schema change independently of its API and a verified
