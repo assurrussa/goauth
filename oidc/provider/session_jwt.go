@@ -14,6 +14,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
+	"github.com/assurrussa/goauth"
 	"github.com/assurrussa/goauth/oidc"
 )
 
@@ -168,6 +169,11 @@ func (s *SessionService) parseSessionAccessToken(ctx context.Context, raw string
 
 func (s *SessionService) userInfo(current oidc.SessionAdmissionResult, scopes []string) oidc.SessionUserInfo {
 	result := oidc.SessionUserInfo{UserInfo: s.base.buildUserInfo(current.Account, scopes), ProjectID: current.Projection.ProjectID}
+	if oidc.HasScope(scopes, oidc.ScopeEmail) && current.Projection.Email != nil {
+		result.Email = current.Projection.Email.Address
+		verified := true
+		result.EmailVerified = &verified
+	}
 	if oidc.HasScope(scopes, oidc.ScopeProfile) {
 		if current.Projection.Identifiers != nil {
 			identifiers := *current.Projection.Identifiers
@@ -181,7 +187,15 @@ func (s *SessionService) userInfo(current oidc.SessionAdmissionResult, scopes []
 
 func validProjection(value oidc.SessionProjection) bool {
 	return canonicalUUID(value.ProjectID) && validMetadataMap(value.Profile) && validMetadataMap(value.Project) &&
-		validCanonicalIdentifiers(value.Identifiers)
+		validCanonicalIdentifiers(value.Identifiers) && validVerifiedEmail(value.Email)
+}
+
+func validVerifiedEmail(value *oidc.VerifiedEmail) bool {
+	if value == nil {
+		return true // Existing hosts retain their canonical account-email policy.
+	}
+	normalized, err := goauth.NormalizeEmail(value.Address)
+	return err == nil && normalized == value.Address
 }
 
 var (

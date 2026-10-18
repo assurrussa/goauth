@@ -28,7 +28,8 @@ func TestSessionBoundProfileExternalSurface(t *testing.T) {
  SubjectID:"subject",SecurityVersion:1,ClientID:"client",SessionID:"sid",PolicyStamp:"opaque",
  AuthenticatedAt:time.Now(),AbsoluteExpiresAt:time.Now().Add(time.Hour)}
  _ = oidc.SessionProjection{
- ProjectID:"project",Profile:map[string]string{"name":"display"},Project:map[string]string{"team":"blue"}}
+ ProjectID:"project",Email:&oidc.VerifiedEmail{Address:"verified@example.test"},
+ Profile:map[string]string{"name":"display"},Project:map[string]string{"team":"blue"}}
  _ = oidc.SessionAdmissionRequest{Expected:nil,ClientRevision:1}
  _ = oidc.SessionAdmissionResult{Allowed:false}
  _ = oidc.SessionRequest{ClientRevision:1,LoginCompletion:&oidc.RequestLoginCompletion{CookieDigest:"digest"}}
