@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
 	"github.com/assurrussa/goauth"
 )
 
@@ -26,8 +27,10 @@ func TestProvisionExternalIdentityCreatesOnlySSOAccount(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	ctx := context.Background()
-	identity := goauth.ExternalIdentity{Issuer: testOIDCIssuer, Subject: "strict-new",
-		Email: "strict-new@example.test", EmailVerified: true}
+	identity := goauth.ExternalIdentity{
+		Issuer: testOIDCIssuer, Subject: "strict-new",
+		Email: "strict-new@example.test", EmailVerified: true,
+	}
 	first, err := f.Runtime.ProvisionExternalIdentity(ctx, identity)
 	require.NoError(t, err)
 	require.True(t, first.EmailVerified())
@@ -48,7 +51,9 @@ func TestProvisionExternalIdentityMissingIdentityFails(t *testing.T) {
 	t.Parallel()
 	f := newFixture(t)
 	for _, identity := range []goauth.ExternalIdentity{
-		{}, {Issuer: testOIDCIssuer}, {Subject: "no-issuer"},
+		{},
+		{Issuer: testOIDCIssuer},
+		{Subject: "no-issuer"},
 		{Issuer: testOIDCIssuer, Subject: "no-email"},
 	} {
 		_, err := f.Runtime.ProvisionExternalIdentity(context.Background(), identity)
