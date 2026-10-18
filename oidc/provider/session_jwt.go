@@ -171,8 +171,11 @@ func (s *SessionService) userInfo(current oidc.SessionAdmissionResult, scopes []
 	result := oidc.SessionUserInfo{UserInfo: s.base.buildUserInfo(current.Account, scopes), ProjectID: current.Projection.ProjectID}
 	if oidc.HasScope(scopes, oidc.ScopeEmail) && current.Projection.Email != nil {
 		result.Email = current.Projection.Email.Address
-		verified := true
-		result.EmailVerified = &verified
+		result.EmailVerified = nil
+		if current.Projection.Email.Address != "" {
+			verified := current.Projection.Email.Verified
+			result.EmailVerified = &verified
+		}
 	}
 	if oidc.HasScope(scopes, oidc.ScopeProfile) {
 		if current.Projection.Identifiers != nil {
@@ -187,12 +190,15 @@ func (s *SessionService) userInfo(current oidc.SessionAdmissionResult, scopes []
 
 func validProjection(value oidc.SessionProjection) bool {
 	return canonicalUUID(value.ProjectID) && validMetadataMap(value.Profile) && validMetadataMap(value.Project) &&
-		validCanonicalIdentifiers(value.Identifiers) && validVerifiedEmail(value.Email)
+		validCanonicalIdentifiers(value.Identifiers) && validEmailProjection(value.Email)
 }
 
-func validVerifiedEmail(value *oidc.VerifiedEmail) bool {
+func validEmailProjection(value *oidc.EmailProjection) bool {
 	if value == nil {
 		return true // Existing hosts retain their canonical account-email policy.
+	}
+	if value.Address == "" {
+		return !value.Verified
 	}
 	normalized, err := goauth.NormalizeEmail(value.Address)
 	return err == nil && normalized == value.Address

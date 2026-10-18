@@ -64,17 +64,19 @@ type MFAEnrollment struct {
 	SetupAvailable bool `json:"setup_available"`
 }
 
-// VerifiedEmail is an explicit host attestation of mailbox ownership for the
-// exact current address. Populate only after an actual successful challenge,
-// while holding the same canonical subject lock as issuance/refresh. A matching
-// email alias, profile field or administrative entry is not this evidence.
+// EmailProjection selects the host's current address and mailbox-ownership state.
+// Verified may be true only after an actual successful challenge for that exact
+// address/version, read under the canonical subject lock at issuance/refresh.
+// A non-nil unverified value suppresses the legacy account-email fallback.
+// Aliases, profile fields and administrative entries never prove ownership.
 // The host must invalidate its session/policy binding when that evidence changes.
-type VerifiedEmail struct {
-	Address string
+type EmailProjection struct {
+	Address  string
+	Verified bool
 }
 
 type SessionProjection struct {
-	Email       *VerifiedEmail
+	Email       *EmailProjection
 	MFA         *MFAEnrollment
 	Identifiers *CanonicalIdentifiers
 	ProjectID   string

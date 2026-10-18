@@ -90,7 +90,7 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = goauth.DefaultMaxConcurrentPasswordHashes
 	_ = goauth.Config{MaxConcurrentPasswordHashes: 4}
 	_ = goauth.Config{CredentialVerificationRateLimit: goauth.RateLimitPolicy{Window: time.Minute, Limit: 20}}
-	_ = goauth.Config{AutoLinkVerifiedEmailIssuers: []string{}, AuthTransaction: authTransaction}
+	_ = goauth.Config{AutoLinkEmailProjectionIssuers: []string{}, AuthTransaction: authTransaction}
 	_ = goauth.PasswordPolicy{DisableBlocklist: true}
 	_ = goauthhttp.New
 	_ = goauthhttp.RealmMiddlewareOptions{OfflineJWT: true}
@@ -278,8 +278,8 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = oidc.ClientSecretVerifierFunc.VerifyClientSecret
 	_ = provider.Options{ClientSecretVerifier: oidc.ClientSecretVerifierFunc(nil)}
 	_ = oidc.AuthorizationRequest{}
-	_ = oidc.VerifiedEmail{}
-	_ = oidc.SessionProjection{Email: &oidc.VerifiedEmail{Address: "verified@example.test"}}
+	_ = oidc.EmailProjection{}
+	_ = oidc.SessionProjection{Email: &oidc.EmailProjection{Address: "verified@example.test", Verified: true}}
 	_ = oidc.ErrRefreshTokenReplay
 	_ = provider.New
 	_ = provider.NewDisabled

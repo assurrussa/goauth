@@ -13,10 +13,10 @@ import (
 
 const sessionVerifiedAddress = "verified@example.test"
 
-func TestSessionHostVerifiedEmailSignedAndScoped(t *testing.T) {
+func TestSessionHostEmailProjectionSignedAndScoped(t *testing.T) {
 	t.Parallel()
 	h := newSessionFixture(t)
-	h.admission.Projection.Email = &oidc.VerifiedEmail{Address: sessionVerifiedAddress}
+	h.admission.Projection.Email = &oidc.EmailProjection{Address: sessionVerifiedAddress, Verified: true}
 	// Neither the unrelated primary email nor display metadata supplies this claim.
 	h.admission.Projection.Profile[oidc.ScopeEmail] = "untrusted@example.test"
 	response := h.issue(t)
@@ -46,10 +46,10 @@ func TestSessionHostVerifiedEmailSignedAndScoped(t *testing.T) {
 	require.Nil(t, info.EmailVerified)
 }
 
-func TestSessionHostVerifiedEmailRefreshUsesCurrentSnapshot(t *testing.T) {
+func TestSessionHostEmailProjectionRefreshUsesCurrentSnapshot(t *testing.T) {
 	t.Parallel()
 	h := newSessionFixture(t)
-	h.admission.Projection.Email = &oidc.VerifiedEmail{Address: sessionVerifiedAddress}
+	h.admission.Projection.Email = &oidc.EmailProjection{Address: sessionVerifiedAddress, Verified: true}
 	first := h.issue(t)
 	old := &sessionTokenClaims{}
 	_, _, err := jwt.NewParser().ParseUnverified(first.IDToken, old)
@@ -75,14 +75,14 @@ func TestSessionHostVerifiedEmailRefreshUsesCurrentSnapshot(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestSessionHostVerifiedEmailOptionalAndMalformed(t *testing.T) {
+func TestSessionHostEmailProjectionOptionalAndMalformed(t *testing.T) {
 	t.Parallel()
 	h := newSessionFixture(t)
 	legacy := h.service.base.buildUserInfo(h.admission.Account, []string{oidc.ScopeOpenID, oidc.ScopeEmail})
 	current := h.service.userInfo(h.admission, []string{oidc.ScopeOpenID, oidc.ScopeEmail})
 	require.Equal(t, legacy.Email, current.Email)
 	require.Equal(t, legacy.EmailVerified, current.EmailVerified)
-	require.True(t, validVerifiedEmail(nil))
+	require.True(t, validEmailProjection(nil))
 	for name, address := range map[string]string{
 		"empty": "", "uppercase": "User@example.test", "space": " user@example.test",
 		"display": "User <user@example.test>", "newline": "user@example.test\n",
@@ -91,7 +91,7 @@ func TestSessionHostVerifiedEmailOptionalAndMalformed(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			f := newSessionFixture(t)
-			f.admission.Projection.Email = &oidc.VerifiedEmail{Address: address}
+			f.admission.Projection.Email = &oidc.EmailProjection{Address: address, Verified: true}
 			require.False(t, validProjection(f.admission.Projection))
 			response, _, _, err := f.service.prepareTokens(t.Context(), f.admission, f.admission.Binding,
 				[]string{oidc.ScopeOpenID, oidc.ScopeEmail}, "nonce", f.admission.Binding.SessionID)
@@ -99,4 +99,22 @@ func TestSessionHostVerifiedEmailOptionalAndMalformed(t *testing.T) {
 			require.Nil(t, response)
 		})
 	}
+}
+
+func TestSessionHostUnverifiedEmailSuppressesPrimaryFallback(t *testing.T) {
+	t.Parallel()
+	h := newSessionFixture(t)
+	verifiedAt := h.now
+	h.admission.Account.PrimaryEmail.VerifiedAt = &verifiedAt
+	h.admission.Projection.Email = &oidc.EmailProjection{}
+	info := h.service.userInfo(h.admission, []string{oidc.ScopeOpenID, oidc.ScopeEmail})
+	require.Empty(t, info.Email)
+	require.Nil(t, info.EmailVerified)
+	require.True(t, validEmailProjection(h.admission.Projection.Email))
+	h.admission.Projection.Email.Address = sessionVerifiedAddress
+	info = h.service.userInfo(h.admission, []string{oidc.ScopeOpenID, oidc.ScopeEmail})
+	require.Equal(t, sessionVerifiedAddress, info.Email)
+	require.NotNil(t, info.EmailVerified)
+	require.False(t, *info.EmailVerified)
+	require.True(t, validEmailProjection(h.admission.Projection.Email))
 }
