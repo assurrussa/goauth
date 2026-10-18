@@ -90,7 +90,7 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = goauth.DefaultMaxConcurrentPasswordHashes
 	_ = goauth.Config{MaxConcurrentPasswordHashes: 4}
 	_ = goauth.Config{CredentialVerificationRateLimit: goauth.RateLimitPolicy{Window: time.Minute, Limit: 20}}
-	_ = goauth.Config{AutoLinkEmailProjectionIssuers: []string{}, AuthTransaction: authTransaction}
+	_ = goauth.Config{AutoLinkVerifiedEmailIssuers: []string{}, AuthTransaction: authTransaction}
 	_ = goauth.PasswordPolicy{DisableBlocklist: true}
 	_ = goauthhttp.New
 	_ = goauthhttp.RealmMiddlewareOptions{OfflineJWT: true}
