@@ -36,6 +36,14 @@ func (r *Runtime) prepareExternalIdentity(
 	ctx context.Context,
 	external ExternalIdentity,
 ) (Account, func(context.Context) error, error) {
+	return r.prepareExternalIdentityPolicy(ctx, external, true)
+}
+
+func (r *Runtime) prepareExternalIdentityPolicy(
+	ctx context.Context,
+	external ExternalIdentity,
+	allowEmailLink bool,
+) (Account, func(context.Context) error, error) {
 	if external.Issuer == "" || external.Subject == "" {
 		return Account{}, nil, ErrInvalidIdentifier
 	}
@@ -64,7 +72,7 @@ func (r *Runtime) prepareExternalIdentity(
 	})
 	switch {
 	case findErr == nil && !existing.IsZero():
-		if !external.EmailVerified || !existing.EmailVerified() || !r.allowsAutoLink(external.Issuer) {
+		if !allowEmailLink || !external.EmailVerified || !existing.EmailVerified() || !r.allowsAutoLink(external.Issuer) {
 			return Account{}, nil, ErrExplicitIdentityLink
 		}
 		link := newIdentityLink(existing.Subject.ID, external, normalizedEmail, r.now().UTC())

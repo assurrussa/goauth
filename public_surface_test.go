@@ -208,6 +208,8 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = sender
 	var notificationTransaction goauth.NotificationTransaction = (*postgres.Store)(nil)
 	_ = notificationTransaction
+	_ = (*goauth.Runtime).ProvisionExternalIdentity
+	_ = (*postgres.Runtime).ProvisionExternalIdentity
 	_ = (*goauth.Runtime).ProvisionLocalIdentity
 	_ = (*goauth.Runtime).ImportLocalIdentity
 	_ = goauth.Config{EnableLegacyBytes256: true}

@@ -6,10 +6,12 @@ acceptance criteria and sequence of the first public release.
 
 ## Version state
 
-The latest published release is [`v0.10.0`](https://github.com/assurrussa/goauth/releases/tag/v0.10.0),
-using schema 13. The selected `v0.11.0` candidate uses schema 14 for opt-in
-assisted recovery. Selection does not claim completed release checks. Existing
-tags must never be reused or moved.
+The latest published release is [`v0.11.0`](https://github.com/assurrussa/goauth/releases/tag/v0.11.0),
+using schema 14. The selected `v0.12.0` candidate adds the explicit trusted-host
+`ProvisionExternalIdentity` API for strict SSO enrollment without email
+autolinking. Existing external-login behavior is unchanged; no new canonical
+migration is introduced. Selection does not claim completed release gates.
+Existing tags must never be reused or moved.
 
 The [v0.7.0 preparation record](docs/v0.7-release-preparation.md) is historical
 evidence for its recorded source, not verification of this candidate. Record the
