@@ -117,8 +117,8 @@ Do not rewrite existing tags. If `make` changes generated code, formatting,
 `go.mod`, or `go.sum`, commit those changes and publish a new semver tag.
 
 The frozen v0.1 compatibility baseline ends at `v0.1.7`. The latest published
-tag is `v0.10.0` (schema 13); the selected `v0.11.0` candidate uses
-schema 14 for opt-in assisted recovery. Do not
+tag is `v0.11.0` (schema 14); the selected `v0.12.0` candidate adds strict
+explicit SSO provisioning without changing the canonical schema. Do not
 publish all intervening master changes as an incidental patch release. Select
 the intended release or narrow backport explicitly; never reuse an existing tag.
 Published checks create fresh child-process caches instead of using the local
