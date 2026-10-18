@@ -64,7 +64,19 @@ type MFAEnrollment struct {
 	SetupAvailable bool `json:"setup_available"`
 }
 
+// EmailProjection selects the host's current address and mailbox-ownership state.
+// Verified may be true only after an actual successful challenge for that exact
+// address/version, read under the canonical subject lock at issuance/refresh.
+// A non-nil unverified value suppresses the legacy account-email fallback.
+// Aliases, profile fields and administrative entries never prove ownership.
+// The host must invalidate its session/policy binding when that evidence changes.
+type EmailProjection struct {
+	Address  string
+	Verified bool
+}
+
 type SessionProjection struct {
+	Email       *EmailProjection
 	MFA         *MFAEnrollment
 	Identifiers *CanonicalIdentifiers
 	ProjectID   string

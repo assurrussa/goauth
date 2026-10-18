@@ -431,3 +431,7 @@ realm/email policy and legacy provider DTO layouts unchanged.
 inactive snapshot; authenticated replay revocation/audit occurs on the owning
 provider's mutation path. See the compatibility notes before upgrading direct
 adapter consumers.
+
+Session-bound hosts can explicitly project a challenge-verified current email through
+[`oidc.EmailProjection`](docs/oidc-verified-email.md), without changing identity,
+local account provisioning, or the existing admin-realm email gate.
