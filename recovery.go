@@ -141,8 +141,9 @@ func (r *Runtime) ResetPassword(ctx context.Context, rawToken, newPassword strin
 	if err != nil {
 		return ErrInvalidToken
 	}
+	preparingStore, canPrepare := r.store.(PasswordResetSubjectStore)
 	var passwordPHC string
-	if r.passwordResetRecipientResolver == nil {
+	if r.passwordResetRecipientResolver == nil && !canPrepare {
 		passwordPHC, err = r.hasher.HashPassword(newPassword)
 		if err != nil {
 			return fmt.Errorf("hash replacement password: %w", err)
@@ -160,10 +161,23 @@ func (r *Runtime) ResetPassword(ctx context.Context, rawToken, newPassword strin
 		var result PasswordResetConsumeResult
 		var recipient string
 		var err error
-		if r.passwordResetRecipientResolver != nil {
+		switch {
+		case r.passwordResetRecipientResolver != nil:
 			result, recipient, err = r.consumePasswordResetForRecipient(txCtx, request, newPassword)
-		} else {
+		case canPrepare:
+			result, err = preparingStore.ConsumePasswordResetWithPreparation(txCtx, request,
+				func(_ context.Context, _ Account) (string, error) {
+					phc, hashErr := r.hasher.HashPassword(newPassword)
+					if hashErr != nil {
+						return "", fmt.Errorf("hash replacement password: %w", hashErr)
+					}
+					return phc, nil
+				})
+		default:
+			// Compatibility for custom stores implementing only the original contract.
 			result, err = r.store.ConsumePasswordReset(txCtx, request)
+		}
+		if r.passwordResetRecipientResolver == nil {
 			recipient = result.Account.PrimaryEmail.DisplayValue
 		}
 		if err != nil {
