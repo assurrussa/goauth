@@ -124,17 +124,8 @@ func (r *Runtime) requestEmailChangeWithPreviousEmailNotice(
 		if err != nil {
 			return err
 		}
-		if previousEmail != "" {
-			capturedEmail := record.TargetSnapshot.NormalizedEmail
-			if target == nil {
-				if !account.EmailVerified() {
-					return ErrInvalidIdentifier
-				}
-				capturedEmail = account.PrimaryEmail.NormalizedValue
-			}
-			if capturedEmail == "" || previousEmail != capturedEmail {
-				return ErrSecurityVersionMismatch
-			}
+		if err := validateEmailChangeNoticeRecipient(previousEmail, account, target, record.TargetSnapshot); err != nil {
+			return err
 		}
 		issue, err := r.issueEmailChange(txCtx, record, EmailChallengeLimits{
 			MinResendInterval: time.Minute,
@@ -294,4 +285,26 @@ func (r *Runtime) ConfirmEmailChange(ctx context.Context, subjectID SubjectID, c
 		return Account{}, err
 	}
 	return account, outcomeErr
+}
+
+
+// validateEmailChangeNoticeRecipient binds a trusted host recipient to the
+// exact pre-change snapshot captured under the subject lock.
+func validateEmailChangeNoticeRecipient(
+	previousEmail string, account Account, target EmailChangeTarget, snapshot EmailChangeTargetSnapshot,
+) error {
+	if previousEmail == "" {
+		return nil
+	}
+	capturedEmail := snapshot.NormalizedEmail
+	if target == nil {
+		if !account.EmailVerified() {
+			return ErrInvalidIdentifier
+		}
+		capturedEmail = account.PrimaryEmail.NormalizedValue
+	}
+	if capturedEmail == "" || previousEmail != capturedEmail {
+		return ErrSecurityVersionMismatch
+	}
+	return nil
 }

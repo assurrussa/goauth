@@ -230,7 +230,9 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = (*goauth.Runtime).UpdateBasicProfile
 	_ = (*goauth.Runtime).ChangePassword
 	_ = (*goauth.Runtime).RequestEmailChange
-	var _ func(*goauth.Runtime, context.Context, goauth.SubjectID, string, string) error = (*goauth.Runtime).RequestEmailChangeWithPreviousEmailNotice
+	var _ func(
+		*goauth.Runtime, context.Context, goauth.SubjectID, string, string,
+	) error = (*goauth.Runtime).RequestEmailChangeWithPreviousEmailNotice
 	_ = (*goauth.Runtime).RequestEmailChangeWithPassword
 	_ = goauth.PasswordEmailChangeRequest{}
 	var passwordEmailChange goauthhttp.PasswordEmailChangeRuntime = (*goauth.Runtime)(nil)
@@ -470,3 +472,4 @@ var (
 		goauth.AssistedRecoveryOwnerAuthorization,
 	) error = (*goauth.AssistedRecovery).InitiateOwner
 )
+

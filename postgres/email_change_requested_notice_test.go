@@ -1,3 +1,4 @@
+//nolint:testpackage // Verify historical notice routing through the private managed-queue currentness helper.
 package postgres
 
 import (
@@ -29,3 +30,4 @@ func TestRequestedEmailChangeNoticeRemainsCurrentWithoutLiveChallenge(t *testing
 		t.Fatalf("expired notice remains current: current=%v err=%v", current, err)
 	}
 }
+

@@ -13,17 +13,24 @@ import (
 	"github.com/assurrussa/goauth/testkit"
 )
 
-const noticeTestScope goauth.EmailChangeScope = "notice-host-v1"
+const (
+	noticeTestScope goauth.EmailChangeScope = "notice-host-v1"
+	noticeCodeEventType = "email_change"
+)
 
 type requestedNoticeTarget struct {
 	snapshot goauth.EmailChangeTargetSnapshot
 }
 
-func (t *requestedNoticeTarget) SnapshotEmailChangeTarget(context.Context, goauth.SubjectID) (goauth.EmailChangeTargetSnapshot, error) {
+func (t *requestedNoticeTarget) SnapshotEmailChangeTarget(
+	context.Context, goauth.SubjectID,
+) (goauth.EmailChangeTargetSnapshot, error) {
 	return t.snapshot, nil
 }
 
-func (*requestedNoticeTarget) ApplyVerifiedEmailChange(context.Context, goauth.SubjectID, goauth.EmailChangeTargetSnapshot, string, time.Time) error {
+func (*requestedNoticeTarget) ApplyVerifiedEmailChange(
+	context.Context, goauth.SubjectID, goauth.EmailChangeTargetSnapshot, string, time.Time,
+) error {
 	return nil
 }
 
@@ -33,20 +40,28 @@ type requestedNoticeStore struct {
 	calls  int
 }
 
-func (s *requestedNoticeStore) IssueScopedEmailChange(_ context.Context, _ goauth.EmailChangeRecord, _ goauth.EmailChallengeLimits) (goauth.EmailChangeIssueResult, error) {
+func (s *requestedNoticeStore) IssueScopedEmailChange(
+	_ context.Context, _ goauth.EmailChangeRecord, _ goauth.EmailChallengeLimits,
+) (goauth.EmailChangeIssueResult, error) {
 	s.calls++
 	return goauth.EmailChangeIssueResult{Status: s.status, RetryAt: time.Now().Add(time.Hour)}, nil
 }
 
-func (*requestedNoticeStore) GetPendingScopedEmailChange(context.Context, goauth.SubjectID, goauth.EmailChangeScope, time.Time) (goauth.PendingEmailChange, error) {
+func (*requestedNoticeStore) GetPendingScopedEmailChange(
+	context.Context, goauth.SubjectID, goauth.EmailChangeScope, time.Time,
+) (goauth.PendingEmailChange, error) {
 	return goauth.PendingEmailChange{}, goauth.ErrEmailChangeNotFound
 }
 
-func (*requestedNoticeStore) VerifyScopedEmailChange(context.Context, goauth.EmailChangeVerifyRequest) (goauth.EmailChangeVerifyResult, error) {
+func (*requestedNoticeStore) VerifyScopedEmailChange(
+	context.Context, goauth.EmailChangeVerifyRequest,
+) (goauth.EmailChangeVerifyResult, error) {
 	return goauth.EmailChangeVerifyResult{}, goauth.ErrEmailChangeNotFound
 }
 
-func requestedNoticeFixture(t *testing.T, status goauth.EmailChangeIssueStatus) (*testkit.Fixture, *requestedNoticeStore, context.Context) {
+func requestedNoticeFixture(
+	t *testing.T, status goauth.EmailChangeIssueStatus,
+) (*testkit.Fixture, *requestedNoticeStore, context.Context) {
 	t.Helper()
 	var probe *requestedNoticeStore
 	fixture, err := testkit.NewRuntime(func(c *goauth.Config) {
@@ -91,7 +106,7 @@ func TestPreviousEmailNoticeIssuedIsEncryptedCredentialFreeAndHistorical(t *test
 	require.False(t, bytes.Contains(event.Envelope.Ciphertext, []byte(notice.To)))
 	var codeEvent goauth.EncryptedEvent
 	for _, e := range f.Events.Events() {
-		if e.Type == "email_change" {
+		if e.Type == noticeCodeEventType {
 			codeEvent = e
 		}
 	}
@@ -169,17 +184,25 @@ func TestPreviousEmailNoticeEnqueueFailureRollsBackCodeAndIssuance(t *testing.T)
 	})
 	require.NoError(t, err)
 	account := registerAccount(t, f, "old@example.test").Account
-	require.NoError(t, f.Runtime.SendEmailChallenge(context.Background(), account.Subject.ID, goauth.EmailChallengePurposeVerification))
-	_, err = f.Runtime.VerifyEmailChallenge(context.Background(), account.Subject.ID, goauth.EmailChallengePurposeVerification, latestChallengeCode(t, f))
+	require.NoError(t, f.Runtime.SendEmailChallenge(
+		context.Background(), account.Subject.ID, goauth.EmailChallengePurposeVerification,
+	))
+	_, err = f.Runtime.VerifyEmailChallenge(
+		context.Background(), account.Subject.ID, goauth.EmailChallengePurposeVerification, latestChallengeCode(t, f),
+	)
 	require.NoError(t, err)
 	before := len(f.Events.Events())
 	reject = true
-	require.Error(t, f.Runtime.RequestEmailChangeWithPreviousEmailNotice(context.Background(), account.Subject.ID, "new@example.test", "old@example.test"))
+	require.Error(t, f.Runtime.RequestEmailChangeWithPreviousEmailNotice(
+		context.Background(), account.Subject.ID, "new@example.test", "old@example.test",
+	))
 	require.Len(t, f.Events.Events(), before)
 	_, err = f.Runtime.PendingEmailChange(context.Background(), account.Subject.ID)
 	require.ErrorIs(t, err, goauth.ErrEmailChangeNotFound)
 	reject = false
-	require.NoError(t, f.Runtime.RequestEmailChangeWithPreviousEmailNotice(context.Background(), account.Subject.ID, "new@example.test", "old@example.test"))
+	require.NoError(t, f.Runtime.RequestEmailChangeWithPreviousEmailNotice(
+		context.Background(), account.Subject.ID, "new@example.test", "old@example.test",
+	))
 	require.Len(t, noticeEvents(f), 1)
 }
 
@@ -218,11 +241,17 @@ func TestPreviousEmailNoticeUnknownCommitRetainsOneStableEncryptedEvent(t *testi
 	})
 	require.NoError(t, err)
 	account := registerAccount(t, f, "old@example.test").Account
-	require.NoError(t, f.Runtime.SendEmailChallenge(context.Background(), account.Subject.ID, goauth.EmailChallengePurposeVerification))
-	_, err = f.Runtime.VerifyEmailChallenge(context.Background(), account.Subject.ID, goauth.EmailChallengePurposeVerification, latestChallengeCode(t, f))
+	require.NoError(t, f.Runtime.SendEmailChallenge(
+		context.Background(), account.Subject.ID, goauth.EmailChallengePurposeVerification,
+	))
+	_, err = f.Runtime.VerifyEmailChallenge(
+		context.Background(), account.Subject.ID, goauth.EmailChallengePurposeVerification, latestChallengeCode(t, f),
+	)
 	require.NoError(t, err)
 	tx.armed = true
-	err = f.Runtime.RequestEmailChangeWithPreviousEmailNotice(context.Background(), account.Subject.ID, "new@example.test", "old@example.test")
+	err = f.Runtime.RequestEmailChangeWithPreviousEmailNotice(
+		context.Background(), account.Subject.ID, "new@example.test", "old@example.test",
+	)
 	require.ErrorIs(t, err, goauth.ErrOperationOutcomeUnknown)
 	notices := noticeEvents(f)
 	require.Len(t, notices, 1)
@@ -230,7 +259,9 @@ func TestPreviousEmailNoticeUnknownCommitRetainsOneStableEncryptedEvent(t *testi
 	require.NoError(t, err)
 	// Existing issuance admission rejects an immediate caller retry. The API
 	// does not claim exactly-once semantics for a later independent request.
-	err = f.Runtime.RequestEmailChangeWithPreviousEmailNotice(context.Background(), account.Subject.ID, "new@example.test", "old@example.test")
+	err = f.Runtime.RequestEmailChangeWithPreviousEmailNotice(
+		context.Background(), account.Subject.ID, "new@example.test", "old@example.test",
+	)
 	require.ErrorIs(t, err, goauth.ErrConfirmationResendDelay)
 	require.Equal(t, notices, noticeEvents(f))
 }
@@ -253,13 +284,17 @@ func TestPreviousEmailNoticeSurvivesConfirmationAndLaterIssuance(t *testing.T) {
 	ctx := context.Background()
 	account := registerAccount(t, f, "old@example.test").Account
 	require.NoError(t, f.Runtime.SendEmailChallenge(ctx, account.Subject.ID, goauth.EmailChallengePurposeVerification))
-	_, err = f.Runtime.VerifyEmailChallenge(ctx, account.Subject.ID, goauth.EmailChallengePurposeVerification, latestChallengeCode(t, f))
+	_, err = f.Runtime.VerifyEmailChallenge(
+		ctx, account.Subject.ID, goauth.EmailChallengePurposeVerification, latestChallengeCode(t, f),
+	)
 	require.NoError(t, err)
-	require.NoError(t, f.Runtime.RequestEmailChangeWithPreviousEmailNotice(ctx, account.Subject.ID, "new@example.test", "old@example.test"))
+	require.NoError(t, f.Runtime.RequestEmailChangeWithPreviousEmailNotice(
+		ctx, account.Subject.ID, "new@example.test", "old@example.test",
+	))
 	notice := noticeEvents(f)[0]
 	var code string
 	for _, event := range f.Events.Events() {
-		if event.Type == "email_change" {
+		if event.Type == noticeCodeEventType {
 			mail, err := f.Runtime.DecryptNotificationEvent(event)
 			require.NoError(t, err)
 			code = mail.Data["code"]
@@ -270,7 +305,9 @@ func TestPreviousEmailNoticeSurvivesConfirmationAndLaterIssuance(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, notice, noticeEvents(f)[0])
 	now = now.Add(2 * time.Minute)
-	require.NoError(t, f.Runtime.RequestEmailChangeWithPreviousEmailNotice(ctx, account.Subject.ID, "next@example.test", "new@example.test"))
+	require.NoError(t, f.Runtime.RequestEmailChangeWithPreviousEmailNotice(
+		ctx, account.Subject.ID, "next@example.test", "new@example.test",
+	))
 	require.Len(t, noticeEvents(f), 2)
 	require.Equal(t, notice, noticeEvents(f)[0])
 	oldMail, err := f.Runtime.DecryptNotificationEvent(notice)
@@ -278,3 +315,4 @@ func TestPreviousEmailNoticeSurvivesConfirmationAndLaterIssuance(t *testing.T) {
 	require.Equal(t, "old@example.test", oldMail.To)
 	require.Empty(t, oldMail.Data)
 }
+
