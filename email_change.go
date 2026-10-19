@@ -19,12 +19,42 @@ func (r *Runtime) RequestEmailChange(ctx context.Context, subjectID SubjectID, n
 	return r.requestEmailChange(ctx, subjectID, newEmail, nil)
 }
 
+// RequestEmailChangeWithPreviousEmailNotice is a trusted host API. Like
+// RequestEmailChange, the host must authorize the actor and require fresh
+// authentication. previousEmail must be a canonical, already verified host
+// address read under the same auth transaction, never an untrusted form value.
+// A nonempty value must exactly match the locked pre-change target snapshot.
+// Empty retains the existing RequestEmailChange behavior. A successful issuance
+// atomically queues a credential-free notice; no mail is sent in the transaction.
+// An uncertain commit must not be blindly retried as a new issuance.
+func (r *Runtime) RequestEmailChangeWithPreviousEmailNotice(
+	ctx context.Context, subjectID SubjectID, newEmail, previousEmail string,
+) error {
+	return r.requestEmailChangeWithPreviousEmailNotice(ctx, subjectID, newEmail, nil, previousEmail)
+}
+
 func (r *Runtime) requestEmailChange(
 	ctx context.Context,
 	subjectID SubjectID,
 	newEmail string,
 	expected *Account,
 ) error {
+	return r.requestEmailChangeWithPreviousEmailNotice(ctx, subjectID, newEmail, expected, "")
+}
+
+func (r *Runtime) requestEmailChangeWithPreviousEmailNotice(
+	ctx context.Context,
+	subjectID SubjectID,
+	newEmail string,
+	expected *Account,
+	previousEmail string,
+) error {
+	if previousEmail != "" {
+		normalizedPrevious, err := NormalizeEmail(previousEmail)
+		if err != nil || normalizedPrevious != previousEmail {
+			return ErrInvalidIdentifier
+		}
+	}
 	scope, target, err := r.emailChangeTarget(ctx)
 	if err != nil {
 		return err
@@ -94,6 +124,18 @@ func (r *Runtime) requestEmailChange(
 		if err != nil {
 			return err
 		}
+		if previousEmail != "" {
+			capturedEmail := record.TargetSnapshot.NormalizedEmail
+			if target == nil {
+				if !account.EmailVerified() {
+					return ErrInvalidIdentifier
+				}
+				capturedEmail = account.PrimaryEmail.NormalizedValue
+			}
+			if capturedEmail == "" || previousEmail != capturedEmail {
+				return ErrSecurityVersionMismatch
+			}
+		}
 		issue, err := r.issueEmailChange(txCtx, record, EmailChallengeLimits{
 			MinResendInterval: time.Minute,
 			PerHour:           5,
@@ -120,6 +162,17 @@ func (r *Runtime) requestEmailChange(
 			Data:     emailChangeNotificationData(scope, code, r.emailChangeTTL),
 		}, notificationMetadata{referenceID: changeID, validUntil: now.Add(r.emailChangeTTL)}); err != nil {
 			return err
+		}
+		if previousEmail != "" {
+			// This is a historical security notice, not a challenge: it must
+			// remain deliverable after confirmation or a later issuance.
+			if err := r.enqueueNotification(txCtx, "email_change_requested", account, Notification{
+				Template: "email_change_requested",
+				To: previousEmail,
+				Data: emailChangedNotificationData(scope),
+			}, notificationMetadata{referenceID: changeID}); err != nil {
+				return err
+			}
 		}
 		return r.recordAudit(txCtx, SecurityEvent{
 			Type:      SecurityEventEmailChangeIssued,
@@ -242,3 +295,4 @@ func (r *Runtime) ConfirmEmailChange(ctx context.Context, subjectID SubjectID, c
 	}
 	return account, outcomeErr
 }
+
