@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/assurrussa/goauth"
 	"github.com/assurrussa/goauth/testkit"
-	"github.com/stretchr/testify/require"
 )
 
 const noticeTestScope goauth.EmailChangeScope = "notice-host-v1"
@@ -29,7 +30,7 @@ func (*requestedNoticeTarget) ApplyVerifiedEmailChange(context.Context, goauth.S
 type requestedNoticeStore struct {
 	goauth.RuntimeStore
 	status goauth.EmailChangeIssueStatus
-	calls int
+	calls  int
 }
 
 func (s *requestedNoticeStore) IssueScopedEmailChange(_ context.Context, _ goauth.EmailChangeRecord, _ goauth.EmailChallengeLimits) (goauth.EmailChangeIssueResult, error) {
@@ -110,9 +111,9 @@ func TestPreviousEmailNoticeIssuedIsEncryptedCredentialFreeAndHistorical(t *test
 }
 
 func TestPreviousEmailNoticeOnlyForIssued(t *testing.T) {
-	for _, tc := range []struct{
+	for _, tc := range []struct {
 		status goauth.EmailChangeIssueStatus
-		want error
+		want   error
 	}{
 		{goauth.EmailChangeSameValue, goauth.ErrEmailChangeSameValue},
 		{goauth.EmailChangeWait, goauth.ErrConfirmationResendDelay},

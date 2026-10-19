@@ -470,4 +470,3 @@ var (
 		goauth.AssistedRecoveryOwnerAuthorization,
 	) error = (*goauth.AssistedRecovery).InitiateOwner
 )
-

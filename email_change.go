@@ -168,8 +168,8 @@ func (r *Runtime) requestEmailChangeWithPreviousEmailNotice(
 			// remain deliverable after confirmation or a later issuance.
 			if err := r.enqueueNotification(txCtx, "email_change_requested", account, Notification{
 				Template: "email_change_requested",
-				To: previousEmail,
-				Data: emailChangedNotificationData(scope),
+				To:       previousEmail,
+				Data:     emailChangedNotificationData(scope),
 			}, notificationMetadata{referenceID: changeID}); err != nil {
 				return err
 			}
@@ -295,4 +295,3 @@ func (r *Runtime) ConfirmEmailChange(ctx context.Context, subjectID SubjectID, c
 	}
 	return account, outcomeErr
 }
-
