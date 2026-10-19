@@ -287,7 +287,6 @@ func (r *Runtime) ConfirmEmailChange(ctx context.Context, subjectID SubjectID, c
 	return account, outcomeErr
 }
 
-
 // validateEmailChangeNoticeRecipient binds a trusted host recipient to the
 // exact pre-change snapshot captured under the subject lock.
 func validateEmailChangeNoticeRecipient(

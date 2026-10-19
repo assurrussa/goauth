@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	noticeTestScope goauth.EmailChangeScope = "notice-host-v1"
-	noticeCodeEventType = "email_change"
+	noticeTestScope     goauth.EmailChangeScope = "notice-host-v1"
+	noticeCodeEventType                         = "email_change"
 )
 
 type requestedNoticeTarget struct {
@@ -315,4 +315,3 @@ func TestPreviousEmailNoticeSurvivesConfirmationAndLaterIssuance(t *testing.T) {
 	require.Equal(t, "old@example.test", oldMail.To)
 	require.Empty(t, oldMail.Data)
 }
-

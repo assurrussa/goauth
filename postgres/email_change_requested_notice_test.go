@@ -30,4 +30,3 @@ func TestRequestedEmailChangeNoticeRemainsCurrentWithoutLiveChallenge(t *testing
 		t.Fatalf("expired notice remains current: current=%v err=%v", current, err)
 	}
 }
-
