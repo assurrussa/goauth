@@ -73,25 +73,9 @@ func (r *Runtime) requestEmailChangeWithPreviousEmailNotice(
 	if err != nil {
 		return err
 	}
-	var account Account
-	if expected != nil {
-		// Keep the credential-verified snapshot. Reloading it here would let a
-		// concurrent password/security change silently upgrade stale proof.
-		account = *expected
-	} else {
-		account, err = r.store.GetAccount(ctx, subjectID)
-		if err != nil {
-			return fmt.Errorf("get email change account: %w", err)
-		}
-	}
-	if account.Subject.Status != SubjectStatusActive {
-		return ErrAccountUnavailable
-	}
-	if scope == "" && (account.PrimaryEmail.ID == "" || account.PrimaryEmail.Scheme != IdentifierSchemeEmail) {
-		return ErrInvalidIdentifier
-	}
-	if scope == "" && account.PrimaryEmail.NormalizedValue == normalized.Value {
-		return ErrEmailChangeSameValue
+	account, err := r.emailChangeRequestAccount(ctx, subjectID, expected, scope, normalized.Value)
+	if err != nil {
+		return err
 	}
 	code, err := r.generateEmailCode()
 	if err != nil {
@@ -287,6 +271,35 @@ func (r *Runtime) ConfirmEmailChange(ctx context.Context, subjectID SubjectID, c
 	return account, outcomeErr
 }
 
+// emailChangeRequestAccount retains a credential-verified snapshot when supplied
+// and validates the request's account and primary-email preconditions.
+func (r *Runtime) emailChangeRequestAccount(
+	ctx context.Context, subjectID SubjectID, expected *Account, scope EmailChangeScope, newNormalized string,
+) (Account, error) {
+	var account Account
+	if expected != nil {
+		// Keep the credential-verified snapshot. Reloading it here would let a
+		// concurrent password/security change silently upgrade stale proof.
+		account = *expected
+	} else {
+		var err error
+		account, err = r.store.GetAccount(ctx, subjectID)
+		if err != nil {
+			return Account{}, fmt.Errorf("get email change account: %w", err)
+		}
+	}
+	if account.Subject.Status != SubjectStatusActive {
+		return Account{}, ErrAccountUnavailable
+	}
+	if scope == "" && (account.PrimaryEmail.ID == "" || account.PrimaryEmail.Scheme != IdentifierSchemeEmail) {
+		return Account{}, ErrInvalidIdentifier
+	}
+	if scope == "" && account.PrimaryEmail.NormalizedValue == newNormalized {
+		return Account{}, ErrEmailChangeSameValue
+	}
+	return account, nil
+}
+
 // validateEmailChangeNoticeRecipient binds a trusted host recipient to the
 // exact pre-change snapshot captured under the subject lock.
 func validateEmailChangeNoticeRecipient(
@@ -307,3 +320,4 @@ func validateEmailChangeNoticeRecipient(
 	}
 	return nil
 }
+

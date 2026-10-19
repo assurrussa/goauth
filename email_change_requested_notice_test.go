@@ -13,10 +13,9 @@ import (
 	"github.com/assurrussa/goauth/testkit"
 )
 
-const (
-	noticeTestScope     goauth.EmailChangeScope = "notice-host-v1"
-	noticeCodeEventType                         = "email_change"
-)
+const noticeTestScope goauth.EmailChangeScope = "notice-host-v1"
+
+const noticeCodeEventType = "email_change"
 
 type requestedNoticeTarget struct {
 	snapshot goauth.EmailChangeTargetSnapshot
@@ -315,3 +314,4 @@ func TestPreviousEmailNoticeSurvivesConfirmationAndLaterIssuance(t *testing.T) {
 	require.Equal(t, "old@example.test", oldMail.To)
 	require.Empty(t, oldMail.Data)
 }
+
