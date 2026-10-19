@@ -320,4 +320,3 @@ func validateEmailChangeNoticeRecipient(
 	}
 	return nil
 }
-

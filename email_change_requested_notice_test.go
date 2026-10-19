@@ -314,4 +314,3 @@ func TestPreviousEmailNoticeSurvivesConfirmationAndLaterIssuance(t *testing.T) {
 	require.Equal(t, "old@example.test", oldMail.To)
 	require.Empty(t, oldMail.Data)
 }
-
