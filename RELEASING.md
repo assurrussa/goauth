@@ -6,12 +6,17 @@ acceptance criteria and sequence of the first public release.
 
 ## Version state
 
-The latest published release is [`v0.11.0`](https://github.com/assurrussa/goauth/releases/tag/v0.11.0),
-using schema 14. The selected `v0.12.0` candidate adds the explicit trusted-host
-`ProvisionExternalIdentity` API for strict SSO enrollment without email
-autolinking. Existing external-login behavior is unchanged; no new canonical
-migration is introduced. Selection does not claim completed release gates.
-Existing tags must never be reused or moved.
+The latest published release is [`v0.13.0`](https://github.com/assurrussa/goauth/releases/tag/v0.13.0),
+using schema 14. It adds the optional host-owned verified-email projection.
+
+The proposed `v0.14.0` candidate adds the trusted-host
+`RequestEmailChangeWithPreviousEmailNotice` API. Successful opt-in issuance
+atomically queues a credential-free security notice to the captured previous
+mailbox. Existing email-change APIs and consumers retain their behavior; no
+new canonical migration, queue, configuration field or dependency is introduced.
+See [requested email-change notices](docs/email-change-requested-notice.md).
+This is a release proposal, not a published version or a claim that all release
+gates are complete. Existing tags must never be reused or moved.
 
 The [v0.7.0 preparation record](docs/v0.7-release-preparation.md) is historical
 evidence for its recorded source, not verification of this candidate. Record the
@@ -259,3 +264,4 @@ release notes must call out the inactive snapshot and authenticated mutation
 replacement. Do not publish a schema change independently of its API and a verified
 host consumer. Coordinated migration/restart is required; mixed older writers
 are not supported.
+
