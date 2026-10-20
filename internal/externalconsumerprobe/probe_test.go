@@ -140,4 +140,3 @@ func TestOptionalModuleTemplatesRemainRunnableAndPublic(t *testing.T) {
 		})
 	}
 }
-

@@ -587,4 +587,3 @@ func (c Config) targetVersion() string {
 
 	return LocalModuleVersion
 }
-
