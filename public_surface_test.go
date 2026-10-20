@@ -54,6 +54,10 @@ var _ func(
 	*postgres.Runtime, context.Context, time.Duration, int,
 ) (int64, error) = (*postgres.Runtime).CleanupNotificationReceipts
 
+var _ func(
+	*goauth.Runtime, context.Context, goauth.SubjectID, string, string,
+) error = (*goauth.Runtime).RequestEmailChangeWithPreviousEmailNotice
+
 type publicCacheInvalidator struct{}
 
 var _ func(

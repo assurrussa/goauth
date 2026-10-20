@@ -125,3 +125,19 @@ phase counts, including partial progress before a later error. See
 [bounded broad maintenance](bounded-maintenance.md) for bounds, continuation,
 security-history retention and required validation.
 
+
+## Requested email-change notices
+
+`Runtime.RequestEmailChangeWithPreviousEmailNotice` is an additive trusted-host
+method in the existing root package, also promoted by the PostgreSQL Runtime.
+Existing APIs retain their behavior. No supported package, required interface,
+configuration field, dependency or schema change is introduced.
+
+The typed public-surface assertion preserves its exact signature. The runnable
+clean consumer exercises issuance to a verified previous primary mailbox,
+mismatched-recipient rejection, separate encrypted code and credential-free
+notice events, their common issuance binding and distinct deadlines, and no
+new event on a rate-limited retry. This executable test is included in both
+local and anonymous exact-version consumer modes. Scoped hosts still own the
+verified-recipient authorization described in
+[requested email-change notices](email-change-requested-notice.md).
