@@ -106,6 +106,28 @@ output. Expiry detected by the in-transaction check rolls consumption back;
 expiry detected only after confirmed commit may leave the terminal consumption
 committed without delivery.
 
+## Authentication methods
+
+`SessionAdmissionResult.Authentication` is optional trusted, session-bound
+`SessionAuthentication` evidence. Its `AuthenticatedAt` must exactly match the
+full-precision authentication time of the effective code/refresh binding.
+`Methods` contains only methods actually completed for that event. Hosts must
+persist immutable evidence and, when `Expected` is present, return that original
+event's methods even if the live sid was reauthenticated later. Enrollment,
+profile fields, browser parameters, and the mere availability of MFA are never
+proof of an authentication method. Missing historical proof must never be
+upgraded to password or MFA evidence.
+
+The provider signs standard `amr` in every ID token with explicit evidence,
+independently of `profile` scope. Nil evidence omits `amr` for existing hosts;
+explicit evidence with nil or empty methods signs `amr: []`, asserting no known
+completed method. Up to 16 methods, each 1-64 ASCII letters, digits, underscores
+or hyphens, are accepted; duplicates collapse in first-occurrence order.
+Malformed methods or a mismatched event time reject preparation before code
+consumption/refresh rotation. Values are copied, not aliased to host slices.
+Access tokens and UserInfo do not gain AMR. Existing `provider.New` token
+behavior and the advisory `authhub_mfa` enrollment hint are unchanged.
+
 ## Claims and verification
 
 Strict access tokens use typ `at+jwt`, token_use `access`; ID tokens use typ

@@ -487,3 +487,13 @@ These source changes do not claim that the final candidate has been executed
 under Go 1.27.2 or that the vulnerability gate now passes. Exact-head revalidation and independent review
 remain required. Earlier Go 1.27.1 passes and failures are preserved as evidence
 for that toolchain only; current results belong to the PR's candidate SHA.
+
+
+## Session authentication methods (local candidate)
+
+Added optional typed authentication-event evidence to session admission. The
+provider validates full-precision binding time, copies/deduplicates bounded
+method identifiers, and signs standard ID-token `amr` independently of profile
+scope. Explicit empty evidence emits an empty array; nil retains legacy omission.
+Historical code/refresh evidence must not borrow methods from a later login.
+Enrollment remains advisory only. No schema, release, or legacy-provider changes.
