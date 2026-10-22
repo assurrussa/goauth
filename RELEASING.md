@@ -6,15 +6,20 @@ acceptance criteria and sequence of the first public release.
 
 ## Version state
 
-The latest published release is [`v0.13.0`](https://github.com/assurrussa/goauth/releases/tag/v0.13.0),
-using schema 14. It adds the optional host-owned verified-email projection.
-
-The proposed `v0.14.0` candidate adds the trusted-host
+The latest published release is [`v0.14.0`](https://github.com/assurrussa/goauth/releases/tag/v0.14.0),
+using schema 14. It adds the trusted-host
 `RequestEmailChangeWithPreviousEmailNotice` API. Successful opt-in issuance
 atomically queues a credential-free security notice to the captured previous
-mailbox. Existing email-change APIs and consumers retain their behavior; no
-new canonical migration, queue, configuration field or dependency is introduced.
-See [requested email-change notices](docs/email-change-requested-notice.md).
+mailbox. See [requested email-change notices](docs/email-change-requested-notice.md).
+
+The proposed `v0.15.0` candidate adds optional trusted `SessionAuthentication`
+evidence to the session-bound OIDC provider. The provider signs standard `amr`
+in ID tokens independently of profile scope, validates the exact authentication
+event time, and copies and deduplicates method identifiers. Explicit empty
+evidence emits `amr: []`; absent evidence preserves legacy omission. Enrollment
+is not authentication proof, and existing legacy-provider behavior is unchanged.
+No canonical migration, dependency change, mandatory MFA policy or deployment
+is included. See [session authentication methods](docs/session-bound-oidc.md#authentication-methods).
 This is a release proposal, not a published version or a claim that all release
 gates are complete. Existing tags must never be reused or moved.
 
