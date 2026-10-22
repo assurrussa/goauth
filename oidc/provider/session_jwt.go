@@ -32,6 +32,7 @@ type sessionTokenClaims struct {
 	BindingAuthenticatedAt time.Time                  `json:"binding_auth_time"`
 	AbsoluteExpiresAt      time.Time                  `json:"session_expires_at"`
 	ProjectID              string                     `json:"project_id"`
+	AMR                    *[]string                  `json:"amr,omitempty"`
 	AuthTime               int64                      `json:"auth_time"`
 	Nonce                  string                     `json:"nonce,omitempty"`
 	Email                  string                     `json:"email,omitempty"`
@@ -61,6 +62,10 @@ func (s *SessionService) prepareTokens(ctx context.Context, current oidc.Session
 	if !validAdmission(current, &binding, s.now()) || !validSessionScopes(scopes) || !canonicalUUID(familyID) {
 		return nil, oidc.SessionRefresh{}, time.Time{}, errors.New("invalid session token projection")
 	}
+	methods, err := sessionAuthenticationMethods(current.Authentication, binding.AuthenticatedAt)
+	if err != nil {
+		return nil, oidc.SessionRefresh{}, time.Time{}, err
+	}
 	key, err := s.base.keys.Active(ctx)
 	if err != nil {
 		return nil, oidc.SessionRefresh{}, time.Time{}, err
@@ -89,6 +94,7 @@ func (s *SessionService) prepareTokens(ctx context.Context, current oidc.Session
 		return nil, oidc.SessionRefresh{}, time.Time{}, err
 	}
 	claims.TokenUse = tokenUseID
+	claims.AMR = methods
 	claims.Nonce = nonce
 	info := s.userInfo(current, scopes)
 	claims.Email = info.Email
@@ -275,4 +281,40 @@ func reservedSessionMetadata(key string) bool {
 		}
 	}
 	return false
+}
+
+// Validate and copy before signing; no host-owned slice aliases token claims.
+func sessionAuthenticationMethods(value *oidc.SessionAuthentication, authenticatedAt time.Time) (*[]string, error) {
+	if value == nil {
+		return nil, nil //nolint:nilnil // Nil optional evidence intentionally omits this claim.
+	}
+	if value.AuthenticatedAt.IsZero() || !value.AuthenticatedAt.Equal(authenticatedAt) ||
+		len(value.Methods) > 16 {
+		return nil, errors.New("invalid session authentication evidence")
+	}
+	methods := make([]string, 0, len(value.Methods))
+	for _, method := range value.Methods {
+		if !validAuthenticationMethod(method) {
+			return nil, errors.New("invalid session authentication method")
+		}
+		if !slices.Contains(methods, method) {
+			methods = append(methods, method)
+		}
+	}
+	return &methods, nil
+}
+
+func validAuthenticationMethod(method string) bool {
+	if len(method) == 0 || len(method) > 64 {
+		return false
+	}
+	for i := range len(method) {
+		c := method[i]
+		letter := c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+		digit := c >= '0' && c <= '9'
+		if !letter && !digit && c != '_' && c != '-' {
+			return false
+		}
+	}
+	return true
 }

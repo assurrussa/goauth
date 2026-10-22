@@ -22,6 +22,20 @@ type SessionBinding struct {
 	AbsoluteExpiresAt time.Time
 }
 
+// SessionAuthentication contains trusted evidence for the exact authentication
+// event represented by a session binding. Populate only from successfully
+// completed authentication, never factor enrollment, profile metadata or request
+// parameters. When Expected is present, admission must return evidence for its
+// original AuthenticatedAt, not methods from a later reauthentication.
+// Nil evidence preserves legacy omission of amr. Non-nil evidence must contain
+// 0-16 nonempty method identifiers (1-64 ASCII letters, digits, "_" or "-").
+// Empty evidence signs amr:[] without asserting any completed method.
+// Duplicate methods are collapsed in first-occurrence order.
+type SessionAuthentication struct {
+	AuthenticatedAt time.Time
+	Methods         []string
+}
+
 // BrowserSession carries the current opaque cookie generation, not the raw cookie.
 type BrowserSession struct {
 	SessionID    string
@@ -98,6 +112,7 @@ type SessionAdmissionResult struct {
 	Client         Client
 	ClientRevision int64
 	Binding        SessionBinding
+	Authentication *SessionAuthentication
 	Account        goauth.Account
 	Projection     SessionProjection
 	Allowed        bool

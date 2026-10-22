@@ -282,6 +282,8 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = oidc.ClientSecretVerifierFunc.VerifyClientSecret
 	_ = provider.Options{ClientSecretVerifier: oidc.ClientSecretVerifierFunc(nil)}
 	_ = oidc.AuthorizationRequest{}
+	_ = oidc.SessionAuthentication{}
+	_ = oidc.SessionAdmissionResult{Authentication: &oidc.SessionAuthentication{}}
 	_ = oidc.EmailProjection{}
 	_ = oidc.SessionProjection{Email: &oidc.EmailProjection{Address: "verified@example.test", Verified: true}}
 	_ = oidc.ErrRefreshTokenReplay

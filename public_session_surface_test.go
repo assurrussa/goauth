@@ -16,6 +16,7 @@ var _ oidc.SessionStateStore = (*postgres.SessionOIDCState)(nil)
 
 var (
 	_ = oidc.MFAEnrollment{Version: 1, Enrolled: false, SetupAvailable: true}
+	_ = oidc.SessionAdmissionResult{Authentication: &oidc.SessionAuthentication{Methods: []string{"pwd"}}}
 	_ = oidc.SessionProjection{MFA: &oidc.MFAEnrollment{Version: 1}}
 	_ = oidc.CanonicalIdentifiers{Version: 1, Login: publicSessionCanonicalLogin, EmailAlias: "alias@example.test"}
 	_ = oidc.SessionProjection{Identifiers: &oidc.CanonicalIdentifiers{Version: 1, Login: publicSessionCanonicalLogin}}

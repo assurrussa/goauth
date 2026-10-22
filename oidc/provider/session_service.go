@@ -83,7 +83,7 @@ func (s *SessionService) Discovery(ctx context.Context) oidc.SessionDiscoveryMet
 	d := s.base.Discovery(ctx)
 	d.ScopesSupported = []string{oidc.ScopeOpenID, oidc.ScopeProfile, oidc.ScopeEmail}
 	d.ClaimsSupported = append(d.ClaimsSupported,
-		"project_id", "authhub_profile", "authhub_project", "authhub_identifiers", "authhub_mfa", "sid")
+		"project_id", "authhub_profile", "authhub_project", "authhub_identifiers", "authhub_mfa", "sid", "amr")
 	return oidc.SessionDiscoveryMetadata{DiscoveryMetadata: d}
 }
 func (s *SessionService) JWKS(ctx context.Context) (oidc.JWKS, error) { return s.base.JWKS(ctx) }
