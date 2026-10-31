@@ -30,7 +30,8 @@ func notificationPreSenderSnapshot(t *testing.T, db *sql.DB, id string) string {
 	t.Helper()
 	var snapshot string
 	require.NoError(t, db.QueryRowContext(t.Context(), `SELECT (to_jsonb(n)-'last_sender_outcome'-'last_sender_code'
- -'last_sender_http_status'-'last_sender_attempt'-'last_sender_observed_at')::text
+ -'last_sender_http_status'-'last_sender_attempt'-'last_sender_observed_at'
+ -'transport_protocol'-'gateway_receipt_id'-'gateway_accepted_at')::text
 FROM auth_notification_deliveries n WHERE id=$1`, id).Scan(&snapshot))
 	return snapshot
 }
@@ -55,6 +56,7 @@ func TestNotificationSenderDiagnosticsMigrationPreservesLegacyRowsAndHistory(t *
 		var empty bool
 		require.NoError(t, f.db.QueryRowContext(t.Context(), `SELECT last_sender_outcome IS NULL AND last_sender_code IS NULL
    AND last_sender_http_status IS NULL AND last_sender_attempt IS NULL AND last_sender_observed_at IS NULL
+   AND transport_protocol='' AND gateway_receipt_id IS NULL AND gateway_accepted_at IS NULL
    FROM auth_notification_deliveries WHERE id=$1`, id).Scan(&empty))
 		require.True(t, empty, "legacy diagnostics must not be fabricated")
 	}

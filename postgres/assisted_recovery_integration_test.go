@@ -178,9 +178,31 @@ func TestAssistedRecoveryChangesBothCredentialsOnceAndRevokesPriorAuthority(t *t
 	require.True(t, oldNotice)
 }
 
-// Remove the newest fixture layer before reconstructing an older schema.
+// Remove only the newest layer from isolated legacy-only fixtures. Leaving a
+// version-15 marker while deleting version 14 does not reconstruct schema 13.
+func removeNotificationGatewayFixtureSchema(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var owned int
+	require.NoError(t, db.QueryRowContext(t.Context(), `SELECT count(*) FROM auth_notification_deliveries
+ WHERE gateway_receipt_id IS NOT NULL OR state='gateway_accepted'`).Scan(&owned))
+	require.Zero(t, owned, "legacy downgrade fixture must not discard gateway ownership")
+	_, err := db.ExecContext(t.Context(), `DROP INDEX auth_notification_gateway_ready_idx;
+ ALTER TABLE auth_notification_deliveries
+ DROP CONSTRAINT auth_notification_gateway_receipt_check,
+ DROP CONSTRAINT auth_notification_transport_protocol_check,
+ DROP CONSTRAINT auth_notification_deliveries_state_check,
+ DROP COLUMN gateway_receipt_id, DROP COLUMN gateway_accepted_at, DROP COLUMN transport_protocol,
+ ADD CONSTRAINT auth_notification_deliveries_state_check
+ CHECK(state IN ('pending','leased','blocked','delivered','exhausted','expired','cancelled'));
+ DELETE FROM goauth_migration_history WHERE version=15;
+ DELETE FROM goauth_schema_version WHERE version=15;`)
+	require.NoError(t, err)
+}
+
+// Remove layers in reverse order so markers and physical schema agree.
 func removeAssistedRecoverySchema(t *testing.T, db *sql.DB) {
 	t.Helper()
+	removeNotificationGatewayFixtureSchema(t, db)
 	_, err := db.ExecContext(t.Context(), `DROP TABLE auth_assisted_recovery;
  DELETE FROM goauth_migration_history WHERE version=14;
  DELETE FROM goauth_schema_version WHERE version=14;`)
@@ -192,6 +214,18 @@ func TestAssistedRecoveryMigrationUpgradesSchema13AndRejectsTampering(t *testing
 	resetSchema(t, db)
 	require.NoError(t, postgres.Migrate(t.Context(), db))
 	removeAssistedRecoverySchema(t, db)
+	var version, newerHistory, gatewayColumns int
+	require.NoError(t, db.QueryRowContext(t.Context(), `SELECT max(version) FROM goauth_schema_version`).Scan(&version))
+	require.Equal(t, 13, version, "this must be genuine schema 13, not a current marker with a history hole")
+	require.NoError(t, db.QueryRowContext(t.Context(), `SELECT count(*) FROM goauth_migration_history
+ WHERE version>13`).Scan(&newerHistory))
+	require.Zero(t, newerHistory)
+	require.NoError(t, db.QueryRowContext(t.Context(), `SELECT count(*) FROM information_schema.columns
+ WHERE table_schema='public' AND table_name='auth_notification_deliveries'
+ AND column_name IN ('transport_protocol','gateway_receipt_id','gateway_accepted_at')`).Scan(&gatewayColumns))
+	require.Zero(t, gatewayColumns)
+	// VerifySchema is the public schema gate used by AutoMigrate-disabled Runtime;
+	// the low-level NewStore factory intentionally does not inspect the schema.
 	require.ErrorIs(t, postgres.VerifySchema(t.Context(), db), postgres.ErrSchemaNeedsMigration)
 	require.NoError(t, postgres.Migrate(t.Context(), db))
 	require.NoError(t, postgres.Migrate(t.Context(), db))

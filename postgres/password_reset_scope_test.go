@@ -17,10 +17,11 @@ func TestPasswordResetWorkerRestoresAuthenticatedScope(t *testing.T) {
 		for _, scope := range []string{"", "operator-v1", "sso-v1"} {
 			t.Run(kind+"/"+scope, func(t *testing.T) {
 				calls := 0
-				runtime := &Runtime{notificationSender: goauth.NotificationSenderFunc(
-					func(ctx context.Context, _ goauth.NotificationDelivery) error {
+				runtime := &Runtime{store: &Store{}, notificationSender: goauth.NotificationSenderFunc(
+					func(ctx context.Context, delivery goauth.NotificationDelivery) error {
 						calls++
 						require.Equal(t, scope, goauth.PasswordResetScope(ctx))
+						require.Empty(t, delivery.TransportProtocol)
 						return nil
 					},
 				)}
@@ -39,7 +40,7 @@ func TestPasswordResetWorkerRestoresAuthenticatedScope(t *testing.T) {
 
 func TestPasswordResetWorkerRejectsMalformedAuthenticatedScope(t *testing.T) {
 	calls := 0
-	runtime := &Runtime{notificationSender: goauth.NotificationSenderFunc(
+	runtime := &Runtime{store: &Store{}, notificationSender: goauth.NotificationSenderFunc(
 		func(context.Context, goauth.NotificationDelivery) error {
 			calls++
 			return nil

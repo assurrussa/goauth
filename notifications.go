@@ -19,6 +19,8 @@ var ErrNotificationRejected = errors.New("notification permanently rejected")
 // idempotency key when the underlying transport supports deduplication.
 type NotificationDelivery struct {
 	ID string
+	// TransportProtocol is the immutable protocol selected at enqueue; empty is legacy.
+	TransportProtocol string
 	// EncryptedEvent is the exact sealed event claimed by the managed worker.
 	// Delivery transports may persist this envelope, but never Notification's
 	// plaintext codes/tokens. Use ID for downstream idempotency; delivery is at-least-once.
@@ -46,8 +48,9 @@ type NotificationDiagnosticError interface {
 	NotificationDiagnostic() NotificationDiagnostic
 }
 
-// NotificationSender is the only delivery integration required from a host
-// using the PostgreSQL managed notification queue.
+// NotificationSender integrates a host with the managed notification queue.
+// Nil means provider acceptance. A durable queue sender returns NotificationQueuedError
+// and additionally implements NotificationReconciler and NotificationTransportProtocol.
 type NotificationSender interface {
 	SendNotification(ctx context.Context, delivery NotificationDelivery) error
 }

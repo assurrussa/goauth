@@ -42,7 +42,8 @@ func (r *Runtime) ExpireNotifications(ctx context.Context, limit int) (int64, er
 const notificationExpirySQL = `
 WITH expired AS (
  SELECT id FROM auth_notification_deliveries
- WHERE ciphertext IS NOT NULL AND valid_until <= $1
+ WHERE (ciphertext IS NOT NULL OR (gateway_receipt_id IS NOT NULL AND state IN ('gateway_accepted','leased')))
+ AND valid_until <= $1
  ORDER BY valid_until, id
  FOR UPDATE SKIP LOCKED LIMIT $2
 )

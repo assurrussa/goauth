@@ -36,7 +36,7 @@ func TestSubjectRetirementMigrationUpgradesAllPublishedSchemas(t *testing.T) {
 			require.NoError(t, postgres.VerifySchema(t.Context(), db))
 			var gotVersion int
 			require.NoError(t, db.QueryRowContext(t.Context(), `SELECT max(version) FROM goauth_schema_version`).Scan(&gotVersion))
-			require.Equal(t, 14, gotVersion)
+			require.Equal(t, 15, gotVersion)
 			if version != 0 {
 				require.Equal(t, before, retirementMigrationSnapshot(t, db, version), "upgrade must preserve preexisting data")
 				var retired int
@@ -171,6 +171,9 @@ func retirementMigrationSnapshot(t *testing.T, db *sql.DB, version int) map[stri
 		if table == "auth_notification_deliveries" && version < 13 {
 			expression += " - ARRAY['last_sender_outcome','last_sender_code','last_sender_http_status'," +
 				"'last_sender_attempt','last_sender_observed_at']"
+		}
+		if table == "auth_notification_deliveries" && version < 15 {
+			expression += " - ARRAY['transport_protocol','gateway_receipt_id','gateway_accepted_at']"
 		}
 		if table == "auth_subjects" && version < 6 {
 			expression += " - 'retired_at'"

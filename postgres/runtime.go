@@ -89,6 +89,14 @@ func NewRuntime(config Config) (*Runtime, error) {
 		closeOnError()
 		return nil, err
 	}
+	if protocol, ok := config.NotificationSender.(goauth.NotificationTransportProtocol); ok {
+		value := protocol.NotificationTransportProtocol()
+		if len(value) > 64 || strings.Trim(value, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != "" {
+			closeOnError()
+			return nil, errors.New("invalid notification transport protocol")
+		}
+		store.notificationProtocol = value
+	}
 	config.Runtime.Store = store
 	config.Runtime.AuthTransaction = store
 	if config.NotificationSender != nil {

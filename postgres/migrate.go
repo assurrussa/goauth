@@ -10,7 +10,7 @@ import (
 	"fmt"
 )
 
-const schemaVersion = 14
+const schemaVersion = 15
 
 const localIdentitySchemaVersion = 4
 
@@ -71,7 +71,7 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 
 func applyPendingMigrations(ctx context.Context, tx *sql.Tx, state schemaState) error {
 	switch state {
-	case schemaStateV14:
+	case schemaStateV15:
 		// No schema change is needed, but still finish the transaction to release
 		// the lock before reporting a successful verification.
 	case schemaStateFuture:
@@ -89,10 +89,7 @@ func applyPendingMigrations(ctx context.Context, tx *sql.Tx, state schemaState) 
 		}
 		fallthrough
 	case schemaStateV3:
-		if err := verifyNotificationSchema(ctx, tx); err != nil {
-			return err
-		}
-		if err := applyLocalIdentityMigration(ctx, tx); err != nil {
+		if err := applyVerifiedLocalIdentityMigration(ctx, tx); err != nil {
 			return err
 		}
 		fallthrough
@@ -142,7 +139,9 @@ func applyPendingMigrations(ctx context.Context, tx *sql.Tx, state schemaState) 
 	case schemaStateV12:
 		return applyFinalRecoveryMigrations(ctx, tx)
 	case schemaStateV13:
-		return applyAssistedRecoveryMigration(ctx, tx)
+		return applyAssistedRecoveryAndGatewayMigrations(ctx, tx)
+	case schemaStateV14:
+		return applyNotificationGatewayMigration(ctx, tx)
 	default:
 		return errors.New("unknown goauth schema state")
 	}
@@ -160,7 +159,7 @@ func applyFinalRecoveryMigrations(ctx context.Context, tx *sql.Tx) error {
 	if err := applyNotificationSenderDiagnosticsMigration(ctx, tx); err != nil {
 		return err
 	}
-	return applyAssistedRecoveryMigration(ctx, tx)
+	return applyAssistedRecoveryAndGatewayMigrations(ctx, tx)
 }
 
 func verifyPreRetirementSchema(ctx context.Context, tx *sql.Tx) error {
@@ -225,7 +224,7 @@ func verifySchema(ctx context.Context, db queryRower) error {
 	if state == schemaStateFuture {
 		return ErrFutureSchema
 	}
-	if state != schemaStateV14 {
+	if state != schemaStateV15 {
 		return ErrSchemaNeedsMigration
 	}
 	if err := verifyNotificationSchema(ctx, db); err != nil {
@@ -261,7 +260,10 @@ func verifySchema(ctx context.Context, db queryRower) error {
 	if err := verifyNotificationSenderDiagnosticsSchema(ctx, db); err != nil {
 		return err
 	}
-	return verifyAssistedRecoverySchema(ctx, db)
+	if err := verifyAssistedRecoverySchema(ctx, db); err != nil {
+		return err
+	}
+	return verifyNotificationGatewaySchema(ctx, db)
 }
 
 func verifyNotificationSchema(ctx context.Context, db queryRower) error {
@@ -396,6 +398,7 @@ const (
 	schemaStateV12
 	schemaStateV13
 	schemaStateV14
+	schemaStateV15
 	schemaStateFuture
 )
 
@@ -405,7 +408,7 @@ func supportedSchemaVersion(version int) bool {
 		version == rateEventCleanupSchemaVersion || version == sessionOIDCSchemaVersion ||
 		version == localMFASchemaVersion || version == 10 || version == scopedEmailChangeSchemaVersion ||
 		version == notificationLifecycleSchemaVersion || version == notificationSenderDiagnosticsSchemaVersion ||
-		version == schemaVersion
+		version == assistedRecoverySchemaVersion || version == schemaVersion
 }
 
 func detectSchema(ctx context.Context, db queryRower) (schemaState, error) {
@@ -451,6 +454,9 @@ WHERE table_schema = 'public'
 	}
 
 	if version == schemaVersion {
+		return schemaStateV15, nil
+	}
+	if version == assistedRecoverySchemaVersion {
 		return schemaStateV14, nil
 	}
 	if version == notificationSenderDiagnosticsSchemaVersion {
@@ -487,4 +493,18 @@ WHERE table_schema = 'public'
 		return schemaStateV3, nil
 	}
 	return schemaStateV2, nil
+}
+
+func applyVerifiedLocalIdentityMigration(ctx context.Context, tx *sql.Tx) error {
+	if err := verifyNotificationSchema(ctx, tx); err != nil {
+		return err
+	}
+	return applyLocalIdentityMigration(ctx, tx)
+}
+
+func applyAssistedRecoveryAndGatewayMigrations(ctx context.Context, tx *sql.Tx) error {
+	if err := applyAssistedRecoveryMigration(ctx, tx); err != nil {
+		return err
+	}
+	return applyNotificationGatewayMigration(ctx, tx)
 }

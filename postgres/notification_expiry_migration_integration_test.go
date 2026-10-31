@@ -60,7 +60,8 @@ func TestNotificationExpiryIndexUpgradesV4AndBoundsSelection(t *testing.T) {
 	// Compare the same legacy columns on both sides of the additive schema upgrade.
 	const retainedSnapshot = `SELECT md5(string_agg((to_jsonb(n) - ARRAY[
  'last_sender_outcome','last_sender_code','last_sender_http_status',
- 'last_sender_attempt','last_sender_observed_at'])::text,'' ORDER BY id))
+ 'last_sender_attempt','last_sender_observed_at','transport_protocol',
+ 'gateway_receipt_id','gateway_accepted_at'])::text,'' ORDER BY id))
  FROM auth_notification_deliveries n`
 	var before string
 	require.NoError(t, db.QueryRowContext(t.Context(), retainedSnapshot).Scan(&before))

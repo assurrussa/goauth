@@ -11,7 +11,7 @@ import (
 
 func TestNotificationSenderDiagnosticsMigrationPreservesHistory(t *testing.T) {
 	t.Parallel()
-	require.Equal(t, 14, schemaVersion)
+	require.Equal(t, 15, schemaVersion)
 	require.Equal(t, 12, notificationLifecycleSchemaVersion)
 	require.Equal(t, 13, notificationSenderDiagnosticsSchemaVersion)
 	for version := 2; version <= schemaVersion; version++ {

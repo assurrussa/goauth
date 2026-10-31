@@ -497,3 +497,21 @@ method identifiers, and signs standard ID-token `amr` independently of profile
 scope. Explicit empty evidence emits an empty array; nil retains legacy omission.
 Historical code/refresh evidence must not borrow methods from a later login.
 Enrollment remains advisory only. No schema, release, or legacy-provider changes.
+
+## NotifyHub queue ownership candidate (2026-10-31)
+
+Fresh master f26dae502abaafe23652a0bdee7be0b10bdcff6a materialized from v0.15.0
+module cache; every file Git blob SHA matches remote recursive tree. No changes
+published and no schema executed on production. Schema15 adds bounded protocol
+and gateway receipt metadata. Native new enqueue snapshots optional sender
+protocol; legacy mismatch is blocked before decrypt/send, without budget spend.
+Queued acceptance atomically stores receipt + scrubs local ciphertext, never
+sets delivered_at. Same worker reconciles metadata-only receipts without another
+send. Pending/unknown/Get errors preserve queue ownership; explicit provider
+acceptance retains legacy delivered semantics. Invalid receipt metadata cannot
+be persisted. Expiry closes observation but never proves non-delivery.
+
+Checks pending: focused synthetic worker/unit tests, isolated PostgreSQL fresh
+and schema14 upgrade/idempotence/tamper/ownership tests, canonical gates,
+independent review. Do not claim ready or release before these pass. Existing
+synchronous senders remain compatible (empty protocol/nil-provider semantics).

@@ -16,12 +16,15 @@ type notificationClaim struct {
 	event      goauth.EncryptedEvent
 	leaseToken string
 	attempts   int
+	receiptID  string
+	protocol   string
 	diagnostic *goauth.NotificationDiagnostic
 	observedAt time.Time
 }
 
 const (
 	notificationPending   = "pending"
+	notificationQueued    = "gateway_accepted"
 	notificationBlocked   = "blocked"
 	notificationLeased    = "leased"
 	notificationDelivered = "delivered"
@@ -40,11 +43,11 @@ func (s *Store) EnqueueEncrypted(ctx context.Context, event goauth.EncryptedEven
 	if _, err := s.notificationExecer(ctx).ExecContext(ctx, `
 INSERT INTO auth_notification_deliveries (
     id, subject_id, event_type, reference_id, valid_until, key_id, nonce,
-    ciphertext, additional_data, created_at, delete_after, next_attempt_at
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $10)`,
+    ciphertext, additional_data, created_at, delete_after, next_attempt_at, transport_protocol
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $10, $12)`,
 		event.ID, event.SubjectID, event.Type, event.ReferenceID, event.ValidUntil,
 		event.Envelope.KeyID, event.Envelope.Nonce, event.Envelope.Ciphertext,
-		event.Envelope.AdditionalData, event.Envelope.CreatedAt, event.Envelope.DeleteAfter,
+		event.Envelope.AdditionalData, event.Envelope.CreatedAt, event.Envelope.DeleteAfter, s.notificationProtocol,
 	); err != nil {
 		return fmt.Errorf("enqueue managed notification: %w", err)
 	}
@@ -64,7 +67,8 @@ SET state = 'expired', ciphertext = NULL, nonce = '\x'::bytea,
     additional_data = '\x'::bytea, lease_token = NULL, leased_until = NULL,
  last_sender_outcome = NULL, last_sender_code = NULL, last_sender_http_status = NULL,
  last_sender_attempt = NULL, last_sender_observed_at = NULL
-WHERE ciphertext IS NOT NULL AND (valid_until <= $1 OR delete_after <= $1)`, before)
+WHERE (ciphertext IS NOT NULL OR (gateway_receipt_id IS NOT NULL AND state IN ('gateway_accepted','leased')))
+ AND (valid_until <= $1 OR delete_after <= $1)`, before)
 	if err != nil {
 		return 0, fmt.Errorf("expire managed notifications: %w", err)
 	}
@@ -80,22 +84,23 @@ UPDATE auth_notification_deliveries
 SET state = 'leased', lease_token = $2, leased_until = $3
 WHERE id = (
     SELECT id FROM auth_notification_deliveries
-    WHERE ciphertext IS NOT NULL AND valid_until > $1 AND delete_after > $1
-      AND ((state IN ('pending', 'blocked') AND next_attempt_at <= $1)
+    WHERE (ciphertext IS NOT NULL OR gateway_receipt_id IS NOT NULL) AND valid_until > $1 AND delete_after > $1
+      AND ((state IN ('pending', 'blocked', 'gateway_accepted') AND next_attempt_at <= $1)
         OR (state = 'leased' AND leased_until <= $1))
     ORDER BY next_attempt_at, created_at
     FOR UPDATE SKIP LOCKED
     LIMIT 1
 )
 RETURNING id, subject_id, event_type, reference_id, valid_until,
-          key_id, nonce, ciphertext, additional_data, created_at, delete_after, attempts`,
+          key_id, nonce, COALESCE(ciphertext, '\x'::bytea), additional_data, created_at, delete_after, attempts,
+ COALESCE(gateway_receipt_id,''), transport_protocol`,
 		now, leaseToken, now.Add(lease),
 	).Scan(
 		&claim.event.ID, &claim.event.SubjectID, &claim.event.Type,
 		&claim.event.ReferenceID, &claim.event.ValidUntil,
 		&envelope.KeyID, &envelope.Nonce, &envelope.Ciphertext,
 		&envelope.AdditionalData, &envelope.CreatedAt, &envelope.DeleteAfter,
-		&claim.attempts,
+		&claim.attempts, &claim.receiptID, &claim.protocol,
 	)
 	if err != nil {
 		return notificationClaim{}, err
@@ -260,6 +265,8 @@ SELECT state, count(*) FROM auth_notification_deliveries GROUP BY state`)
 			return stats, err
 		}
 		switch state {
+		case notificationQueued:
+			stats.GatewayAccepted = count
 		case notificationPending:
 			stats.Pending = count
 		case notificationLeased:
@@ -282,7 +289,7 @@ SELECT state, count(*) FROM auth_notification_deliveries GROUP BY state`)
 	var oldest sql.NullTime
 	if err := s.db.QueryRowContext(ctx, `
 SELECT min(created_at) FROM auth_notification_deliveries
-WHERE state IN ('pending', 'blocked', 'leased')`).Scan(&oldest); err != nil {
+WHERE state IN ('pending', 'blocked', 'leased', 'gateway_accepted')`).Scan(&oldest); err != nil {
 		return stats, err
 	}
 	if oldest.Valid {
