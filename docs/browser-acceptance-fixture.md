@@ -1,9 +1,10 @@
 # Verified HTTPS browser acceptance fixture
 
 `make browser-acceptance` uses real Chromium, HTTPS and disposable PostgreSQL.
-It requires an explicit synthetic TLS fixture and a fresh dedicated Chromium
-profile. It never installs a certificate, edits OS trust/DNS, uses a personal
-profile, ignores a certificate error or disables the browser sandbox.
+It requires an explicit synthetic TLS fixture and, by default, a fresh dedicated
+Chromium profile. An explicit reusable-trust mode instead uses a dedicated
+persistent trust profile with a fresh isolated session context. It never installs
+a certificate, edits OS trust/DNS, uses a personal profile, ignores a certificate error or disables the browser sandbox.
 
 The fixture producer must establish a supported, separately authorized trust
 route first. A certificate-error page is a failure, never permission to click
@@ -45,6 +46,55 @@ Required entries, using exactly these names:
   "caHash": "ACTUAL_SHA256_OF_CA_PEM_BYTES"
 }
 ```
+
+### Optional reusable trust profile
+
+The default above remains the fresh disposable-profile mode. To avoid repeatedly
+importing the same separately approved synthetic CA, an operator may explicitly
+select an existing, dedicated task-owned trust profile. This is a different gate
+contract: **persistent trust, fresh isolated session**, not a fresh whole
+user-data directory. It must never be a personal or ordinary browser profile.
+The profile must be absolute, canonical, owned by the executing user, mode 0700,
+with a basename starting `goauth-browser-trust-`; no path component may be a
+symlink. The same public CA must be used by the fresh per-run TLS fixture. The
+fixture and its 150-second, chain, SAN, key-pair and validity checks remain
+mandatory. No private CA key belongs in this profile or in the repository.
+
+Before the run the authorized fixture owner places a mode-0600 regular file
+`goauth-trust-profile.json` inside that dedicated profile:
+
+```json
+{
+  "version": 1,
+  "purpose": "goauth-browser-reusable-trust",
+  "createdAt": "ACTUAL_UTC_RFC3339_CREATION_TIME",
+  "expiresAt": "EXPLICIT_UTC_RFC3339_TRUST_EXPIRY",
+  "caHash": "LOWERCASE_SHA256_OF_CANONICAL_CA_CERTIFICATE_DER"
+}
+```
+
+The trust expiry must cover the complete 150-second run and not exceed the
+certificate's actual expiry or the separately authorized trust lifetime. Set
+all three variables explicitly:
+
+```sh
+export GOAUTH_BROWSER_REUSE_TRUST_PROFILE=1
+export GOAUTH_BROWSER_TRUST_PROFILE="$OWNED_DEDICATED_TRUST_PROFILE"
+export GOAUTH_BROWSER_TRUST_CA_SHA256="$APPROVED_CA_DER_SHA256"
+```
+
+The approved DER fingerprint, marker and fixture CA must match. The existing
+fixture `caHash` remains the SHA-256 of PEM file bytes; it is a distinct check.
+The persistent profile is used solely as the browser's trust source: no
+acceptance page or authentication runs there. A new off-the-record context is
+created for every run, with no inherited cookies, local storage, IndexedDB,
+service workers or HTTP cache, and is closed before its parent. The dedicated
+profile may retain the approved CA trust between runs; do not copy browser
+certificate databases, import private keys, modify OS trust, or reuse it for
+ordinary browsing. The marker prevents accidental reuse, not deliberate forgery.
+The operator must verify the actual installed Chromium's trust propagation in the
+isolated context and repeat wrong-CA, wrong-hostname and untrusted-browser
+negative checks before treating the mode as accepted.
 
 The marker is an accidental-profile-reuse guard, not an attestation system.
 The operator remains responsible for creating the new fixture, verifying its
@@ -108,7 +158,8 @@ When establishing a new trust route, also verify that an untrusted CA and a
 wrong-hostname certificate fail in the actual browser; never override either
 error. Record any unperformed checks rather than inferring success.
 
-Normal exit closes the browser context. After a failure, timeout or interruption,
+Normal exit closes the test context and, in reusable mode, its persistent trust
+parent. After a failure, timeout or interruption,
 the fixture owner must additionally confirm that all owned browser processes
 have stopped before deleting the disposable profile, certificates and keys.
 Preserve unrelated profiles, source, shared caches and nonsecret test reports.

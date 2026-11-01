@@ -91,8 +91,9 @@ with a real HTTPS browser, canonical PostgreSQL Runtime, managed encrypted queue
 full account lifecycle and exactly one refresh across two tabs after access expiry.
 Node, the selected installed Playwright module and Chromium must be available.
 The [browser fixture contract](browser-acceptance-fixture.md) requires a fresh
-owned profile, an explicitly verified synthetic CA/leaf/key pair, and separately
-authorized profile trust. The harness imports no trust and never bypasses HTTPS
+owned profile by default, or explicit dedicated persistent-trust profile with a
+fresh isolated session, an explicitly verified synthetic CA/leaf/key pair, and
+separately authorized profile trust. The harness imports no trust and never bypasses HTTPS
 errors or disables Chromium sandboxing. Missing inputs or trust are failures.
 An invoked gate fails when the engine is missing; it does not silently skip or
 install dependencies. These profiles use their own temporary databases. The
