@@ -112,7 +112,7 @@ func TestGatewayFixtureControlURLGuardIntegration(t *testing.T) {
 }
 
 func TestGatewaySchemaOwnershipAndReconciliationIntegration(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	db := gatewayIntegrationDB(t)
 	require.NoError(t, Migrate(ctx, db))
 	require.NoError(t, Migrate(ctx, db))
@@ -120,11 +120,12 @@ func TestGatewaySchemaOwnershipAndReconciliationIntegration(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	subject, err := goauth.ParseSubjectID(uuid.NewString())
 	require.NoError(t, err)
-	_, err = db.Exec(`INSERT INTO auth_subjects(id,status,created_at,updated_at)VALUES($1,'active',$2,$2)`, subject, now)
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO auth_subjects(id,status,created_at,updated_at)VALUES($1,'active',$2,$2)`, subject, now)
 	require.NoError(t, err)
 	store, err := NewStore(db)
 	require.NoError(t, err)
-	store.notificationProtocol = "notifyhub_queue_v1"
+	store.notificationProtocol = gatewayTestProtocol
 	event := goauth.EncryptedEvent{
 		ID: uuid.NewString(), SubjectID: subject, Type: "gateway_test", ValidUntil: now.Add(time.Hour),
 		Envelope: goauth.EncryptedEnvelope{
@@ -144,7 +145,7 @@ func TestGatewaySchemaOwnershipAndReconciliationIntegration(t *testing.T) {
 	var ciphertext []byte
 	var delivered sql.NullTime
 	var attempts int
-	require.NoError(t, db.QueryRow(`SELECT state,ciphertext,delivered_at,attempts FROM auth_notification_deliveries
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT state,ciphertext,delivered_at,attempts FROM auth_notification_deliveries
  WHERE id=$1`, event.ID).
 		Scan(&state, &ciphertext, &delivered, &attempts))
 	require.Equal(t, notificationQueued, state)
@@ -169,14 +170,14 @@ func TestGatewaySchemaOwnershipAndReconciliationIntegration(t *testing.T) {
 	require.NoError(t, err)
 	sender.outcome = nil
 	require.NoError(t, r.deliverNotification(ctx, claim))
-	require.NoError(t, db.QueryRow(`SELECT state,delivered_at,attempts FROM auth_notification_deliveries
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT state,delivered_at,attempts FROM auth_notification_deliveries
  WHERE id=$1`, event.ID).
 		Scan(&state, &delivered, &attempts))
 	require.Equal(t, notificationDelivered, state)
 	require.True(t, delivered.Valid)
 	require.Equal(t, 1, attempts)
 	require.Zero(t, sender.sends)
-	rows, err := db.Query(`SELECT conname,pg_get_constraintdef(oid) FROM pg_constraint
+	rows, err := db.QueryContext(ctx, `SELECT conname,pg_get_constraintdef(oid) FROM pg_constraint
 WHERE conrelid='auth_notification_deliveries'::regclass
 AND conname IN ('auth_notification_gateway_receipt_check','auth_notification_transport_protocol_check')`)
 	require.NoError(t, err)
@@ -190,18 +191,19 @@ AND conname IN ('auth_notification_gateway_receipt_check','auth_notification_tra
 }
 
 func TestGatewayUpgradePreservesLegacyAndRejectsDriftIntegration(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	db := gatewayIntegrationDB(t)
 	require.NoError(t, Migrate(ctx, db))
 	id, subject := uuid.NewString(), uuid.NewString()
-	_, err := db.Exec(`INSERT INTO auth_subjects(id,status,created_at,updated_at) VALUES($1,'active',now(),now());`, subject)
+	_, err := db.ExecContext(ctx,
+		`INSERT INTO auth_subjects(id,status,created_at,updated_at) VALUES($1,'active',now(),now());`, subject)
 	require.NoError(t, err)
-	_, err = db.Exec(`INSERT INTO auth_notification_deliveries(id,subject_id,event_type,valid_until,key_id,
+	_, err = db.ExecContext(ctx, `INSERT INTO auth_notification_deliveries(id,subject_id,event_type,valid_until,key_id,
 nonce,ciphertext,additional_data,created_at,delete_after,next_attempt_at)
  VALUES($1,$2,'legacy',now()+interval '1 hour','synthetic','\x01','\x02','\x03',now(),now()+interval '1 hour',now())`,
 		id, subject)
 	require.NoError(t, err)
-	_, err = db.Exec(`DROP INDEX auth_notification_gateway_ready_idx;
+	_, err = db.ExecContext(ctx, `DROP INDEX auth_notification_gateway_ready_idx;
  ALTER TABLE auth_notification_deliveries DROP CONSTRAINT auth_notification_gateway_receipt_check,
  DROP CONSTRAINT auth_notification_transport_protocol_check,DROP CONSTRAINT auth_notification_deliveries_state_check,
  DROP COLUMN gateway_receipt_id,DROP COLUMN gateway_accepted_at,DROP COLUMN transport_protocol,
@@ -214,13 +216,13 @@ nonce,ciphertext,additional_data,created_at,delete_after,next_attempt_at)
 	require.NoError(t, VerifySchema(ctx, db))
 	var protocol, state string
 	var payload []byte
-	require.NoError(t, db.QueryRow(`SELECT transport_protocol,state,ciphertext FROM auth_notification_deliveries
+	require.NoError(t, db.QueryRowContext(ctx, `SELECT transport_protocol,state,ciphertext FROM auth_notification_deliveries
  WHERE id=$1`, id).
 		Scan(&protocol, &state, &payload))
 	require.Empty(t, protocol)
 	require.Equal(t, "pending", state)
 	require.Equal(t, []byte{2}, payload)
-	_, err = db.Exec(`ALTER TABLE auth_notification_deliveries DROP CONSTRAINT auth_notification_gateway_receipt_check,
+	_, err = db.ExecContext(ctx, `ALTER TABLE auth_notification_deliveries DROP CONSTRAINT auth_notification_gateway_receipt_check,
  ADD CONSTRAINT auth_notification_gateway_receipt_check CHECK(true)`)
 	require.NoError(t, err)
 	require.ErrorIs(t, VerifySchema(ctx, db), ErrSchemaNeedsMigration)
@@ -229,17 +231,18 @@ nonce,ciphertext,additional_data,created_at,delete_after,next_attempt_at)
 func TestGatewayLateOwnershipCannotOverwriteLeaseOrExpiryIntegration(t *testing.T) {
 	for _, mode := range []string{"reclaimed", "expired"} {
 		t.Run(mode, func(t *testing.T) {
-			ctx := context.Background()
+			ctx := t.Context()
 			db := gatewayIntegrationDB(t)
 			require.NoError(t, Migrate(ctx, db))
 			now := time.Now().UTC().Truncate(time.Microsecond)
 			event := deadlineEvent(t, uuid.NewString(), now.Add(time.Hour))
 			event.Envelope.CreatedAt = now
-			_, err := db.Exec(`INSERT INTO auth_subjects(id,status,created_at,updated_at)VALUES($1,'active',$2,$2)`, event.SubjectID, now)
+			_, err := db.ExecContext(ctx,
+				`INSERT INTO auth_subjects(id,status,created_at,updated_at)VALUES($1,'active',$2,$2)`, event.SubjectID, now)
 			require.NoError(t, err)
 			store, err := NewStore(db)
 			require.NoError(t, err)
-			store.notificationProtocol = "notifyhub_queue_v1"
+			store.notificationProtocol = gatewayTestProtocol
 			require.NoError(t, store.EnqueueEncrypted(ctx, event))
 			original, err := store.claimNotification(ctx, now, time.Minute)
 			require.NoError(t, err)
@@ -250,13 +253,13 @@ func TestGatewayLateOwnershipCannotOverwriteLeaseOrExpiryIntegration(t *testing.
 				require.NoError(t, store.acceptNotificationQueue(ctx, original, "stale-receipt", now.Add(2*time.Minute), time.Second))
 				var receipt sql.NullString
 				var state string
-				require.NoError(t, db.QueryRow(`SELECT gateway_receipt_id,state FROM auth_notification_deliveries
+				require.NoError(t, db.QueryRowContext(ctx, `SELECT gateway_receipt_id,state FROM auth_notification_deliveries
  WHERE id=$1`, event.ID).
 					Scan(&receipt, &state))
 				require.False(t, receipt.Valid)
 				require.Equal(t, notificationLeased, state)
 				require.NoError(t, store.acceptNotificationQueue(ctx, current, "current-receipt", now.Add(2*time.Minute), time.Second))
-				require.NoError(t, db.QueryRow(`SELECT gateway_receipt_id,state FROM auth_notification_deliveries
+				require.NoError(t, db.QueryRowContext(ctx, `SELECT gateway_receipt_id,state FROM auth_notification_deliveries
  WHERE id=$1`, event.ID).
 					Scan(&receipt, &state))
 				require.Equal(t, "current-receipt", receipt.String)
@@ -270,7 +273,7 @@ func TestGatewayLateOwnershipCannotOverwriteLeaseOrExpiryIntegration(t *testing.
 				var receipt sql.NullString
 				var state string
 				var delivered sql.NullTime
-				require.NoError(t, db.QueryRow(`SELECT gateway_receipt_id,state,delivered_at FROM auth_notification_deliveries
+				require.NoError(t, db.QueryRowContext(ctx, `SELECT gateway_receipt_id,state,delivered_at FROM auth_notification_deliveries
  WHERE id=$1`, event.ID).
 					Scan(&receipt, &state, &delivered))
 				require.False(t, receipt.Valid)
@@ -296,16 +299,21 @@ func (s *legacyGatewayTestSender) ReconcileLegacyNotification(
 
 func TestGatewayLegacyProviderEvidenceIntegration(t *testing.T) {
 	db := gatewayIntegrationDB(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(t, Migrate(ctx, db))
-	for _, name := range []string{"accepted", "unknown", "other_protocol", "revoked", "late_lease", "deadline"} {
+	for _, name := range []string{
+		gatewayLegacyAccepted, "unknown", gatewayLegacyOtherProtocol,
+		gatewayLegacyRevoked, gatewayLegacyLateLease, gatewayLegacyDeadline,
+	} {
 		t.Run(name, func(t *testing.T) {
 			now := time.Now().UTC().Truncate(time.Microsecond)
 			subject, err := goauth.ParseSubjectID(uuid.NewString())
 			require.NoError(t, err)
-			_, err = db.Exec(`INSERT INTO auth_subjects(id,status,created_at,updated_at)VALUES($1,'active',$2,$2)`, subject, now)
+			_, err = db.ExecContext(ctx,
+				`INSERT INTO auth_subjects(id,status,created_at,updated_at)VALUES($1,'active',$2,$2)`, subject, now)
 			require.NoError(t, err)
-			_, err = db.Exec(`INSERT INTO auth_basic_profiles(subject_id,created_at,updated_at) VALUES($1,$2,$2)`, subject, now)
+			_, err = db.ExecContext(ctx,
+				`INSERT INTO auth_basic_profiles(subject_id,created_at,updated_at) VALUES($1,$2,$2)`, subject, now)
 			require.NoError(t, err)
 			store, err := NewStore(db)
 			require.NoError(t, err)
@@ -316,17 +324,17 @@ func TestGatewayLegacyProviderEvidenceIntegration(t *testing.T) {
 					Nonce: []byte{1}, Ciphertext: []byte{2}, AdditionalData: []byte{3}, CreatedAt: now, DeleteAfter: now.Add(time.Hour),
 				},
 			}
-			if name == "revoked" {
-				event.Type = "password_reset"
+			if name == gatewayLegacyRevoked {
+				event.Type = gatewayLegacyPasswordReset
 				event.ReferenceID = uuid.NewString()
 			}
-			if name == "other_protocol" {
-				store.notificationProtocol = "other_protocol"
+			if name == gatewayLegacyOtherProtocol {
+				store.notificationProtocol = gatewayLegacyOtherProtocol
 			}
 			require.NoError(t, store.EnqueueEncrypted(ctx, event))
 			claim, err := store.claimNotification(ctx, now, time.Minute)
 			require.NoError(t, err)
-			store.notificationProtocol = "notifyhub_queue_v1"
+			store.notificationProtocol = gatewayTestProtocol
 			sender := &legacyGatewayTestSender{}
 			sender.observe = func(_ context.Context, receipt goauth.LegacyNotificationReceipt) error {
 				require.Equal(t, event.ID, receipt.ID)
@@ -335,10 +343,11 @@ func TestGatewayLegacyProviderEvidenceIntegration(t *testing.T) {
 				switch name {
 				case "unknown":
 					return errors.New("no proven provider receipt")
-				case "late_lease":
-					_, updateErr := db.Exec(`UPDATE auth_notification_deliveries SET lease_token=$2 WHERE id=$1`, event.ID, uuid.NewString())
+				case gatewayLegacyLateLease:
+					_, updateErr := db.ExecContext(ctx,
+						`UPDATE auth_notification_deliveries SET lease_token=$2 WHERE id=$1`, event.ID, uuid.NewString())
 					require.NoError(t, updateErr)
-				case "deadline":
+				case gatewayLegacyDeadline:
 					now = event.ValidUntil
 				}
 				return nil
@@ -353,30 +362,30 @@ func TestGatewayLegacyProviderEvidenceIntegration(t *testing.T) {
 			var delivered sql.NullTime
 			var payload []byte
 			var attempts int
-			require.NoError(t, db.QueryRow(`SELECT state,delivered_at,ciphertext,attempts FROM auth_notification_deliveries
+			require.NoError(t, db.QueryRowContext(ctx, `SELECT state,delivered_at,ciphertext,attempts FROM auth_notification_deliveries
 WHERE id=$1`, event.ID).Scan(&state, &delivered, &payload, &attempts))
 			require.Zero(t, sender.sends)
 			require.Zero(t, attempts)
-			if name == "accepted" {
+			if name == gatewayLegacyAccepted {
 				require.Equal(t, notificationDelivered, state)
 				require.True(t, delivered.Valid)
 				require.Empty(t, payload)
 			} else {
 				require.False(t, delivered.Valid)
 				require.Equal(t, []byte{2}, payload)
-				if name == "late_lease" || name == "deadline" {
+				if name == gatewayLegacyLateLease || name == gatewayLegacyDeadline {
 					require.Equal(t, notificationLeased, state)
 				} else {
 					require.Equal(t, notificationBlocked, state)
 				}
 			}
-			if name == "revoked" || name == "other_protocol" {
+			if name == gatewayLegacyRevoked || name == gatewayLegacyOtherProtocol {
 				require.Zero(t, sender.checksLegacy)
 			} else {
 				require.Equal(t, 1, sender.checksLegacy)
 			}
 			// Keep the next case from reclaiming this intentionally abandoned lease.
-			_, err = db.Exec(`DELETE FROM auth_notification_deliveries WHERE id=$1`, event.ID)
+			_, err = db.ExecContext(ctx, `DELETE FROM auth_notification_deliveries WHERE id=$1`, event.ID)
 			require.NoError(t, err)
 		})
 	}

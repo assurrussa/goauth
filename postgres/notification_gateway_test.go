@@ -11,7 +11,16 @@ import (
 	"github.com/assurrussa/goauth"
 )
 
-const notificationGatewayTestReceipt = "receipt-1"
+const (
+	notificationGatewayTestReceipt = "receipt-1"
+	gatewayTestProtocol            = "notifyhub_queue_v1"
+	gatewayLegacyAccepted          = "accepted"
+	gatewayLegacyOtherProtocol     = "other_protocol"
+	gatewayLegacyRevoked           = "revoked"
+	gatewayLegacyLateLease         = "late_lease"
+	gatewayLegacyDeadline          = "deadline"
+	gatewayLegacyPasswordReset     = "password_reset"
+)
 
 type gatewayTestSender struct {
 	sends, checks int
@@ -73,7 +82,7 @@ func TestTransportProtocolChangeFencesLegacyBeforeSend(t *testing.T) {
 	sender := &gatewayTestSender{}
 	d := &deadlineDriver{}
 	r := deadlineRuntime(t, d, sender)
-	r.store.notificationProtocol = "notifyhub_queue_v1"
+	r.store.notificationProtocol = gatewayTestProtocol
 	event := deadlineEvent(t, "legacy-held", time.Now().Add(time.Hour))
 	d.deliveries = []deadlineDelivery{{event: event, token: notificationClockLease, state: notificationLeased}}
 	claim := notificationClaim{event: event, leaseToken: notificationClockLease}

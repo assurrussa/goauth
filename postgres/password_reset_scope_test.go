@@ -13,7 +13,7 @@ import (
 func TestPasswordResetWorkerRestoresAuthenticatedScope(t *testing.T) {
 	ambient, err := goauth.WithPasswordResetScope(t.Context(), "ambient-v1")
 	require.NoError(t, err)
-	for _, kind := range []string{"password_reset", "password_reset_success"} {
+	for _, kind := range []string{gatewayLegacyPasswordReset, "password_reset_success"} {
 		for _, scope := range []string{"", "operator-v1", "sso-v1"} {
 			t.Run(kind+"/"+scope, func(t *testing.T) {
 				calls := 0
@@ -46,7 +46,7 @@ func TestPasswordResetWorkerRejectsMalformedAuthenticatedScope(t *testing.T) {
 			return nil
 		},
 	)}
-	for _, kind := range []string{"password_reset", "password_reset_success"} {
+	for _, kind := range []string{gatewayLegacyPasswordReset, "password_reset_success"} {
 		err := runtime.sendCurrentPasswordResetNotification(t.Context(), goauth.EncryptedEvent{Type: kind},
 			goauth.Notification{Template: kind, Data: map[string]string{"password_reset_scope": "../operator"}})
 		require.ErrorIs(t, err, errPasswordResetNotificationStale)
