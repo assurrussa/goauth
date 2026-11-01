@@ -63,10 +63,12 @@ func (c NotificationWorkerConfig) withDefaults() (NotificationWorkerConfig, erro
 }
 
 type NotificationQueueStats struct {
-	Pending   int64
-	Leased    int64
-	Blocked   int64
-	Delivered int64
+	Pending int64
+	// GatewayAccepted is durable queue ownership, not provider acceptance.
+	GatewayAccepted int64
+	Leased          int64
+	Blocked         int64
+	Delivered       int64
 	// Exhausted includes an exhausted retry budget or explicit terminal sender rejection.
 	Exhausted      int64
 	Expired        int64
@@ -157,6 +159,15 @@ func (r *Runtime) notificationLoop(ctx context.Context) error {
 
 func (r *Runtime) deliverNotification(ctx context.Context, claim notificationClaim) error {
 	now := r.notificationNow().UTC()
+	if claim.receiptID != "" {
+		return r.reconcileQueuedNotification(ctx, claim)
+	}
+	if claim.protocol != r.store.notificationProtocol {
+		if handled, err := r.reconcileLegacyNotification(ctx, claim); handled || err != nil {
+			return err
+		}
+		return r.store.finishNotification(ctx, claim, notificationBlocked, "transport_changed", now.Add(time.Minute))
+	}
 	if claim.attempts >= r.notificationWorker.MaxAttempts {
 		return r.store.finishNotification(ctx, claim, notificationExhausted, "sender", time.Time{})
 	}
@@ -216,6 +227,13 @@ func (r *Runtime) deliverNotification(ctx context.Context, claim notificationCla
 	claim.observedAt = r.notificationNow().UTC()
 	if errors.Is(err, errPasswordResetNotificationStale) || errors.Is(err, errEmailChangeNotificationStale) {
 		return r.store.finishNotification(ctx, claim, notificationExpired, "stale", time.Time{})
+	}
+	if receiptID, queued := goauth.NotificationQueueReceiptID(err); queued {
+		completionCtx, complete := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer complete()
+		return r.store.acceptNotificationQueue(
+			completionCtx, claim, receiptID, r.notificationNow().UTC(), r.notificationWorker.PollInterval,
+		)
 	}
 	if errors.Is(err, goauth.ErrNotificationRejected) {
 		// A definitive negative outcome survives worker shutdown. Use a bounded

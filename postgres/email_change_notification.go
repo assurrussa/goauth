@@ -40,7 +40,8 @@ func (r *Runtime) sendCurrentEmailChangeNotification(
 		// The caller's timeout bounds delivery while the subject lock excludes a
 		// concurrent target/security change. Sender must honor this context.
 		return r.notificationSender.SendNotification(txCtx, goauth.NotificationDelivery{
-			ID: event.ID, Notification: notification, ValidUntil: event.ValidUntil, EncryptedEvent: event,
+			ID: event.ID, TransportProtocol: r.store.notificationProtocol, Notification: notification,
+			ValidUntil: event.ValidUntil, EncryptedEvent: event,
 		})
 	})
 }

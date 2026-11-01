@@ -21,13 +21,17 @@ wiring.
   Retention controls encrypted storage lifetime, not credential validity.
 - `Notification` is plaintext available for the current attempt only. Never
   persist its codes, reset URLs, or rendered content in an ordinary mail queue,
-  generic outbox, dead-letter payload, or logs. An additional durable transport
-  may carry the original `EncryptedEvent` only; its consumer must preserve
-  identity, expiry, and stale-auth-state checks before provider dispatch.
+  generic outbox, dead-letter payload, or logs. An additional host durable
+  transport may carry the original `EncryptedEvent`
+  only, preserving identity, expiry and stale-auth-state checks. An explicitly
+  configured encrypted gateway is a separate ownership/retention boundary; use
+  the queued contract below, never an ordinary host plaintext job.
 - For the direct provider adapter described below, return `nil` only after
   confirmed provider acceptance. An HTTP response, queue admission, or local
   enqueue alone is insufficient. Acceptance does not prove inbox delivery.
   GoAuth delivery is at least once, not exactly once.
+  For durable queue ownership, use the explicit NotificationQueuedError contract below.
+  Queue acceptance is never returned as nil.
 
 The worker rechecks current one-time state before sending. A concurrent account
 change during external dispatch can still reach the provider; the Runtime
@@ -36,103 +40,45 @@ notification encryption keys until their queued events no longer need them.
 
 ## Optional host adapter: NotifyHub
 
-Keep this integration in the consuming application's module. Its verified
-GoNotify SDK pin is:
+Keep this integration in the consuming application's module; GoAuth remains
+provider-neutral and has no GoNotify dependency. Use a reviewed compatible
+GoNotify release exposing high priority and a schema15-compatible GoAuth release.
+The local source candidate is not a published-module installation result. Do not
+invent or select an unreleased tag in a production app manifest.
 
-```sh
-# Run in the host application's module, not in GoAuth.
-go get github.com/assurrussa/gonotify@v0.5.1-0.20261003102326-7b5e3c74da5d
-```
+Reuse one `notifyhub.Client` with the gateway origin/deployment prefix, existing
+project credential and bounded timeout. HTTPS is required outside isolated
+loopback tests; secrets and proxy/APM request bodies must not enter logs. Provider
+credentials and selection remain owned by Hub.
 
-The contract references are [GoNotify confidential email at 7b5e3c74da5d](https://github.com/assurrussa/gonotify/blob/7b5e3c74da5d4404a6b0b507cf46fd7f0ebc20f3/docs/confidential-email.md)
-and [NotifyHub at 8013fbf8ab0b](https://github.com/assurrussa/notifyhub/blob/8013fbf8ab0b14b660316f5cb64aae4e14b674f9/README.md#confidential-auth-email).
-Verify that the deployed Hub includes the confidential endpoint; an SDK pin
-alone does not upgrade the server or establish production readiness.
+The retired `POST /v1/confidential-email` returns 410. New security mail uses the
+explicitly authorized **encrypted** durable Hub queue via `/v1/notifications`,
+with high priority and the original absolute expiry. Do not put plaintext tokens
+in a host generic outbox, DLQ, diagnostic record or fallback transport.
 
-Construct one `*notifyhub.Client` with `notifyhub.New` at host startup and reuse
-it for ordinary notifications and auth mail. Use the same gateway origin or
-deployment prefix (`Config.BaseURL`), project credential (`Config.ProjectKey`),
-and bounded `Config.Timeout`. Use HTTPS outside isolated loopback tests; leave
-`AllowInsecureHTTP` false. Keep the project credential outside source and logs.
-Provider credentials and provider selection belong to Hub, not the GoAuth host.
+The host sender implements the existing `NotificationSender` plus
+`NotificationTransportProtocol` and `NotificationReconciler`:
 
-Ordinary non-secret messages may use GoNotify's ordinary delivery path. Auth
-codes and reset links must use `Client.SendConfidentialEmail`, which performs
-one synchronous `POST /v1/confidential-email`. Never pass these secrets through
-ordinary `Send`/`Submit`, `/v1/notifications`, Hub SMTP ingress, a generic outbox,
-or fallback SMTP. The confidential route stores outcome metadata and a protected
-payload fingerprint in Hub, not the recipient, message body, code, or auth URL.
-The GoAuth queue remains the encrypted durable owner of the auth payload.
-TLS, reverse-proxy/APM body logging, and the external email provider's retention
-must also be reviewed; the endpoint does not control those systems.
+- Protocol is `notifyhub_queue_v1`. Only new managed events snapshot it. Old
+  protocol-empty events are held before dispatch; do not bulk restamp them.
+- Render deterministically from the sealed notification. Keep From, rendering,
+  project, event, original expiry and idempotency namespace stable while pending.
+  A lost response retries only that same immutable request and key.
+- Validate a successful Submit receipt and return `NotificationQueuedError{ReceiptID}`
+  even if a duplicate already reports accepted. Native ownership must be persisted
+  and its encrypted copy scrubbed before metadata-only reconciliation.
+- Reconcile only by Get of that same receipt. Explicit accepted/delivered returns
+  nil. Pending, unknown, bounce/complaint and future statuses retain ownership;
+  no status grants a new key or fallback. Terminal failure uses the separate
+  `ErrNotificationQueueFailed`, never a claim that no prior handoff occurred.
 
-This host-owned adapter sketch uses an already initialized shared client. The
-host's `render` function must support the GoAuth templates it enables and return
-the same subject and text for the same notification on every attempt. It must
-not mutate the notification or log its contents. Keep the sender address, event,
-key namespace, and rendering stable across deployments while deliveries remain
-pending; changed content under an existing key must fail closed. The sketch
-routes every GoAuth notification through the confidential path, including
-credential-free security notices.
+Historical confidential receipts remain diagnostics and fence their original
+keys in the new queue. Classify accepted, explicitly not-sent and unknown old
+operations before cutover. Old bodies are not automatically migrated. Preserve
+old provider evidence and never bypass a fence by renaming the key. An older
+synchronous sender still uses nil only after provider acceptance, not queue202.
 
-```go
-package hostmail
-
-import (
-	"context"
-	"errors"
-
-	"github.com/assurrussa/goauth"
-	"github.com/assurrussa/gonotify/transport"
-	"github.com/assurrussa/gonotify/transport/notifyhub"
-)
-
-func AuthSender(
-	hub *notifyhub.Client,
-	from string,
-	render func(goauth.Notification) (subject, text string, err error),
-) goauth.NotificationSender {
-	return goauth.NotificationSenderFunc(func(ctx context.Context, delivery goauth.NotificationDelivery) error {
-		if hub == nil || render == nil || delivery.ID == "" || delivery.ValidUntil.IsZero() {
-			return errors.New("auth mail configuration or delivery is invalid")
-		}
-		subject, text, err := render(delivery.Notification)
-		if err != nil {
-			return errors.New("auth mail rendering failed") // Do not expose raw renderer errors.
-		}
-		receipt, err := hub.SendConfidentialEmail(ctx, notifyhub.ConfidentialEmailRequest{
-			IdempotencyKey: "myapp:auth:" + delivery.ID,
-			Event:          "myapp.auth",
-			ExpiresAt:      delivery.ValidUntil,
-			Email: transport.EmailMessage{
-				From: from, To: []string{delivery.Notification.To}, Subject: subject, Text: text,
-			},
-		})
-		if err != nil {
-			var outcome *notifyhub.ConfidentialEmailError
-			if errors.As(err, &outcome) &&
-				(outcome.Outcome == notifyhub.OutcomeRejected || outcome.Outcome == notifyhub.OutcomeSimulated) {
-				return goauth.ErrNotificationRejected // Known terminal non-delivery; never nil.
-			}
-			return err // Retryable, not-sent and ambiguous outcomes retain ordinary error semantics.
-		}
-		if receipt.Status != notifyhub.StatusAccepted {
-			return notifyhub.ErrConfidentialOutcomeUnknown
-		}
-		return nil
-	})
-}
-```
-
-Pass the returned sender to `postgres.Config.NotificationSender`. The client
-bounds each call by the earliest of the caller's context, configured timeout,
-and original expiry. It floors expiry to Unix seconds, never extending it; the
-wire cutoff may be less than one second earlier. Hub allows expiry at most seven
-days ahead, so validate compatible host lifetimes before enabling this route.
-Use a deterministic, non-sensitive key prefix for the application, never an
-email address, reset token, or code. Do not generate a key inside a retry.
-
-## Outcomes and retries
+## Synchronous legacy outcomes and initial submission failures
 
 Only a nil SDK error with `StatusAccepted` confirms provider handoff. In
 particular, `simulated`, `dispatching`, and `unknown` are not success.
@@ -156,8 +102,10 @@ particular, `simulated`, `dispatching`, and `unknown` are not success.
   renderer/configuration drift; do not work around it with a new key.
 
 The managed GoAuth worker recognizes `goauth.ErrNotificationRejected` (including
-wrapped errors) as an explicit terminal non-delivery disposition. Every other
-non-nil sender error keeps the configured backoff, attempt limit, and expiry.
+wrapped errors) as an explicit terminal non-delivery disposition. Before durable queue ownership, ordinary non-nil sender errors retain configured
+backoff, attempt limit and expiry. `NotificationQueuedError` and subsequent receipt
+reconciliation are explicit exceptions; `ErrNotificationQueueFailed` is a separate
+terminal downstream disposition, not synchronous rejection.
 Never map `OutcomeRetryable`, `OutcomeUnknown`, a timeout, cancellation, or a
 lost/untrusted response to this sentinel. The worker does not itself interpret
 GoNotify's outcomes or `RetryAfter`. The current worker cannot honor a dynamic
@@ -171,10 +119,10 @@ Configure the native `RetryMin`, `RetryMax`, and `MaxAttempts` conservatively fo
 the provider's expected delays and credential validity; longer provider delays
 may still outlast that budget. Record terminal/unknown outcomes for operators
 without acknowledging them as accepted.
-The sketch deliberately has no retry loop or alternate transport. Returning a
-generic error can lead to another identical worker attempt; Hub's retained
-outcome prevents an ambiguous operation from being blindly redispatched. An
-explicit terminal rejection stops further managed sender calls.
+Adapters do not run an alternate transport or invent a retry identity. Before
+ownership, an ordinary error can lead to another identical Submit. After ownership,
+only Get is permitted; observation errors do not use the send-attempt budget.
+Terminal queue disposition stops observation without authorizing replacement mail.
 
 ## Production checks and operations
 
@@ -195,7 +143,8 @@ explicit terminal rejection stops further managed sender calls.
   Preserve the encrypted queue, key rings, delivery IDs, and original deadlines.
   Keep pending operations on the same Hub project and idempotency namespace;
   switching an uncertain operation to SMTP or another gateway risks duplicates.
-  A missing or incompatible confidential endpoint must fail closed.
+  A missing or incompatible queue endpoint must fail closed. Historical confidential
+  operations remain fenced and are not silently replayed into it.
 
 ## Operator lifecycle controls
 
@@ -236,3 +185,71 @@ statuses. Temporary rejection is 503; terminal rejection is 422; simulation is
 not the overall delivery result: a retry or earlier ambiguous outcome can still
 have reached the provider. Hosts must not infer inbox delivery or reissue secrets
 from these fields. Hosts should show unavailable for NULL diagnostics.
+
+## NotifyHub managed queue ownership (candidate schema 15)
+
+The retired `/v1/confidential-email` route returns 410. New integrations use
+`POST /v1/notifications` with high priority and the **original absolute** expiry.
+The HTTP 202 response transfers durable queue ownership; it is not provider
+acceptance. Historical synchronous adapters are not a migration recipe.
+
+A sender returns `&goauth.NotificationQueuedError{ReceiptID: receipt.ID}` after a valid
+Submit receipt and implements `NotificationReconciler`. GoAuth atomically stores
+that bounded opaque receipt, sets `gateway_accepted`, leaves `delivered_at` NULL,
+and scrubs ciphertext/nonce/additional data. This reduces secret copies: the
+explicitly authorized encrypted NotifyHub queue now owns the content. No local
+plaintext copy, fallback transport, or new notification is created.
+
+The existing worker reconciles using metadata-only `NotificationQueueReceipt`
+(ID, ReceiptID, original ValidUntil). Get the existing gateway receipt; do not
+resubmit. Return nil only for explicit provider accepted/delivered. Pending and
+unknown remain queue-owned; observation failures do not spend the send budget.
+The synchronous `ErrNotificationRejected` sentinel cannot retroactively prove
+non-acceptance after queue ownership and is treated as an observation failure.
+Late nil responses after the observation timeout do not acknowledge success;
+the original absolute deadline still closes reconciliation.
+Terminal downstream failed/expired/suppressed results return ErrNotificationQueueFailed,
+which does not claim that no earlier provider handoff occurred. Simulated means
+no real mail, but is likewise terminal; never create a replacement automatically.
+An unavailable reconciler never triggers another submit. Expiry closes further
+observation and preserves a non-delivery-claiming receipt; it cannot recall an
+already in-flight message. Cancellation is unsupported after ownership transfer.
+
+Rollout requires the additive schema migration and compatible app senders before
+workers restart. Existing synchronous receipts must retain their old semantics;
+never replay an unknown legacy operation into the new queue. Release, migration
+execution, deployment and any legacy-receipt transition require separate review.
+
+### Protocol fence and rollback
+
+A queue sender implements `NotificationTransportProtocol() string` and returns
+`notifyhub_queue_v1`. New native rows snapshot it at enqueue. Pre-cutover rows
+remain empty, and the worker blocks any protocol mismatch before decryption or
+send, without spending send attempts. Do not bulk stamp old rows with the new
+protocol. Reconcile historical accepted, explicitly not-sent, and unknown Hub
+receipts first; historical keys are fenced in NotifyHub's new queue. Never
+rename a key to bypass that fence. Old synchronous senders which do not implement
+the optional interface retain their existing empty protocol behavior.
+
+Deploying an older binary after schema 15 is not a rollback: it must refuse the
+future schema and cannot safely reinterpret scrubbed gateway-owned rows. Stop
+workers and retain this compatible reconciler; queue-owned data survives. Any
+manual legacy disposition or reissuance must be independently justified by its
+provider evidence and original credential expiry.
+
+
+### Metadata-only historical provider proof
+
+Hosts with durable historical receipts may implement the optional
+`LegacyNotificationReconciler`. It receives only the original event ID, empty
+legacy protocol marker and original deadline, before any decryption or send.
+Return nil only when the exact operation has independently verified provider
+acceptance. Admission, consumption, unrelated receipts and unknown or conflicting
+outcomes are not proof. Any error keeps the operation fenced; this hook must not
+send, render, decrypt, replace keys or write canonical delivery rows.
+
+The worker holds the subject lock, checks current credential/subject policy,
+and completes through its own protocol/lease/deadline CAS. Proven acceptance
+scrubs the local encrypted payload without reserving a new send attempt.
+Expired, revoked, reclaimed or nonlegacy operations cannot be revived. Hosts
+without reliable positive evidence leave the optional hook unimplemented.

@@ -6,22 +6,45 @@ acceptance criteria and sequence of the first public release.
 
 ## Version state
 
-The latest published release is [`v0.14.0`](https://github.com/assurrussa/goauth/releases/tag/v0.14.0),
-using schema 14. It adds the trusted-host
-`RequestEmailChangeWithPreviousEmailNotice` API. Successful opt-in issuance
-atomically queues a credential-free security notice to the captured previous
-mailbox. See [requested email-change notices](docs/email-change-requested-notice.md).
+The latest published release is [`v0.15.0`](https://github.com/assurrussa/goauth/releases/tag/v0.15.0),
+using schema 14. Its session-bound OIDC authentication-method evidence is
+covered by [session authentication methods](docs/session-bound-oidc.md#authentication-methods).
 
-The proposed `v0.15.0` candidate adds optional trusted `SessionAuthentication`
-evidence to the session-bound OIDC provider. The provider signs standard `amr`
-in ID tokens independently of profile scope, validates the exact authentication
-event time, and copies and deduplicates method identifiers. Explicit empty
-evidence emits `amr: []`; absent evidence preserves legacy omission. Enrollment
-is not authentication proof, and existing legacy-provider behavior is unchanged.
-No canonical migration, dependency change, mandatory MFA policy or deployment
-is included. See [session authentication methods](docs/session-bound-oidc.md#authentication-methods).
-This is a release proposal, not a published version or a claim that all release
-gates are complete. Existing tags must never be reused or moved.
+The selected `v0.16.0` candidate is **not yet published**. It adds durable
+managed notification queue ownership and receipt reconciliation without changing
+the existing synchronous provider-acceptance meaning. Its additive migration
+`postgres/migrations/00014_notification_gateway.sql` advances the canonical
+schema from 14 to 15; the filename is not the resulting schema version. Queue
+admission is not provider delivery. Unknown outcomes do not authorize duplicate
+fallback, and original expiry and historical protocol fences remain in force.
+
+At candidate source `3dd86ce25c0542b541646ac520c34a6690da3765`, recorded
+verification includes `make check`, PostgreSQL integration race/coverage, a
+local PostgreSQL consumer, both native restore opt-ins and
+`make backup-restore-check`, and the pinned vulnerability check. PostgreSQL
+coverage was 81.4%; the vulnerability check reported zero called/imported
+vulnerabilities and three required-module advisories not called. Five optional
+matrix cases remained unrun: three historical frozen-source probes and two
+PostgreSQL-18-only constraint cases. `make coverage-aggregate` passed using
+candidate unit/PostgreSQL profiles and an independently checked unchanged Redis
+profile. Secure TLS browser acceptance also passed at that exact source.
+
+The literal `make release-candidate-readiness` has not been run on the final
+source including this documentation change. All mandatory gates must be confirmed
+at the final release source before candidate readiness is claimed. This record
+does not claim completed release readiness, public availability of `v0.16.0`,
+host adoption or deployment. Never reuse or move an existing tag.
+
+The published `v0.14.0` added the trusted-host
+`RequestEmailChangeWithPreviousEmailNotice` API, atomically queueing a
+credential-free security notice to the captured previous mailbox for successful
+opt-in issuance. See [requested email-change notices](docs/email-change-requested-notice.md).
+The published `v0.15.0` added optional trusted `SessionAuthentication` evidence
+to the session-bound OIDC provider. It signs standard `amr` independently of
+profile scope, validates the authentication event time, and copies and
+deduplicates method identifiers. Explicit empty evidence emits `amr: []`;
+absent evidence preserves legacy omission. Enrollment is not authentication
+proof, and legacy-provider behavior remains unchanged.
 
 The [v0.7.0 preparation record](docs/v0.7-release-preparation.md) is historical
 evidence for its recorded source, not verification of this candidate. Record the
@@ -75,16 +98,20 @@ A database backup without its required keys does not establish recoverability.
 Current source requires Go 1.27.2 or newer. Hosts must rebuild with a supported
 patched compiler; a module requirement cannot patch an already-built binary.
 
-Stop and join old notification workers and coordinate application writers before
-migration; resume them only with the schema-14-compatible binary. Mixed older
-writers/workers are not a supported rollout. Preserve queued envelopes, key
-rings, delivery IDs and original deadlines; migration must not resend mail.
+For the schema 14→15 rollout, stop and join older notification workers and
+coordinate application writers before migration; resume only schema-15-compatible
+workers and writers. Mixed older writers/workers are not a supported rollout.
+Preserve queued envelopes, key rings, delivery IDs and original deadlines; do not
+bulk relabel old operations, replace keys to bypass historical fences, extend
+expiry, or resend mail as a migration step.
 
-`postgres.Migrate` does not downgrade schemas. The published schema-13 `v0.10.0` library
-rejects schema 14 as newer than it supports; do not assume an older binary can
-run against an upgraded database. Review rollback to a schema-compatible binary
-or restoration of a pre-upgrade snapshot with its required keys, accounting for
-writes made since that snapshot. `postgres.Down` is a destructive development/
+`postgres.Migrate` does not downgrade schemas. An older schema-14 binary is not
+a supported rollback against schema 15; retain a schema-compatible observer for
+queue-owned rows whose local payloads have been erased. Alternatively, review
+restoration of a verified pre-upgrade snapshot with its required keys, accounting
+for writes and external queue ownership since that snapshot. The published
+schema-13 `v0.10.0` library also rejects schema 14; do not assume an older binary
+can run against an upgraded database. `postgres.Down` is a destructive development/
 test reset, not a production rollback mechanism. Review adopted MFA/recovery
 policies, host-scoped email changes, queued notifications and host integration
 before changing binaries; schema compatibility alone does not prove equivalent
@@ -108,7 +135,7 @@ its own explicit scope, review and verification.
 
 The published v0.5.0/v0.5.1 code changes Runtime/store contracts and HTTP authorization defaults.
 It preserves the version-3 database and existing rows; no `Down` is required.
-That historical claim does not apply to the current schema-14 candidate.
+That historical claim does not apply to the current schema-15 candidate.
 Read [docs/v0.5-migration.md](docs/v0.5-migration.md), including exact external
 issuer keys and custom transaction wiring. Candidate verification does not
 publish a tag, change visibility, or establish production adoption.
@@ -263,7 +290,7 @@ or local tests alone.
 
 The schema-8 session-bound OIDC surface and its
 [compatibility and rollout checks](docs/session-bound-oidc.md) remain relevant
-to the schema-14 candidate. Keep published migration bytes frozen. That baseline
+to the schema-15 candidate. Keep published migration bytes frozen. That baseline
 removes legacy refresh Get replay side effects while preserving source compatibility;
 release notes must call out the inactive snapshot and authenticated mutation
 replacement. Do not publish a schema change independently of its API and a verified

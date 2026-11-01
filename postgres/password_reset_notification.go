@@ -14,7 +14,8 @@ func (r *Runtime) sendCurrentPasswordResetNotification(
 ) error {
 	send := func(sendCtx context.Context) error {
 		return r.notificationSender.SendNotification(sendCtx, goauth.NotificationDelivery{
-			ID: event.ID, Notification: notification, ValidUntil: event.ValidUntil, EncryptedEvent: event,
+			ID: event.ID, TransportProtocol: r.store.notificationProtocol, Notification: notification,
+			ValidUntil: event.ValidUntil, EncryptedEvent: event,
 		})
 	}
 	if event.Type != "password_reset" && event.Type != "password_reset_success" {

@@ -202,8 +202,17 @@ func TestSupportedPublicSurfaceCompiles(t *testing.T) {
 	_ = goauth.EmailChallengeRecord{ExpectedNormalizedEmail: "", ExpectedSecurityVersion: 1}
 	_ = goauth.ErrPasswordChangeConflict
 	_ = goauth.ErrEmailChangeNotFound
+	_ = goauth.ErrNotificationQueueFailed
+	_ = goauth.NotificationQueuedError{ReceiptID: ""}
+	_ = goauth.NotificationQueueReceipt{ID: "", ReceiptID: "", ValidUntil: time.Time{}}
+	_ = goauth.NotificationQueueReceiptID
+	_ = goauth.LegacyNotificationReceipt{}
+	var _ goauth.LegacyNotificationReconciler
+	var _ goauth.NotificationReconciler
+	var _ goauth.NotificationTransportProtocol
 	_ = goauth.NotificationDelivery{
-		ID: "", EncryptedEvent: goauth.EncryptedEvent{}, Notification: goauth.Notification{}, ValidUntil: time.Time{},
+		ID: "", TransportProtocol: "", EncryptedEvent: goauth.EncryptedEvent{},
+		Notification: goauth.Notification{}, ValidUntil: time.Time{},
 	}
 	_ = goauth.NotificationDiagnostic{Outcome: "", Code: "", HTTPStatus: 0}
 	var _ goauth.NotificationDiagnosticError

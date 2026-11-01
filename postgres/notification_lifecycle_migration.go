@@ -65,7 +65,7 @@ SELECT EXISTS (
  SELECT 1 FROM pg_constraint
  WHERE conrelid='public.auth_notification_deliveries'::regclass
   AND conname='auth_notification_deliveries_state_check' AND contype='c'
-  AND convalidated AND pg_get_constraintdef(oid)=$1
+  AND convalidated AND (pg_get_constraintdef(oid)=$1 OR pg_get_constraintdef(oid)=$4)
 ) AND EXISTS (
  SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid JOIN pg_am a ON a.oid=c.relam
  WHERE i.indrelid='public.auth_notification_deliveries'::regclass
@@ -76,7 +76,8 @@ SELECT EXISTS (
   AND pg_get_indexdef(i.indexrelid,1,true)=$2 AND pg_get_indexdef(i.indexrelid,2,true)='id'
   AND pg_get_expr(i.indpred,i.indrelid)=$3
 )`, notificationLifecycleStateConstraint,
-		notificationReceiptRetentionExpression, notificationReceiptRetentionPredicate).Scan(&valid); err != nil {
+		notificationReceiptRetentionExpression, notificationReceiptRetentionPredicate,
+		notificationGatewayStateConstraint).Scan(&valid); err != nil {
 		return err
 	}
 	if !valid {

@@ -8,7 +8,8 @@ import (
 )
 
 type Store struct {
-	db *sql.DB
+	db                   *sql.DB
+	notificationProtocol string
 }
 
 func NewStore(db *sql.DB) (*Store, error) {

@@ -18,6 +18,29 @@ import (
 	"github.com/assurrussa/goauth/postgres"
 )
 
+const (
+	migrationLintNotificationsSQL           = "00002_notifications.sql"
+	migrationLintLocalIdentitySQL           = "00003_local_identity.sql"
+	migrationLintAuthSubjects               = "auth_subjects"
+	migrationLintAuthIdentifiers            = "auth_identifiers"
+	migrationLintAuthBasicProfiles          = "auth_basic_profiles"
+	migrationLintAuthLocalTable             = "auth_local_credentials"
+	migrationLintAuthSessions               = "auth_sessions"
+	migrationLintAuthRefreshFamilies        = "auth_refresh_families"
+	migrationLintAuthOIDCRefreshFamilies    = "auth_oidc_refresh_families"
+	migrationLintAuthPasswordResetRecords   = "auth_password_reset_records"
+	migrationLintAuthEmailChallenges        = "auth_email_challenges"
+	migrationLintAuthEmailChangeRecords     = "auth_email_change_records"
+	migrationLintAuthIdentityLinks          = "auth_identity_links"
+	migrationLintAuthSubjectRoles           = "auth_subject_roles"
+	migrationLintAuthSecurityAuditEvents    = "auth_security_audit_events"
+	migrationLintAuthNotificationDeliveries = "auth_notification_deliveries"
+	migrationLintChecksum                   = "checksum"
+	migrationLintOutcome                    = "outcome"
+	migrationLintCode                       = "code"
+	migrationLintUnknown                    = "unknown"
+)
+
 func TestSubjectRetirementMigrationUpgradesAllPublishedSchemas(t *testing.T) {
 	for _, version := range []int{0, 2, 3, 4, 5} {
 		t.Run(fmt.Sprintf("v%d", version), func(t *testing.T) {
@@ -36,7 +59,7 @@ func TestSubjectRetirementMigrationUpgradesAllPublishedSchemas(t *testing.T) {
 			require.NoError(t, postgres.VerifySchema(t.Context(), db))
 			var gotVersion int
 			require.NoError(t, db.QueryRowContext(t.Context(), `SELECT max(version) FROM goauth_schema_version`).Scan(&gotVersion))
-			require.Equal(t, 14, gotVersion)
+			require.Equal(t, 15, gotVersion)
 			if version != 0 {
 				require.Equal(t, before, retirementMigrationSnapshot(t, db, version), "upgrade must preserve preexisting data")
 				var retired int
@@ -48,7 +71,10 @@ func TestSubjectRetirementMigrationUpgradesAllPublishedSchemas(t *testing.T) {
 			require.NoError(t, postgres.Migrate(t.Context(), db))
 			require.Equal(t, first, retirementMigrationSnapshot(t, db, 6), "repeat migration must not rewrite rows or history")
 			for schema, file := range map[int]string{
-				3: "00002_notifications.sql", 4: "00003_local_identity.sql", 5: "00004_notification_expiry.sql", 6: "00005_subject_retirement.sql",
+				3: migrationLintNotificationsSQL,
+				4: migrationLintLocalIdentitySQL,
+				5: "00004_notification_expiry.sql",
+				6: "00005_subject_retirement.sql",
 			} {
 				data, err := os.ReadFile("migrations/" + file)
 				require.NoError(t, err)
@@ -64,7 +90,10 @@ func TestSubjectRetirementMigrationUpgradesAllPublishedSchemas(t *testing.T) {
 
 func installPreRetirementSchema(t *testing.T, db *sql.DB, version int) {
 	t.Helper()
-	files := []string{"00001_v0_2_baseline.sql", "00002_notifications.sql", "00003_local_identity.sql", "00004_notification_expiry.sql"}
+	files := []string{
+		"00001_v0_2_baseline.sql", migrationLintNotificationsSQL,
+		migrationLintLocalIdentitySQL, "00004_notification_expiry.sql",
+	}
 	for i, file := range files {
 		migrationVersion := i + 2
 		if migrationVersion > version {
@@ -147,35 +176,40 @@ FROM auth_subjects;`)
 func retirementMigrationSnapshot(t *testing.T, db *sql.DB, version int) map[string]string {
 	t.Helper()
 	tables := []string{
-		"auth_subjects", "auth_identifiers", "auth_basic_profiles", "auth_local_credentials", "auth_sessions",
-		"auth_refresh_families", "auth_refresh_tokens", "auth_oidc_refresh_families", "auth_oidc_refresh_tokens",
-		"auth_password_reset_records", "auth_email_challenges", "auth_email_change_records", "auth_identity_links",
-		"auth_roles", "auth_permissions", "auth_role_permissions", "auth_subject_roles", "auth_rate_limit_events",
-		"auth_security_audit_events", "goauth_schema_version",
+		migrationLintAuthSubjects, migrationLintAuthIdentifiers, migrationLintAuthBasicProfiles,
+		migrationLintAuthLocalTable, migrationLintAuthSessions,
+		migrationLintAuthRefreshFamilies, "auth_refresh_tokens", migrationLintAuthOIDCRefreshFamilies, "auth_oidc_refresh_tokens",
+		migrationLintAuthPasswordResetRecords, migrationLintAuthEmailChallenges,
+		migrationLintAuthEmailChangeRecords, migrationLintAuthIdentityLinks,
+		"auth_roles", "auth_permissions", "auth_role_permissions", migrationLintAuthSubjectRoles, "auth_rate_limit_events",
+		migrationLintAuthSecurityAuditEvents, "goauth_schema_version",
 	}
 	if version >= 3 {
-		tables = append(tables, "auth_notification_deliveries", "goauth_migration_history")
+		tables = append(tables, migrationLintAuthNotificationDeliveries, "goauth_migration_history")
 	}
 	result := make(map[string]string, len(tables))
 	for _, table := range tables {
 		expression, filter := "to_jsonb(r)", ""
-		if table == "auth_oidc_refresh_families" && version < 8 {
+		if table == migrationLintAuthOIDCRefreshFamilies && version < 8 {
 			expression += " - ARRAY['session_id','authorization_stamp','absolute_expires_at']"
 		}
-		if table == "auth_sessions" && version < 10 {
+		if table == migrationLintAuthSessions && version < 10 {
 			expression += " - 'mfa_admission'"
 		}
-		if table == "auth_email_change_records" && version < 11 {
+		if table == migrationLintAuthEmailChangeRecords && version < 11 {
 			expression += " - ARRAY['scope','expected_security_version','target_version','old_normalized_value']"
 		}
-		if table == "auth_notification_deliveries" && version < 13 {
+		if table == migrationLintAuthNotificationDeliveries && version < 13 {
 			expression += " - ARRAY['last_sender_outcome','last_sender_code','last_sender_http_status'," +
 				"'last_sender_attempt','last_sender_observed_at']"
 		}
-		if table == "auth_subjects" && version < 6 {
+		if table == migrationLintAuthNotificationDeliveries && version < 15 {
+			expression += " - ARRAY['transport_protocol','gateway_receipt_id','gateway_accepted_at']"
+		}
+		if table == migrationLintAuthSubjects && version < 6 {
 			expression += " - 'retired_at'"
 		}
-		if table == "auth_local_credentials" && version < 4 {
+		if table == migrationLintAuthLocalTable && version < 4 {
 			expression += " - 'password_input_policy'"
 		}
 		if table == "goauth_schema_version" || table == "goauth_migration_history" {
@@ -274,7 +308,8 @@ func TestSubjectRetirementMigrationRejectsChecksumAndFutureSchema(t *testing.T) 
 	require.NoError(t, err)
 	require.ErrorIs(t, postgres.VerifySchema(t.Context(), db), postgres.ErrSchemaChecksumMismatch)
 	require.ErrorIs(t, postgres.Migrate(t.Context(), db), postgres.ErrSchemaChecksumMismatch)
-	_, err = db.ExecContext(t.Context(), `INSERT INTO goauth_schema_version (version) SELECT max(version) + 1 FROM goauth_schema_version`)
+	_, err = db.ExecContext(t.Context(),
+		`INSERT INTO goauth_schema_version (version) SELECT max(version) + 1 FROM goauth_schema_version`)
 	require.NoError(t, err)
 	require.ErrorIs(t, postgres.VerifySchema(t.Context(), db), postgres.ErrFutureSchema)
 	require.ErrorIs(t, postgres.Migrate(t.Context(), db), postgres.ErrFutureSchema)

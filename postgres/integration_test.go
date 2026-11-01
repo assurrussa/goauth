@@ -29,16 +29,31 @@ import (
 	"github.com/assurrussa/goauth/testkit"
 )
 
+const (
+	coreLintEmailChange = "email-change"
+	coreLintWrong       = "wrong"
+	coreLintTest        = "test"
+	coreLintIssuer      = "https://idp.example.test"
+	coreLintSSOOnly     = "sso-only"
+	coreLintEditor      = "editor"
+	coreLintMissing     = "missing"
+	coreLintUsedReset   = "used-reset"
+	coreLintExpired     = "expired"
+)
+
+// syntheticPHC constructs deliberately invalid PHC placeholders, not credentials.
+func syntheticPHC(label string) string { return "$argon2id$" + label }
+
 func TestMigrationFreshSchemaDownUpAndLegacyRefusal(t *testing.T) {
 	db := integrationDB(t)
 	resetSchema(t, db)
 	require.NoError(t, postgres.Migrate(context.Background(), db))
 
 	var version int
-	require.NoError(t, db.QueryRow(`SELECT max(version) FROM goauth_schema_version`).Scan(&version))
-	require.Equal(t, 14, version)
+	require.NoError(t, db.QueryRowContext(t.Context(), `SELECT max(version) FROM goauth_schema_version`).Scan(&version))
+	require.Equal(t, 15, version)
 	var requiredTables int
-	require.NoError(t, db.QueryRow(`
+	require.NoError(t, db.QueryRowContext(t.Context(), `
 SELECT count(*)
 FROM information_schema.tables
 WHERE table_schema = 'public'
@@ -53,10 +68,11 @@ WHERE table_schema = 'public'
   )`).Scan(&requiredTables))
 	require.Equal(t, 20, requiredTables)
 	var hierarchyTable sql.NullString
-	require.NoError(t, db.QueryRow(`SELECT to_regclass('public.auth_role_hierarchy')::text`).Scan(&hierarchyTable))
+	require.NoError(t, db.QueryRowContext(t.Context(),
+		`SELECT to_regclass('public.auth_role_hierarchy')::text`).Scan(&hierarchyTable))
 	require.False(t, hierarchyTable.Valid)
 	var identifierForeignKeys int
-	require.NoError(t, db.QueryRow(`
+	require.NoError(t, db.QueryRowContext(t.Context(), `
 SELECT count(*)
 FROM information_schema.table_constraints
 WHERE table_schema = 'public'
@@ -64,29 +80,31 @@ WHERE table_schema = 'public'
   AND constraint_type = 'FOREIGN KEY'`).Scan(&identifierForeignKeys))
 	require.Equal(t, 1, identifierForeignKeys)
 
-	_, err := db.Exec(`CREATE TABLE host_auth_projection (
+	_, err := db.ExecContext(t.Context(), `CREATE TABLE host_auth_projection (
 subject_id UUID PRIMARY KEY REFERENCES auth_subjects(id)
 )`)
 	require.NoError(t, err)
 	require.Error(t, postgres.Down(context.Background(), db, postgres.ConfirmResetAuthState))
 	var subjectsAfterRejectedReset sql.NullString
-	require.NoError(t, db.QueryRow(`SELECT to_regclass('public.auth_subjects')::text`).Scan(&subjectsAfterRejectedReset))
+	require.NoError(t, db.QueryRowContext(t.Context(),
+		`SELECT to_regclass('public.auth_subjects')::text`).Scan(&subjectsAfterRejectedReset))
 	require.True(t, subjectsAfterRejectedReset.Valid, "failed reset must roll back canonical schema drops")
-	_, err = db.Exec(`DROP TABLE host_auth_projection`)
+	_, err = db.ExecContext(t.Context(), `DROP TABLE host_auth_projection`)
 	require.NoError(t, err)
 
 	require.NoError(t, postgres.Down(context.Background(), db, postgres.ConfirmResetAuthState))
 	require.NoError(t, postgres.Migrate(context.Background(), db))
 	require.NoError(t, postgres.Down(context.Background(), db, postgres.ConfirmResetAuthState))
-	_, err = db.Exec(`CREATE TABLE auth_subjects (id UUID PRIMARY KEY, email TEXT NOT NULL)`)
+	_, err = db.ExecContext(t.Context(), `CREATE TABLE auth_subjects (id UUID PRIMARY KEY, email TEXT NOT NULL)`)
 	require.NoError(t, err)
-	_, err = db.Exec(`INSERT INTO auth_subjects (id, email) VALUES ('123e4567-e89b-12d3-a456-426614174000', 'legacy@example.test')`)
+	_, err = db.ExecContext(t.Context(), `INSERT INTO auth_subjects (id, email)
+VALUES ('123e4567-e89b-12d3-a456-426614174000', 'legacy@example.test')`)
 	require.NoError(t, err)
 	require.ErrorIs(t, postgres.Migrate(context.Background(), db), postgres.ErrLegacySchemaRequiresReset)
 	var legacyRows int
-	require.NoError(t, db.QueryRow(`SELECT count(*) FROM auth_subjects`).Scan(&legacyRows))
+	require.NoError(t, db.QueryRowContext(t.Context(), `SELECT count(*) FROM auth_subjects`).Scan(&legacyRows))
 	require.Equal(t, 1, legacyRows, "legacy detection must not delete data")
-	_, err = db.Exec(`
+	_, err = db.ExecContext(t.Context(), `
 CREATE TABLE auth_confirmation_codes (id BIGSERIAL PRIMARY KEY);
 CREATE TABLE auth_external_identities (id BIGSERIAL PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS role_hierarchy (id BIGSERIAL PRIMARY KEY);
@@ -94,36 +112,36 @@ CREATE TABLE goauth_goose_db_version (id BIGSERIAL PRIMARY KEY);`)
 	require.NoError(t, err)
 	require.NoError(t, postgres.Down(context.Background(), db, postgres.ConfirmResetAuthState))
 	for _, table := range []string{
-		"auth_subjects", "auth_confirmation_codes", "auth_external_identities",
+		migrationLintAuthSubjects, "auth_confirmation_codes", "auth_external_identities",
 		"goauth_goose_db_version",
 	} {
 		var relation sql.NullString
-		require.NoError(t, db.QueryRow(`SELECT to_regclass($1)::text`, "public."+table).Scan(&relation))
+		require.NoError(t, db.QueryRowContext(t.Context(), `SELECT to_regclass($1)::text`, "public."+table).Scan(&relation))
 		require.False(t, relation.Valid, table)
 	}
 	var hostTable sql.NullString
-	require.NoError(t, db.QueryRow(`SELECT to_regclass('public.role_hierarchy')::text`).Scan(&hostTable))
+	require.NoError(t, db.QueryRowContext(t.Context(), `SELECT to_regclass('public.role_hierarchy')::text`).Scan(&hostTable))
 	require.True(t, hostTable.Valid, "host RBAC table must survive auth reset")
-	_, err = db.Exec(`DROP TABLE role_hierarchy`)
+	_, err = db.ExecContext(t.Context(), `DROP TABLE role_hierarchy`)
 	require.NoError(t, err)
 
 	require.NoError(t, postgres.Migrate(context.Background(), db))
 
 	resetSchema(t, db)
-	_, err = db.Exec(`CREATE TABLE auth_subjects (id UUID PRIMARY KEY)`)
+	_, err = db.ExecContext(t.Context(), `CREATE TABLE auth_subjects (id UUID PRIMARY KEY)`)
 	require.NoError(t, err)
-	_, err = db.Exec(`CREATE TABLE goauth_schema_version (version SMALLINT NOT NULL)`)
+	_, err = db.ExecContext(t.Context(), `CREATE TABLE goauth_schema_version (version SMALLINT NOT NULL)`)
 	require.NoError(t, err)
-	_, err = db.Exec(`INSERT INTO goauth_schema_version (version) VALUES (1)`)
+	_, err = db.ExecContext(t.Context(), `INSERT INTO goauth_schema_version (version) VALUES (1)`)
 	require.NoError(t, err)
 	require.ErrorIs(t, postgres.Migrate(context.Background(), db), postgres.ErrLegacySchemaRequiresReset)
 
 	resetSchema(t, db)
-	_, err = db.Exec(`CREATE TABLE auth_subjects (id UUID PRIMARY KEY, status TEXT NOT NULL)`)
+	_, err = db.ExecContext(t.Context(), `CREATE TABLE auth_subjects (id UUID PRIMARY KEY, status TEXT NOT NULL)`)
 	require.NoError(t, err)
-	_, err = db.Exec(`CREATE TABLE goauth_schema_version (version SMALLINT NOT NULL)`)
+	_, err = db.ExecContext(t.Context(), `CREATE TABLE goauth_schema_version (version SMALLINT NOT NULL)`)
 	require.NoError(t, err)
-	_, err = db.Exec(`INSERT INTO goauth_schema_version (version) VALUES (2)`)
+	_, err = db.ExecContext(t.Context(), `INSERT INTO goauth_schema_version (version) VALUES (2)`)
 	require.NoError(t, err)
 	require.ErrorIs(t, postgres.Migrate(context.Background(), db), postgres.ErrLegacySchemaRequiresReset)
 
@@ -243,7 +261,7 @@ func TestPostgresAccountLifecycleIsAtomicAndDigestOnly(t *testing.T) {
 
 	logoutSession, err := runtime.Login(
 		context.Background(),
-		login("lifecycle.before@example.test", "Integration-Unique-Passphrase-1"),
+		login("lifecycle.before@example.test", postgresAtomicityPassword),
 	)
 	require.NoError(t, err)
 	require.NoError(t, runtime.Logout(
@@ -251,17 +269,17 @@ func TestPostgresAccountLifecycleIsAtomicAndDigestOnly(t *testing.T) {
 		registered.Account.Subject.ID,
 		logoutSession.Tokens.Session.ID,
 	))
-	_, err = runtime.VerifyAccessToken(context.Background(), logoutSession.Tokens.AccessToken, true)
+	_, err = runtime.AuthenticateSession(context.Background(), logoutSession.Tokens.AccessToken)
 	require.ErrorIs(t, err, goauth.ErrSessionRevoked)
 	logoutAllSession, err := runtime.Login(
 		context.Background(),
-		login("lifecycle.before@example.test", "Integration-Unique-Passphrase-1"),
+		login("lifecycle.before@example.test", postgresAtomicityPassword),
 	)
 	require.NoError(t, err)
 	revoked, err := runtime.LogoutAll(context.Background(), registered.Account.Subject.ID)
 	require.NoError(t, err)
 	require.Positive(t, revoked)
-	_, err = runtime.VerifyAccessToken(context.Background(), logoutAllSession.Tokens.AccessToken, true)
+	_, err = runtime.AuthenticateSession(context.Background(), logoutAllSession.Tokens.AccessToken)
 	require.ErrorIs(t, err, goauth.ErrSessionRevoked)
 
 	require.NoError(t, runtime.RequestEmailChange(
@@ -271,10 +289,11 @@ func TestPostgresAccountLifecycleIsAtomicAndDigestOnly(t *testing.T) {
 	))
 	changeCode := integrationNotificationCode(t, runtime, events, "email_change")
 	var rawCodeOccurrences int
-	require.NoError(t, db.QueryRow(`
+	require.NoError(t, db.QueryRowContext(t.Context(), `
 SELECT count(*)
 FROM auth_email_change_records
-WHERE encode(code_digest, 'hex') = $1 OR new_display_value = $1 OR new_normalized_value = $1`, changeCode).Scan(&rawCodeOccurrences))
+WHERE encode(code_digest, 'hex') = $1 OR new_display_value = $1 OR new_normalized_value = $1`,
+		changeCode).Scan(&rawCodeOccurrences))
 	require.Zero(t, rawCodeOccurrences)
 	_, err = runtime.ConfirmEmailChange(
 		context.Background(),
@@ -294,7 +313,7 @@ WHERE encode(code_digest, 'hex') = $1 OR new_display_value = $1 OR new_normalize
 	require.Equal(t, "lifecycle.after@example.test", changed.PrimaryEmail.NormalizedValue)
 	require.True(t, changed.EmailVerified())
 
-	const currentPassword = "Integration-Unique-Passphrase-1"
+	const currentPassword = postgresAtomicityPassword
 	passwords := []string{"Lifecycle-Password-A1", "Lifecycle-Password-B2"}
 	errorsByPassword := make([]error, len(passwords))
 	start := make(chan struct{})
@@ -329,7 +348,7 @@ WHERE encode(code_digest, 'hex') = $1 OR new_display_value = $1 OR new_normalize
 	}
 	require.Equal(t, 1, successes)
 	var storedPHC string
-	require.NoError(t, db.QueryRow(`
+	require.NoError(t, db.QueryRowContext(t.Context(), `
 SELECT password_phc FROM auth_local_credentials WHERE subject_id = $1`, registered.Account.Subject.ID).Scan(&storedPHC))
 	require.NotEqual(t, winningPassword, storedPHC)
 	require.NotContains(t, storedPHC, winningPassword)
@@ -353,7 +372,7 @@ func TestPostgresEmailChangeRateAndAttemptOutcomes(t *testing.T) {
 	account := register(t, runtime, "email.change.rate@example.test").Account
 	other := register(t, runtime, "email.change.occupied@example.test").Account
 	base := time.Now().UTC().Truncate(time.Second)
-	digest := goauth.SecretDigest{KeyID: "email-change", Digest: bytes.Repeat([]byte{6}, 32)}
+	digest := goauth.SecretDigest{KeyID: coreLintEmailChange, Digest: bytes.Repeat([]byte{6}, 32)}
 	rateDigest := goauth.SecretDigest{KeyID: "email-change-rate", Digest: bytes.Repeat([]byte{7}, 32)}
 	limits := goauth.EmailChallengeLimits{MinResendInterval: time.Minute, PerHour: 5, PerDay: 10}
 	record := func(index int, at time.Time) goauth.EmailChangeRecord {
@@ -417,7 +436,7 @@ func TestPostgresEmailChangeRateAndAttemptOutcomes(t *testing.T) {
 	issued, err = store.IssueEmailChange(context.Background(), attemptRecord, limits)
 	require.NoError(t, err)
 	require.Equal(t, goauth.EmailChangeIssued, issued.Status)
-	wrong := goauth.SecretDigest{KeyID: "wrong", Digest: bytes.Repeat([]byte{9}, 32)}
+	wrong := goauth.SecretDigest{KeyID: coreLintWrong, Digest: bytes.Repeat([]byte{9}, 32)}
 	for expectedAttempts := 1; expectedAttempts <= 5; expectedAttempts++ {
 		result, verifyErr := store.VerifyEmailChange(context.Background(), goauth.EmailChangeVerifyRequest{
 			SubjectID: attemptAccount.Subject.ID,
@@ -473,7 +492,7 @@ func TestPostgresOIDCRefreshTokensAreDigestOnlyAndReplayRevokesFamily(t *testing
 	require.NoError(t, store.Save(context.Background(), current))
 
 	var rawMatches int
-	require.NoError(t, db.QueryRow(`
+	require.NoError(t, db.QueryRowContext(t.Context(), `
 SELECT count(*)
 FROM auth_oidc_refresh_tokens
 WHERE row_to_json(auth_oidc_refresh_tokens)::text LIKE '%' || $1 || '%'`, currentRaw).Scan(&rawMatches))
@@ -520,7 +539,7 @@ WHERE row_to_json(auth_oidc_refresh_tokens)::text LIKE '%' || $1 || '%'`, curren
 	require.NoError(t, err)
 	require.NotNil(t, loaded.RevokedAt)
 	var replayAudits int
-	require.NoError(t, db.QueryRow(`
+	require.NoError(t, db.QueryRowContext(t.Context(), `
 SELECT count(*) FROM auth_security_audit_events
 WHERE subject_id = $1 AND event_type = 'oidc_refresh.replay'`, registered.Account.Subject.ID).Scan(&replayAudits))
 	require.Equal(t, 1, replayAudits)
@@ -651,12 +670,13 @@ func TestPostgresPasswordResetConsumesOnce(t *testing.T) {
 	var used int
 	var winner string
 	for index, err := range results {
-		if err == nil {
+		switch {
+		case err == nil:
 			successes++
 			winner = passwords[index]
-		} else if errors.Is(err, goauth.ErrResetAlreadyUsed) {
+		case errors.Is(err, goauth.ErrResetAlreadyUsed):
 			used++
-		} else {
+		default:
 			t.Fatalf("unexpected password reset result: %v", err)
 		}
 	}
@@ -700,7 +720,7 @@ func TestPostgresEmailChallengeAttemptsAndAtomicRateLimit(t *testing.T) {
 	)
 	require.ErrorIs(t, err, goauth.ErrConfirmationAttempts)
 	var attempts int
-	require.NoError(t, db.QueryRow(`
+	require.NoError(t, db.QueryRowContext(t.Context(), `
 SELECT attempts FROM auth_email_challenges
 WHERE subject_id = $1
 ORDER BY created_at DESC LIMIT 1`, registered.Account.Subject.ID).Scan(&attempts))
@@ -711,8 +731,11 @@ ORDER BY created_at DESC LIMIT 1`, registered.Account.Subject.ID).Scan(&attempts
 	second := register(t, runtime, "rate.concurrent@example.test")
 	base := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
 	limits := goauth.EmailChallengeLimits{PerHour: 5, PerDay: 10}
-	var issued atomic.Int64
-	var limited atomic.Int64
+	type issueResult struct {
+		result goauth.EmailChallengeIssueResult
+		err    error
+	}
+	results := make([]issueResult, 6)
 	start := make(chan struct{})
 	var wait sync.WaitGroup
 	for index := range 6 {
@@ -725,24 +748,31 @@ ORDER BY created_at DESC LIMIT 1`, registered.Account.Subject.ID).Scan(&attempts
 				SubjectID:    second.Account.Subject.ID,
 				IdentifierID: second.Account.PrimaryEmail.ID,
 				Purpose:      goauth.EmailChallengePurposeVerification,
-				Digest:       goauth.SecretDigest{KeyID: "test", Digest: bytes.Repeat([]byte{byte(index + 1)}, 32)},
+				Digest:       goauth.SecretDigest{KeyID: coreLintTest, Digest: bytes.Repeat([]byte{byte(index + 1)}, 32)},
 				RateDigest:   goauth.SecretDigest{KeyID: "rate-test", Digest: bytes.Repeat([]byte{1}, 32)},
 				MaxAttempts:  5,
 				CreatedAt:    base,
 				ExpiresAt:    base.Add(time.Hour),
 			}, limits)
-			require.NoError(t, err)
-			if result.Status == goauth.EmailChallengeIssued {
-				issued.Add(1)
-			} else if result.Status == goauth.EmailChallengeHourlyLimit {
-				limited.Add(1)
-			}
+			results[index] = issueResult{result: result, err: err}
 		}()
 	}
 	close(start)
 	wait.Wait()
-	require.EqualValues(t, 5, issued.Load())
-	require.EqualValues(t, 1, limited.Load())
+	var issued, limited int
+	for _, outcome := range results {
+		require.NoError(t, outcome.err)
+		switch outcome.result.Status {
+		case goauth.EmailChallengeIssued:
+			issued++
+		case goauth.EmailChallengeHourlyLimit:
+			limited++
+		default:
+			t.Fatalf("unexpected email challenge status: %v", outcome.result.Status)
+		}
+	}
+	require.Equal(t, 5, issued)
+	require.Equal(t, 1, limited)
 }
 
 func TestPostgresCaseInsensitiveRegistrationIsUnique(t *testing.T) {
@@ -767,11 +797,12 @@ func TestPostgresCaseInsensitiveRegistrationIsUnique(t *testing.T) {
 	wait.Wait()
 	var successes, conflicts int
 	for _, err := range results {
-		if err == nil {
+		switch {
+		case err == nil:
 			successes++
-		} else if errors.Is(err, goauth.ErrIdentifierAlreadyExists) {
+		case errors.Is(err, goauth.ErrIdentifierAlreadyExists):
 			conflicts++
-		} else {
+		default:
 			t.Fatalf("unexpected registration result: %v", err)
 		}
 	}
@@ -795,7 +826,7 @@ func TestPostgresDailyEmailChallengeLimitAndBoundary(t *testing.T) {
 			SubjectID:    registered.Account.Subject.ID,
 			IdentifierID: registered.Account.PrimaryEmail.ID,
 			Purpose:      goauth.EmailChallengePurposeVerification,
-			Digest:       goauth.SecretDigest{KeyID: "test", Digest: bytes.Repeat([]byte{byte(index)}, 32)},
+			Digest:       goauth.SecretDigest{KeyID: coreLintTest, Digest: bytes.Repeat([]byte{byte(index)}, 32)},
 			RateDigest:   rateDigest,
 			MaxAttempts:  5,
 			CreatedAt:    at,
@@ -825,18 +856,19 @@ func TestPostgresSSOLinkingRequiresVerifiedEmailAndCreatesNoCredential(t *testin
 	db := integrationDB(t)
 	runtime, events, envelopeKeys := integrationRuntime(t, db)
 	ssoOnly, err := runtime.ResolveExternalIdentity(context.Background(), goauth.ExternalIdentity{
-		Issuer:        "https://idp.example.test",
-		Subject:       "sso-only",
+		Issuer:        coreLintIssuer,
+		Subject:       coreLintSSOOnly,
 		Email:         "sso.only@example.test",
 		EmailVerified: true,
 	})
 	require.NoError(t, err)
 	var credentials int
-	require.NoError(t, db.QueryRow(`SELECT count(*) FROM auth_local_credentials WHERE subject_id = $1`, ssoOnly.Subject.ID).Scan(&credentials))
+	require.NoError(t, db.QueryRowContext(t.Context(),
+		`SELECT count(*) FROM auth_local_credentials WHERE subject_id = $1`, ssoOnly.Subject.ID).Scan(&credentials))
 	require.Zero(t, credentials)
 	resolved, err := runtime.ResolveExternalIdentity(context.Background(), goauth.ExternalIdentity{
-		Issuer:        "https://idp.example.test",
-		Subject:       "sso-only",
+		Issuer:        coreLintIssuer,
+		Subject:       coreLintSSOOnly,
 		Email:         "sso.only@example.test",
 		EmailVerified: true,
 	})
@@ -849,14 +881,14 @@ func TestPostgresSSOLinkingRequiresVerifiedEmailAndCreatesNoCredential(t *testin
 	_, err = store.LinkIdentity(context.Background(), goauth.IdentityLink{
 		ID:              "123e4567-e89b-12d3-a456-426614174204",
 		SubjectID:       local.Account.Subject.ID,
-		Issuer:          "https://idp.example.test",
-		ExternalSubject: "sso-only",
+		Issuer:          coreLintIssuer,
+		ExternalSubject: coreLintSSOOnly,
 		CreatedAt:       time.Now().UTC(),
 		UpdatedAt:       time.Now().UTC(),
 	})
 	require.ErrorIs(t, err, goauth.ErrIdentityLinkConflict)
 	_, err = runtime.ResolveExternalIdentity(context.Background(), goauth.ExternalIdentity{
-		Issuer:        "https://idp.example.test",
+		Issuer:        coreLintIssuer,
 		Subject:       "local-unverified",
 		Email:         "existing.sso@example.test",
 		EmailVerified: true,
@@ -888,18 +920,18 @@ func TestPostgresSSOLinkingRequiresVerifiedEmailAndCreatesNoCredential(t *testin
 	require.True(t, verifiedAgain.EmailVerified())
 	_, err = runtime.Login(
 		context.Background(),
-		login("existing.sso@example.test", "Integration-Unique-Passphrase-1"),
+		login("existing.sso@example.test", postgresAtomicityPassword),
 	)
 	require.NoError(t, err, "verified local identifiers must round-trip through PostgreSQL login")
 	_, err = runtime.ResolveExternalIdentity(context.Background(), goauth.ExternalIdentity{
-		Issuer:        "https://idp.example.test",
+		Issuer:        coreLintIssuer,
 		Subject:       "idp-unverified",
 		Email:         "existing.sso@example.test",
 		EmailVerified: false,
 	})
 	require.ErrorIs(t, err, goauth.ErrExplicitIdentityLink)
 	linked, err := runtime.ResolveExternalIdentity(context.Background(), goauth.ExternalIdentity{
-		Issuer:        "https://idp.example.test",
+		Issuer:        coreLintIssuer,
 		Subject:       "both-verified",
 		Email:         "EXISTING.SSO@EXAMPLE.TEST",
 		EmailVerified: true,
@@ -908,7 +940,7 @@ func TestPostgresSSOLinkingRequiresVerifiedEmailAndCreatesNoCredential(t *testin
 	require.Equal(t, local.Account.Subject.ID, linked.Subject.ID)
 
 	var existingLinkID string
-	require.NoError(t, db.QueryRow(`
+	require.NoError(t, db.QueryRowContext(t.Context(), `
 SELECT id FROM auth_identity_links
 WHERE issuer = 'https://idp.example.test' AND external_subject = 'sso-only'`).Scan(&existingLinkID))
 	_, err = store.LinkIdentity(context.Background(), goauth.IdentityLink{
@@ -961,14 +993,14 @@ func TestPostgresNeverStoresRawRuntimeSecrets(t *testing.T) {
 		secret string
 	}{
 		{"auth_refresh_tokens", registered.Tokens.RefreshToken},
-		{"auth_password_reset_records", resetToken},
-		{"auth_email_challenges", code},
-		{"auth_local_credentials", "Integration-Unique-Passphrase-1"},
+		{migrationLintAuthPasswordResetRecords, resetToken},
+		{migrationLintAuthEmailChallenges, code},
+		{migrationLintAuthLocalTable, postgresAtomicityPassword},
 	}
 	for _, check := range checks {
 		var count int
 		query := fmt.Sprintf(`SELECT count(*) FROM %s AS value WHERE row_to_json(value)::text LIKE '%%' || $1 || '%%'`, check.table)
-		require.NoError(t, db.QueryRow(query, check.secret).Scan(&count))
+		require.NoError(t, db.QueryRowContext(t.Context(), query, check.secret).Scan(&count))
 		require.Zero(t, count, "%s contains a raw secret", check.table)
 	}
 	require.False(t, bytes.Contains(resetEvent.Envelope.Ciphertext, []byte(resetToken)))
@@ -987,14 +1019,16 @@ func TestPostgresSubjectStatusRevokesSessionsAndRefreshFamilies(t *testing.T) {
 			subject, err := runtime.SetSubjectStatus(context.Background(), registered.Account.Subject.ID, status)
 			require.NoError(t, err)
 			require.Equal(t, int64(2), subject.SecurityVersion)
-			_, err = runtime.VerifyAccessToken(context.Background(), registered.Tokens.AccessToken, true)
+			_, err = runtime.AuthenticateSession(context.Background(), registered.Tokens.AccessToken)
 			require.Error(t, err)
 			_, err = runtime.Refresh(context.Background(), registered.Tokens.RefreshToken)
 			require.ErrorIs(t, err, goauth.ErrSessionRevoked)
 
 			var activeSessions, activeFamilies int
-			require.NoError(t, db.QueryRow(`SELECT count(*) FROM auth_sessions WHERE subject_id = $1 AND revoked_at IS NULL`, subject.ID).Scan(&activeSessions))
-			require.NoError(t, db.QueryRow(`SELECT count(*) FROM auth_refresh_families WHERE subject_id = $1 AND revoked_at IS NULL`, subject.ID).Scan(&activeFamilies))
+			require.NoError(t, db.QueryRowContext(t.Context(),
+				`SELECT count(*) FROM auth_sessions WHERE subject_id = $1 AND revoked_at IS NULL`, subject.ID).Scan(&activeSessions))
+			require.NoError(t, db.QueryRowContext(t.Context(),
+				`SELECT count(*) FROM auth_refresh_families WHERE subject_id = $1 AND revoked_at IS NULL`, subject.ID).Scan(&activeFamilies))
 			require.Zero(t, activeSessions)
 			require.Zero(t, activeFamilies)
 		})
@@ -1008,7 +1042,7 @@ func TestPostgresRBACUsesExplicitRolePermissions(t *testing.T) {
 	service, err := postgres.NewRBAC(db, nil)
 	require.NoError(t, err)
 
-	role, err := service.UpsertRole(context.Background(), rbac.Role{Slug: "editor", Name: "Editor"})
+	role, err := service.UpsertRole(context.Background(), rbac.Role{Slug: coreLintEditor, Name: "Editor"})
 	require.NoError(t, err)
 	require.NotZero(t, role.ID)
 	role.Name = "Content editor"
@@ -1028,14 +1062,14 @@ func TestPostgresRBACUsesExplicitRolePermissions(t *testing.T) {
 	require.NoError(t, service.Require(context.Background(), registered.Account.Subject.ID, read))
 
 	var hierarchy sql.NullString
-	require.NoError(t, db.QueryRow(`SELECT to_regclass('public.auth_role_hierarchy')::text`).Scan(&hierarchy))
+	require.NoError(t, db.QueryRowContext(t.Context(), `SELECT to_regclass('public.auth_role_hierarchy')::text`).Scan(&hierarchy))
 	require.False(t, hierarchy.Valid)
-	require.Error(t, service.AssignRole(context.Background(), registered.Account.Subject.ID, "missing"))
-	require.Error(t, service.SetRolePermissions(context.Background(), "missing", []rbac.PermissionKey{read}))
+	require.Error(t, service.AssignRole(context.Background(), registered.Account.Subject.ID, coreLintMissing))
+	require.Error(t, service.SetRolePermissions(context.Background(), coreLintMissing, []rbac.PermissionKey{read}))
 	require.Error(t, service.SetRolePermissions(
 		context.Background(),
 		role.Slug,
-		[]rbac.PermissionKey{rbac.MustPermissionKey("missing", "permission")},
+		[]rbac.PermissionKey{rbac.MustPermissionKey(coreLintMissing, "permission")},
 	))
 }
 
@@ -1070,12 +1104,12 @@ func TestPostgresRBACManagementLifecycle(t *testing.T) {
 	require.True(t, systemRole.System)
 
 	editorRole, err := service.CreateRole(ctx, rbac.Role{
-		Slug:        "editor",
+		Slug:        coreLintEditor,
 		Name:        "Editor",
 		Description: "Content editor",
 	}, []rbac.PermissionKey{read})
 	require.NoError(t, err)
-	_, err = service.CreateRole(ctx, rbac.Role{Slug: "editor", Name: "Duplicate"}, nil)
+	_, err = service.CreateRole(ctx, rbac.Role{Slug: coreLintEditor, Name: "Duplicate"}, nil)
 	require.Error(t, err)
 
 	roles, err := service.Roles(ctx, rbac.RoleFilter{IncludeSystem: true})
@@ -1124,7 +1158,7 @@ func TestPostgresRBACManagementLifecycle(t *testing.T) {
 	require.Equal(t, write, assignedPermissions[0].Key)
 	require.ErrorIs(
 		t,
-		service.ReplaceRolePermissions(ctx, editorRole.ID, []rbac.PermissionKey{rbac.MustPermissionKey("missing", "permission")}),
+		service.ReplaceRolePermissions(ctx, editorRole.ID, []rbac.PermissionKey{rbac.MustPermissionKey(coreLintMissing, "permission")}),
 		rbac.ErrPermissionNotFound,
 	)
 	require.ErrorIs(t, service.ReplaceRolePermissions(ctx, editorRole.ID+10_000, nil), rbac.ErrRoleNotFound)
@@ -1198,14 +1232,38 @@ func TestPostgresRateLimitAndCleanupCapabilities(t *testing.T) {
 		query string
 		args  []any
 	}{
-		{`INSERT INTO auth_password_reset_records (selector, subject_id, key_id, secret_digest, created_at, expires_at, consumed_at) VALUES ($1, $2, 'old', $3, $4, $4, $4)`, []any{"old-reset", registered.Account.Subject.ID, bytes.Repeat([]byte{1}, 32), old}},
-		{`INSERT INTO auth_email_challenges (id, subject_id, identifier_id, purpose, key_id, code_digest, max_attempts, created_at, expires_at, verified_at) VALUES ($1, $2, $3, 'verification', 'old', $4, 5, $5, $5, $5)`, []any{"123e4567-e89b-12d3-a456-426614174201", registered.Account.Subject.ID, registered.Account.PrimaryEmail.ID, bytes.Repeat([]byte{2}, 32), old}},
-		{`INSERT INTO auth_email_change_records (id, subject_id, new_display_value, new_normalized_value, key_id, code_digest, max_attempts, created_at, expires_at, consumed_at) VALUES ($1, $2, 'old@example.test', 'old@example.test', 'old', $3, 5, $4, $4, $4)`, []any{"123e4567-e89b-12d3-a456-426614174202", registered.Account.Subject.ID, bytes.Repeat([]byte{3}, 32), old}},
-		{`INSERT INTO auth_rate_limit_events (subject_id, key_id, bucket_digest, action, occurred_at) VALUES ($1, 'old', $2, 'old', $3)`, []any{registered.Account.Subject.ID, bytes.Repeat([]byte{4}, 32), old}},
-		{`INSERT INTO auth_security_audit_events (id, subject_id, event_type, occurred_at) VALUES ($1, $2, 'old', $3)`, []any{"123e4567-e89b-12d3-a456-426614174203", registered.Account.Subject.ID, old}},
+		{
+			`INSERT INTO auth_password_reset_records (selector, subject_id, key_id, secret_digest, created_at, expires_at, consumed_at)
+VALUES ($1, $2, 'old', $3, $4, $4, $4)`,
+			[]any{"old-reset", registered.Account.Subject.ID, bytes.Repeat([]byte{1}, 32), old},
+		},
+		{
+			`INSERT INTO auth_email_challenges (id, subject_id, identifier_id, purpose, key_id, code_digest, max_attempts,
+created_at, expires_at, verified_at) VALUES ($1, $2, $3, 'verification', 'old', $4, 5, $5, $5, $5)`,
+			[]any{
+				"123e4567-e89b-12d3-a456-426614174201", registered.Account.Subject.ID,
+				registered.Account.PrimaryEmail.ID, bytes.Repeat([]byte{2}, 32), old,
+			},
+		},
+		{
+			`INSERT INTO auth_email_change_records (id, subject_id, new_display_value, new_normalized_value, key_id, code_digest,
+max_attempts, created_at, expires_at, consumed_at)
+VALUES ($1, $2, 'old@example.test', 'old@example.test', 'old', $3, 5, $4, $4, $4)`,
+			[]any{"123e4567-e89b-12d3-a456-426614174202", registered.Account.Subject.ID, bytes.Repeat([]byte{3}, 32), old},
+		},
+		{
+			`INSERT INTO auth_rate_limit_events (subject_id, key_id, bucket_digest, action, occurred_at)
+VALUES ($1, 'old', $2, 'old', $3)`,
+			[]any{registered.Account.Subject.ID, bytes.Repeat([]byte{4}, 32), old},
+		},
+		{
+			`INSERT INTO auth_security_audit_events (id, subject_id, event_type, occurred_at)
+VALUES ($1, $2, 'old', $3)`,
+			[]any{"123e4567-e89b-12d3-a456-426614174203", registered.Account.Subject.ID, old},
+		},
 	}
 	for _, statement := range statements {
-		_, err := db.Exec(statement.query, statement.args...)
+		_, err := db.ExecContext(t.Context(), statement.query, statement.args...)
 		require.NoError(t, err)
 	}
 	cleanup, err := runtime.Cleanup(context.Background(), postgres.CleanupPolicy{})
@@ -1226,7 +1284,8 @@ func TestPostgresAdapterValidationAndDSNOwnership(t *testing.T) {
 	require.EqualError(t, err, "PostgreSQL database is required")
 	_, err = postgres.NewRuntime(postgres.Config{})
 	require.EqualError(t, err, "PostgreSQL DB or DSN is required")
-	require.ErrorIs(t, postgres.Down(context.Background(), nil, postgres.ResetConfirmation("wrong")), postgres.ErrResetConfirmationRequired)
+	require.ErrorIs(t, postgres.Down(context.Background(), nil, postgres.ResetConfirmation(coreLintWrong)),
+		postgres.ErrResetConfirmationRequired)
 	require.Error(t, postgres.Down(context.Background(), nil, postgres.ConfirmResetAuthState))
 
 	db := integrationDB(t)
@@ -1246,21 +1305,25 @@ func TestPostgresAdapterValidationAndDSNOwnership(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, autoMigrated.Close())
 	_, err = postgres.NewRuntime(postgres.Config{
-		DSN:               "postgres://goauth:goauth@127.0.0.1:1/unreachable?sslmode=disable",
+		DSN:               "postgres://127.0.0.1:1/unreachable?sslmode=disable",
 		ConnectionTimeout: time.Millisecond,
 	})
 	require.Error(t, err)
 
 	dsn := os.Getenv("GOAUTH_TEST_POSTGRES_DSN")
 	config := runtimeConfig(t)
-	owned, err := postgres.NewRuntime(postgres.Config{DSN: dsn, Runtime: config, NotificationSender: integrationNotificationSender()})
+	owned, err := postgres.NewRuntime(postgres.Config{
+		DSN: dsn, Runtime: config, NotificationSender: integrationNotificationSender(),
+	})
 	require.NoError(t, err)
 	require.NoError(t, owned.Close())
 
 	resetSchema(t, db)
-	_, err = db.Exec(`CREATE TABLE auth_subjects (id UUID PRIMARY KEY, email TEXT NOT NULL)`)
+	_, err = db.ExecContext(t.Context(), `CREATE TABLE auth_subjects (id UUID PRIMARY KEY, email TEXT NOT NULL)`)
 	require.NoError(t, err)
-	_, err = postgres.NewRuntime(postgres.Config{DB: db, AutoMigrate: true, Runtime: runtimeConfig(t), NotificationSender: integrationNotificationSender()})
+	_, err = postgres.NewRuntime(postgres.Config{
+		DB: db, AutoMigrate: true, Runtime: runtimeConfig(t), NotificationSender: integrationNotificationSender(),
+	})
 	require.ErrorIs(t, err, postgres.ErrLegacySchemaRequiresReset)
 	resetSchema(t, db)
 	require.NoError(t, postgres.Migrate(context.Background(), db))
@@ -1280,7 +1343,7 @@ func TestPostgresTypedStoreOutcomes(t *testing.T) {
 	_, err = store.UpdateBasicProfile(
 		context.Background(),
 		goauth.NewSubjectID(),
-		goauth.BasicProfile{Username: "missing"},
+		goauth.BasicProfile{Username: coreLintMissing},
 		time.Now().UTC(),
 	)
 	require.ErrorIs(t, err, goauth.ErrAccountNotFound)
@@ -1288,8 +1351,8 @@ func TestPostgresTypedStoreOutcomes(t *testing.T) {
 	require.Error(t, err)
 	missingPasswordChange, err := store.ChangePassword(context.Background(), goauth.PasswordChangeStoreRequest{
 		SubjectID:           goauth.NewSubjectID(),
-		ExpectedPasswordPHC: "$argon2id$missing",
-		NewPasswordPHC:      "$argon2id$new",
+		ExpectedPasswordPHC: syntheticPHC("missing"),
+		NewPasswordPHC:      syntheticPHC("new"),
 		Now:                 time.Now().UTC(),
 	})
 	require.NoError(t, err)
@@ -1299,8 +1362,8 @@ func TestPostgresTypedStoreOutcomes(t *testing.T) {
 	require.NoError(t, err)
 	conflictedPasswordChange, err := store.ChangePassword(context.Background(), goauth.PasswordChangeStoreRequest{
 		SubjectID:           passwordOutcomeAccount.Account.Subject.ID,
-		ExpectedPasswordPHC: "$argon2id$concurrent-value",
-		NewPasswordPHC:      "$argon2id$new-value",
+		ExpectedPasswordPHC: syntheticPHC("concurrent-value"),
+		NewPasswordPHC:      syntheticPHC("new-value"),
 		Now:                 time.Now().UTC(),
 	})
 	require.NoError(t, err)
@@ -1315,7 +1378,7 @@ func TestPostgresTypedStoreOutcomes(t *testing.T) {
 	_, err = store.ChangePassword(context.Background(), goauth.PasswordChangeStoreRequest{
 		SubjectID:           passwordOutcomeAccount.Account.Subject.ID,
 		ExpectedPasswordPHC: passwordOutcomeLocal.PasswordPHC,
-		NewPasswordPHC:      "$argon2id$new-value",
+		NewPasswordPHC:      syntheticPHC("new-value"),
 		Now:                 time.Now().UTC(),
 	})
 	require.ErrorIs(t, err, goauth.ErrAccountUnavailable)
@@ -1350,9 +1413,9 @@ func TestPostgresTypedStoreOutcomes(t *testing.T) {
 	require.ErrorIs(t, err, goauth.ErrSessionRevoked)
 
 	require.Error(t, store.CreatePasswordReset(context.Background(), goauth.PasswordResetRecord{}))
-	digest := goauth.SecretDigest{KeyID: "test", Digest: bytes.Repeat([]byte{7}, 32)}
+	digest := goauth.SecretDigest{KeyID: coreLintTest, Digest: bytes.Repeat([]byte{7}, 32)}
 	missingReset, err := store.ConsumePasswordReset(context.Background(), goauth.PasswordResetConsumeRequest{
-		Selector: "missing", Digest: digest, PasswordPHC: "$argon2id$test", Now: time.Now().UTC(),
+		Selector: coreLintMissing, Digest: digest, PasswordPHC: syntheticPHC("test"), Now: time.Now().UTC(),
 	})
 	require.NoError(t, err)
 	require.Equal(t, goauth.PasswordResetInvalid, missingReset.Status)
@@ -1366,7 +1429,7 @@ func TestPostgresTypedStoreOutcomes(t *testing.T) {
 		ExpiresAt:               time.Now().UTC().Add(-time.Minute),
 	}))
 	expiredReset, err := store.ConsumePasswordReset(context.Background(), goauth.PasswordResetConsumeRequest{
-		Selector: "expired-reset", Digest: digest, PasswordPHC: "$argon2id$test", Now: time.Now().UTC(),
+		Selector: "expired-reset", Digest: digest, PasswordPHC: syntheticPHC("test"), Now: time.Now().UTC(),
 	})
 	require.NoError(t, err)
 	require.Equal(t, goauth.PasswordResetExpired, expiredReset.Status)
@@ -1374,7 +1437,7 @@ func TestPostgresTypedStoreOutcomes(t *testing.T) {
 	usedDigest := goauth.SecretDigest{KeyID: "used", Digest: bytes.Repeat([]byte{8}, 32)}
 	require.NoError(t, store.CreatePasswordReset(context.Background(), goauth.PasswordResetRecord{
 		SubjectID:               resetAccount.Account.Subject.ID,
-		Selector:                "used-reset",
+		Selector:                coreLintUsedReset,
 		Digest:                  usedDigest,
 		ExpectedNormalizedEmail: resetAccount.Account.PrimaryEmail.NormalizedValue,
 		ExpectedSecurityVersion: resetAccount.Account.Subject.SecurityVersion,
@@ -1382,23 +1445,23 @@ func TestPostgresTypedStoreOutcomes(t *testing.T) {
 		ExpiresAt:               time.Now().UTC().Add(time.Hour),
 	}))
 	invalidReset, err := store.ConsumePasswordReset(context.Background(), goauth.PasswordResetConsumeRequest{
-		Selector: "used-reset",
+		Selector: coreLintUsedReset,
 		Digest: goauth.SecretDigest{
 			KeyID:  "wrong-key",
 			Digest: bytes.Repeat([]byte{8}, 32),
 		},
-		PasswordPHC: "$argon2id$test",
+		PasswordPHC: syntheticPHC("test"),
 		Now:         time.Now().UTC(),
 	})
 	require.NoError(t, err)
 	require.Equal(t, goauth.PasswordResetInvalid, invalidReset.Status)
 	consumedReset, err := store.ConsumePasswordReset(context.Background(), goauth.PasswordResetConsumeRequest{
-		Selector: "used-reset", Digest: usedDigest, PasswordPHC: "$argon2id$test", Now: time.Now().UTC(),
+		Selector: coreLintUsedReset, Digest: usedDigest, PasswordPHC: syntheticPHC("test"), Now: time.Now().UTC(),
 	})
 	require.NoError(t, err)
 	require.Equal(t, goauth.PasswordResetConsumed, consumedReset.Status)
 	usedReset, err := store.ConsumePasswordReset(context.Background(), goauth.PasswordResetConsumeRequest{
-		Selector: "used-reset", Digest: usedDigest, PasswordPHC: "$argon2id$test", Now: time.Now().UTC(),
+		Selector: coreLintUsedReset, Digest: usedDigest, PasswordPHC: syntheticPHC("test"), Now: time.Now().UTC(),
 	})
 	require.NoError(t, err)
 	require.Equal(t, goauth.PasswordResetUsed, usedReset.Status)
@@ -1427,7 +1490,7 @@ func TestPostgresTypedStoreOutcomes(t *testing.T) {
 		),
 		goauth.ErrConfirmationResendDelay,
 	)
-	expiredChallengeDigest := goauth.SecretDigest{KeyID: "expired", Digest: bytes.Repeat([]byte{4}, 32)}
+	expiredChallengeDigest := goauth.SecretDigest{KeyID: coreLintExpired, Digest: bytes.Repeat([]byte{4}, 32)}
 	expiredRateDigest := goauth.SecretDigest{KeyID: "expired-rate", Digest: bytes.Repeat([]byte{5}, 32)}
 	expiredChallengeAccount := register(t, runtime, "expired.challenge@example.test")
 	expiredAt := time.Now().UTC().Add(-time.Minute)
@@ -1470,7 +1533,7 @@ func TestPostgresTypedStoreOutcomes(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, goauth.RefreshRotationInvalid, invalidRotation.Status)
 	missingRotation, err := store.RotateRefresh(context.Background(), goauth.RefreshRotationRequest{
-		CurrentSelector: "missing",
+		CurrentSelector: coreLintMissing,
 		CurrentDigest:   digest,
 		NextSelector:    "missing-next",
 		NextDigest:      digest,
@@ -1495,7 +1558,8 @@ func TestPostgresTypedStoreOutcomes(t *testing.T) {
 	registeredExpired := register(t, runtime, "expired.refresh@example.test")
 	expiredParts := strings.Split(registeredExpired.Tokens.RefreshToken, ".")
 	require.Len(t, expiredParts, 3)
-	_, err = db.Exec(`UPDATE auth_refresh_tokens SET expires_at = now() - interval '1 minute' WHERE selector = $1`, expiredParts[1])
+	_, err = db.ExecContext(t.Context(),
+		`UPDATE auth_refresh_tokens SET expires_at = now() - interval '1 minute' WHERE selector = $1`, expiredParts[1])
 	require.NoError(t, err)
 	_, err = runtime.Refresh(context.Background(), registeredExpired.Tokens.RefreshToken)
 	require.ErrorIs(t, err, goauth.ErrExpiredToken)
@@ -1529,8 +1593,8 @@ func TestPostgresLifecycleStoreFailsClosedWhenDatabaseIsUnavailable(t *testing.T
 	require.Error(t, err)
 	_, err = store.ChangePassword(context.Background(), goauth.PasswordChangeStoreRequest{
 		SubjectID:           subjectID,
-		ExpectedPasswordPHC: "$argon2id$current",
-		NewPasswordPHC:      "$argon2id$next",
+		ExpectedPasswordPHC: syntheticPHC("current"),
+		NewPasswordPHC:      syntheticPHC("next"),
 		Now:                 now,
 	})
 	require.Error(t, err)
@@ -1664,8 +1728,8 @@ func (s oidcKeyStoreStub) Active(context.Context) (oidc.SigningKey, error) {
 	return oidc.SigningKey{ID: "test-key", Algorithm: "RS256", PrivateKey: s.key, PublicKey: &s.key.PublicKey}, nil
 }
 
-func (s oidcKeyStoreStub) Get(context.Context, string) (oidc.SigningKey, error) {
-	return s.Active(context.Background())
+func (s oidcKeyStoreStub) Get(ctx context.Context, _ string) (oidc.SigningKey, error) {
+	return s.Active(ctx)
 }
 
 func (oidcKeyStoreStub) Public(context.Context) ([]oidc.JWK, error) { return nil, nil }
@@ -1701,7 +1765,7 @@ func register(t *testing.T, runtime *postgres.Runtime, email string) goauth.Regi
 	t.Helper()
 	result, err := runtime.Register(context.Background(), goauth.RegisterRequest{
 		Email:    email,
-		Password: "Integration-Unique-Passphrase-1",
+		Password: postgresAtomicityPassword,
 	})
 	require.NoError(t, err)
 

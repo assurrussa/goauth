@@ -18,7 +18,9 @@ import (
 
 type assistedRecoveryPermission struct{ denied bool }
 
-func (p assistedRecoveryPermission) AuthorizeAssistedRecovery(context.Context, goauth.AuthContext, goauth.SubjectID, string, string) error {
+func (p assistedRecoveryPermission) AuthorizeAssistedRecovery(
+	context.Context, goauth.AuthContext, goauth.SubjectID, string, string,
+) error {
 	if p.denied {
 		return goauth.ErrAssistedRecoveryDenied
 	}
@@ -29,18 +31,32 @@ func TestAssistedRecoveryRequiresExistingMFAAndPreservesEnrollment(t *testing.T)
 	f := newMFAIntegrationFixture(t)
 	f.config.NotificationDelivery = goauth.NotificationDeliveryRequired
 	var err error
-	f.runtime, err = postgres.NewRuntime(postgres.Config{DB: f.db, Runtime: f.config, NotificationSender: integrationNotificationSender()})
+	f.runtime, err = postgres.NewRuntime(postgres.Config{
+		DB: f.db, Runtime: f.config, NotificationSender: integrationNotificationSender(),
+	})
 	require.NoError(t, err)
 	_, codes := f.enroll(t)
-	actor, err := f.runtime.ProvisionTrustedLocalAccount(t.Context(), goauth.RegisterRequest{Email: "mfa.recovery.operator@example.test", Password: mfaIntegrationPassword})
+	actor, err := f.runtime.ProvisionTrustedLocalAccount(t.Context(), goauth.RegisterRequest{
+		Email: "mfa.recovery.operator@example.test", Password: mfaIntegrationPassword,
+	})
 	require.NoError(t, err)
-	logged, err := f.runtime.Login(t.Context(), goauth.LoginRequest{Realm: goauth.RealmAdmin, Credential: goauth.Credential{Identifier: goauth.IdentifierInput{Scheme: goauth.IdentifierSchemeEmail, Value: actor.PrimaryEmail.NormalizedValue}, Password: mfaIntegrationPassword}})
+	logged, err := f.runtime.Login(t.Context(), goauth.LoginRequest{
+		Realm: goauth.RealmAdmin, Credential: goauth.Credential{
+			Identifier: goauth.IdentifierInput{Scheme: goauth.IdentifierSchemeEmail, Value: actor.PrimaryEmail.NormalizedValue},
+			Password:   mfaIntegrationPassword,
+		},
+	})
 	require.NoError(t, err)
-	auth, err := f.runtime.VerifyAccessToken(t.Context(), logged.Tokens.AccessToken, true)
+	auth, err := f.runtime.AuthenticateSession(t.Context(), logged.Tokens.AccessToken)
 	require.NoError(t, err)
-	service, err := goauth.NewAssistedRecovery(f.runtime.Runtime, assistedRecoveryPermission{}, "https://app.example.test/auth/assisted-recovery")
+	service, err := goauth.NewAssistedRecovery(
+		f.runtime.Runtime, assistedRecoveryPermission{}, "https://app.example.test/auth/assisted-recovery",
+	)
 	require.NoError(t, err)
-	require.NoError(t, service.Initiate(t.Context(), goauth.AssistedRecoveryRequest{Auth: auth, SubjectID: f.account.Subject.ID, NewEmail: "mfa.restored@example.test", Password: mfaIntegrationPassword, Reason: "Lost mailbox and password", EvidenceReference: "Known channel verified"}))
+	require.NoError(t, service.Initiate(t.Context(), goauth.AssistedRecoveryRequest{
+		Auth: auth, SubjectID: f.account.Subject.ID, NewEmail: "mfa.restored@example.test",
+		Password: mfaIntegrationPassword, Reason: "Lost mailbox and password", EvidenceReference: "Known channel verified",
+	}))
 	observer := &integrationEventObserver{t: t, db: f.db}
 	var token string
 	for _, event := range observer.Events() {
@@ -55,25 +71,35 @@ func TestAssistedRecoveryRequiresExistingMFAAndPreservesEnrollment(t *testing.T)
 		}
 	}
 	require.NotEmpty(t, token)
-	completion := goauth.AssistedRecoveryCompletion{Token: token, NewPassword: "Recovered-MFA-Passphrase-42", Code: "incorrect-factor"}
+	completion := goauth.AssistedRecoveryCompletion{ //nolint:gosec // Synthetic test-only passphrase.
+		Token: token, NewPassword: "Recovered-MFA-Passphrase-42",
+		Code: "incorrect-factor",
+	}
 	require.ErrorIs(t, service.Complete(t.Context(), completion), goauth.ErrAssistedRecoveryDenied)
 	var attempts int
-	require.NoError(t, f.db.QueryRowContext(t.Context(), `SELECT attempts FROM auth_mfa_budget WHERE subject_id=$1`, f.account.Subject.ID).Scan(&attempts))
+	require.NoError(t, f.db.QueryRowContext(t.Context(),
+		`SELECT attempts FROM auth_mfa_budget WHERE subject_id=$1`, f.account.Subject.ID).Scan(&attempts))
 	require.Positive(t, attempts)
 	config := f.config
 	config.MFAKeys = nil
-	missing, err := postgres.NewRuntime(postgres.Config{DB: f.db, Runtime: config, NotificationSender: integrationNotificationSender()})
+	missing, err := postgres.NewRuntime(postgres.Config{
+		DB: f.db, Runtime: config, NotificationSender: integrationNotificationSender(),
+	})
 	require.NoError(t, err)
-	missingService, err := goauth.NewAssistedRecovery(missing.Runtime, assistedRecoveryPermission{}, "https://app.example.test/auth/assisted-recovery")
+	missingService, err := goauth.NewAssistedRecovery(
+		missing.Runtime, assistedRecoveryPermission{}, "https://app.example.test/auth/assisted-recovery",
+	)
 	require.NoError(t, err)
 	completion.Code = codes[0]
 	require.ErrorIs(t, missingService.Complete(t.Context(), completion), goauth.ErrMFAUnavailable)
 	require.NoError(t, service.Complete(t.Context(), completion))
 	var enabled bool
-	require.NoError(t, f.db.QueryRowContext(t.Context(), `SELECT enabled FROM auth_mfa_factors WHERE subject_id=$1`, f.account.Subject.ID).Scan(&enabled))
+	require.NoError(t, f.db.QueryRowContext(t.Context(),
+		`SELECT enabled FROM auth_mfa_factors WHERE subject_id=$1`, f.account.Subject.ID).Scan(&enabled))
 	require.True(t, enabled)
 	var remaining int
-	require.NoError(t, f.db.QueryRowContext(t.Context(), `SELECT count(*) FROM auth_mfa_recovery WHERE subject_id=$1`, f.account.Subject.ID).Scan(&remaining))
+	require.NoError(t, f.db.QueryRowContext(t.Context(),
+		`SELECT count(*) FROM auth_mfa_recovery WHERE subject_id=$1`, f.account.Subject.ID).Scan(&remaining))
 	require.Equal(t, 9, remaining)
 	require.Error(t, service.Complete(t.Context(), completion))
 }
@@ -83,19 +109,30 @@ func TestAssistedRecoveryChangesBothCredentialsOnceAndRevokesPriorAuthority(t *t
 	runtime, events, keys := integrationRuntime(t, db)
 	const original = "Assisted-Recovery-Original-Passphrase-42"
 	const replacement = "Assisted-Recovery-Replacement-Passphrase-52"
-	actor, err := runtime.ProvisionTrustedLocalAccount(t.Context(), goauth.RegisterRequest{Email: "operator.recovery@example.test", Password: original})
+	actor, err := runtime.ProvisionTrustedLocalAccount(t.Context(), goauth.RegisterRequest{
+		Email: "operator.recovery@example.test", Password: original,
+	})
 	require.NoError(t, err)
-	target, err := runtime.ProvisionTrustedLocalAccount(t.Context(), goauth.RegisterRequest{Email: "lost.recovery@example.test", Password: original})
+	target, err := runtime.ProvisionTrustedLocalAccount(t.Context(), goauth.RegisterRequest{
+		Email: "lost.recovery@example.test", Password: original,
+	})
 	require.NoError(t, err)
-	operator, err := runtime.Login(t.Context(), goauth.LoginRequest{Credential: goauth.Credential{Identifier: goauth.IdentifierInput{Scheme: goauth.IdentifierSchemeEmail, Value: actor.PrimaryEmail.NormalizedValue}, Password: original}, Realm: goauth.RealmAdmin})
+	operator, err := runtime.Login(t.Context(), goauth.LoginRequest{
+		Credential: goauth.Credential{
+			Identifier: goauth.IdentifierInput{Scheme: goauth.IdentifierSchemeEmail, Value: actor.PrimaryEmail.NormalizedValue},
+			Password:   original,
+		}, Realm: goauth.RealmAdmin,
+	})
 	require.NoError(t, err)
-	auth, err := runtime.VerifyAccessToken(t.Context(), operator.Tokens.AccessToken, true)
+	auth, err := runtime.AuthenticateSession(t.Context(), operator.Tokens.AccessToken)
 	require.NoError(t, err)
 	beforeLogin, err := runtime.Login(t.Context(), login(target.PrimaryEmail.NormalizedValue, original))
 	require.NoError(t, err)
 	require.NoError(t, runtime.RequestPasswordReset(t.Context(), target.PrimaryEmail.NormalizedValue))
 	require.NoError(t, runtime.RequestEmailChange(t.Context(), target.Subject.ID, "uncompleted.recovery@example.test"))
-	service, err := goauth.NewAssistedRecovery(runtime.Runtime, assistedRecoveryPermission{}, "https://app.example.test/auth/assisted-recovery")
+	service, err := goauth.NewAssistedRecovery(
+		runtime.Runtime, assistedRecoveryPermission{}, "https://app.example.test/auth/assisted-recovery",
+	)
 	require.NoError(t, err)
 	request := goauth.AssistedRecoveryRequest{
 		Auth: auth, SubjectID: target.Subject.ID, NewEmail: "restored.recovery@example.test", Password: original,
@@ -104,7 +141,9 @@ func TestAssistedRecoveryChangesBothCredentialsOnceAndRevokesPriorAuthority(t *t
 	bad := request
 	bad.Password = "incorrect-password"
 	require.ErrorIs(t, service.Initiate(t.Context(), bad), goauth.ErrCurrentPasswordInvalid)
-	denied, err := goauth.NewAssistedRecovery(runtime.Runtime, assistedRecoveryPermission{denied: true}, "https://app.example.test/auth/assisted-recovery")
+	denied, err := goauth.NewAssistedRecovery(
+		runtime.Runtime, assistedRecoveryPermission{denied: true}, "https://app.example.test/auth/assisted-recovery",
+	)
 	require.NoError(t, err)
 	require.ErrorIs(t, denied.Initiate(t.Context(), request), goauth.ErrAssistedRecoveryDenied)
 	beforeInitiation, err := runtime.GetAccount(t.Context(), target.Subject.ID)
@@ -130,7 +169,8 @@ func TestAssistedRecoveryChangesBothCredentialsOnceAndRevokesPriorAuthority(t *t
 	}
 	require.NotEmpty(t, rawToken)
 	var digest []byte
-	require.NoError(t, db.QueryRowContext(t.Context(), `SELECT secret_digest FROM auth_assisted_recovery WHERE subject_id=$1`, target.Subject.ID).Scan(&digest))
+	require.NoError(t, db.QueryRowContext(t.Context(),
+		`SELECT secret_digest FROM auth_assisted_recovery WHERE subject_id=$1`, target.Subject.ID).Scan(&digest))
 	require.Len(t, digest, 32)
 	require.NotEqual(t, rawToken, string(digest))
 	results := make(chan error, 2)
@@ -178,9 +218,31 @@ func TestAssistedRecoveryChangesBothCredentialsOnceAndRevokesPriorAuthority(t *t
 	require.True(t, oldNotice)
 }
 
-// Remove the newest fixture layer before reconstructing an older schema.
+// Remove only the newest layer from isolated legacy-only fixtures. Leaving a
+// version-15 marker while deleting version 14 does not reconstruct schema 13.
+func removeNotificationGatewayFixtureSchema(t *testing.T, db *sql.DB) {
+	t.Helper()
+	var owned int
+	require.NoError(t, db.QueryRowContext(t.Context(), `SELECT count(*) FROM auth_notification_deliveries
+ WHERE gateway_receipt_id IS NOT NULL OR state='gateway_accepted'`).Scan(&owned))
+	require.Zero(t, owned, "legacy downgrade fixture must not discard gateway ownership")
+	_, err := db.ExecContext(t.Context(), `DROP INDEX auth_notification_gateway_ready_idx;
+ ALTER TABLE auth_notification_deliveries
+ DROP CONSTRAINT auth_notification_gateway_receipt_check,
+ DROP CONSTRAINT auth_notification_transport_protocol_check,
+ DROP CONSTRAINT auth_notification_deliveries_state_check,
+ DROP COLUMN gateway_receipt_id, DROP COLUMN gateway_accepted_at, DROP COLUMN transport_protocol,
+ ADD CONSTRAINT auth_notification_deliveries_state_check
+ CHECK(state IN ('pending','leased','blocked','delivered','exhausted','expired','cancelled'));
+ DELETE FROM goauth_migration_history WHERE version=15;
+ DELETE FROM goauth_schema_version WHERE version=15;`)
+	require.NoError(t, err)
+}
+
+// Remove layers in reverse order so markers and physical schema agree.
 func removeAssistedRecoverySchema(t *testing.T, db *sql.DB) {
 	t.Helper()
+	removeNotificationGatewayFixtureSchema(t, db)
 	_, err := db.ExecContext(t.Context(), `DROP TABLE auth_assisted_recovery;
  DELETE FROM goauth_migration_history WHERE version=14;
  DELETE FROM goauth_schema_version WHERE version=14;`)
@@ -192,6 +254,18 @@ func TestAssistedRecoveryMigrationUpgradesSchema13AndRejectsTampering(t *testing
 	resetSchema(t, db)
 	require.NoError(t, postgres.Migrate(t.Context(), db))
 	removeAssistedRecoverySchema(t, db)
+	var version, newerHistory, gatewayColumns int
+	require.NoError(t, db.QueryRowContext(t.Context(), `SELECT max(version) FROM goauth_schema_version`).Scan(&version))
+	require.Equal(t, 13, version, "this must be genuine schema 13, not a current marker with a history hole")
+	require.NoError(t, db.QueryRowContext(t.Context(), `SELECT count(*) FROM goauth_migration_history
+ WHERE version>13`).Scan(&newerHistory))
+	require.Zero(t, newerHistory)
+	require.NoError(t, db.QueryRowContext(t.Context(), `SELECT count(*) FROM information_schema.columns
+ WHERE table_schema='public' AND table_name='auth_notification_deliveries'
+ AND column_name IN ('transport_protocol','gateway_receipt_id','gateway_accepted_at')`).Scan(&gatewayColumns))
+	require.Zero(t, gatewayColumns)
+	// VerifySchema is the public schema gate used by AutoMigrate-disabled Runtime;
+	// the low-level NewStore factory intentionally does not inspect the schema.
 	require.ErrorIs(t, postgres.VerifySchema(t.Context(), db), postgres.ErrSchemaNeedsMigration)
 	require.NoError(t, postgres.Migrate(t.Context(), db))
 	require.NoError(t, postgres.Migrate(t.Context(), db))

@@ -30,14 +30,18 @@ func notificationPreSenderSnapshot(t *testing.T, db *sql.DB, id string) string {
 	t.Helper()
 	var snapshot string
 	require.NoError(t, db.QueryRowContext(t.Context(), `SELECT (to_jsonb(n)-'last_sender_outcome'-'last_sender_code'
- -'last_sender_http_status'-'last_sender_attempt'-'last_sender_observed_at')::text
+ -'last_sender_http_status'-'last_sender_attempt'-'last_sender_observed_at'
+ -'transport_protocol'-'gateway_receipt_id'-'gateway_accepted_at')::text
 FROM auth_notification_deliveries n WHERE id=$1`, id).Scan(&snapshot))
 	return snapshot
 }
 
 func TestNotificationSenderDiagnosticsMigrationPreservesLegacyRowsAndHistory(t *testing.T) {
 	f := newNotificationLifecycleFixture(t)
-	ids := []string{f.insert(t, "pending", f.now.Add(time.Hour), 2, false), f.insert(t, "exhausted", f.now.Add(-time.Hour), 10, true)}
+	ids := []string{
+		f.insert(t, "pending", f.now.Add(time.Hour), 2, false),
+		f.insert(t, "exhausted", f.now.Add(-time.Hour), 10, true),
+	}
 	removeNotificationSenderDiagnosticsSchema(t, f.db)
 	before := make([]string, len(ids))
 	for i, id := range ids {
@@ -55,6 +59,7 @@ func TestNotificationSenderDiagnosticsMigrationPreservesLegacyRowsAndHistory(t *
 		var empty bool
 		require.NoError(t, f.db.QueryRowContext(t.Context(), `SELECT last_sender_outcome IS NULL AND last_sender_code IS NULL
    AND last_sender_http_status IS NULL AND last_sender_attempt IS NULL AND last_sender_observed_at IS NULL
+   AND transport_protocol='' AND gateway_receipt_id IS NULL AND gateway_accepted_at IS NULL
    FROM auth_notification_deliveries WHERE id=$1`, id).Scan(&empty))
 		require.True(t, empty, "legacy diagnostics must not be fabricated")
 	}
@@ -64,7 +69,8 @@ func TestNotificationSenderDiagnosticsMigrationPreservesLegacyRowsAndHistory(t *
 	require.NoError(t, err)
 	sum := sha256.Sum256(data)
 	var recorded string
-	require.NoError(t, f.db.QueryRowContext(t.Context(), `SELECT checksum FROM goauth_migration_history WHERE version=13`).Scan(&recorded))
+	require.NoError(t, f.db.QueryRowContext(t.Context(),
+		`SELECT checksum FROM goauth_migration_history WHERE version=13`).Scan(&recorded))
 	require.Equal(t, hex.EncodeToString(sum[:]), recorded)
 }
 
@@ -77,7 +83,8 @@ func TestNotificationSenderDiagnosticsMigrationFailureRollsBack(t *testing.T) {
 	var version, history, columns int
 	require.NoError(t, f.db.QueryRowContext(t.Context(), `SELECT max(version) FROM goauth_schema_version`).Scan(&version))
 	require.Equal(t, 12, version)
-	require.NoError(t, f.db.QueryRowContext(t.Context(), `SELECT count(*) FROM goauth_migration_history WHERE version=13`).Scan(&history))
+	require.NoError(t, f.db.QueryRowContext(t.Context(),
+		`SELECT count(*) FROM goauth_migration_history WHERE version=13`).Scan(&history))
 	require.Zero(t, history)
 	require.NoError(t, f.db.QueryRowContext(t.Context(), `SELECT count(*) FROM information_schema.columns WHERE table_schema='public'
  AND table_name='auth_notification_deliveries' AND column_name='last_sender_code'`).Scan(&columns))
@@ -95,16 +102,16 @@ func TestNotificationSenderDiagnosticsMigrationRejectsTampering(t *testing.T) {
 		"status type":         `ALTER TABLE auth_notification_deliveries ALTER COLUMN last_sender_http_status TYPE bigint`,
 		"attempt type":        `ALTER TABLE auth_notification_deliveries ALTER COLUMN last_sender_attempt TYPE bigint`,
 		"timestamp precision": `ALTER TABLE auth_notification_deliveries ALTER COLUMN last_sender_observed_at TYPE timestamptz(3)`,
-		"checksum":            `UPDATE goauth_migration_history SET checksum='tampered' WHERE version=13`,
+		migrationLintChecksum: `UPDATE goauth_migration_history SET checksum='tampered' WHERE version=13`,
 	}
-	for _, column := range []string{"outcome", "code", "http_status", "attempt", "observed_at"} {
+	for _, column := range []string{migrationLintOutcome, migrationLintCode, "http_status", "attempt", "observed_at"} {
 		name := "last_sender_" + column
 		mutations[name+" nullability"] = "ALTER TABLE auth_notification_deliveries ALTER COLUMN " + name + " SET NOT NULL"
 		value := "1"
-		if column == "outcome" {
+		if column == migrationLintOutcome {
 			value = "'unknown'"
 		}
-		if column == "code" {
+		if column == migrationLintCode {
 			value = "'unknown'"
 		}
 		if column == "observed_at" {
@@ -112,14 +119,17 @@ func TestNotificationSenderDiagnosticsMigrationRejectsTampering(t *testing.T) {
 		}
 		mutations[name+" default"] = "ALTER TABLE auth_notification_deliveries ALTER COLUMN " + name + " SET DEFAULT " + value
 	}
-	for _, name := range []string{"outcome", "code", "http", "attempt", "snapshot"} {
+	for _, name := range []string{migrationLintOutcome, migrationLintCode, "http", "attempt", "snapshot"} {
 		constraint := "auth_notification_sender_" + name + "_check"
 		drop := "ALTER TABLE auth_notification_deliveries DROP CONSTRAINT " + constraint
 		mutations[name+" missing constraint"] = drop
-		mutations[name+" weakened constraint"] = drop + "; ALTER TABLE auth_notification_deliveries ADD CONSTRAINT " + constraint + " CHECK(true)"
+		mutations[name+" weakened constraint"] = drop + "; ALTER TABLE auth_notification_deliveries ADD CONSTRAINT " +
+			constraint + " CHECK(true)"
 	}
-	mutations["unvalidated constraint"] = `ALTER TABLE auth_notification_deliveries DROP CONSTRAINT auth_notification_sender_http_check;
- ALTER TABLE auth_notification_deliveries ADD CONSTRAINT auth_notification_sender_http_check CHECK(last_sender_http_status BETWEEN 100 AND 599) NOT VALID`
+	mutations["unvalidated constraint"] = `ALTER TABLE auth_notification_deliveries
+ DROP CONSTRAINT auth_notification_sender_http_check;
+ ALTER TABLE auth_notification_deliveries ADD CONSTRAINT auth_notification_sender_http_check
+ CHECK(last_sender_http_status BETWEEN 100 AND 599) NOT VALID`
 	for name, query := range mutations {
 		t.Run(name, func(t *testing.T) {
 			f := newNotificationLifecycleFixture(t)
@@ -142,16 +152,16 @@ func TestNotificationSenderDiagnosticsRejectsUnsafeOrPartialValues(t *testing.T)
 		status, attempt any
 		observed        any
 	}{
-		{"arbitrary outcome", "customer@example.test", "unknown", nil, 1, f.now},
-		{"arbitrary code", "unknown", "provider body or token", nil, 1, f.now},
-		{"status too low", "unknown", "unknown", 99, 1, f.now},
-		{"status too high", "unknown", "unknown", 600, 1, f.now},
-		{"zero attempt", "unknown", "unknown", nil, 0, f.now},
-		{"future attempt", "unknown", "unknown", nil, 3, f.now},
-		{"missing outcome", nil, "unknown", nil, 1, f.now},
-		{"missing code", "unknown", nil, nil, 1, f.now},
-		{"missing attempt", "unknown", "unknown", nil, nil, f.now},
-		{"missing time", "unknown", "unknown", nil, 1, nil},
+		{"arbitrary outcome", "customer@example.test", migrationLintUnknown, nil, 1, f.now},
+		{"arbitrary code", migrationLintUnknown, "provider body or token", nil, 1, f.now},
+		{"status too low", migrationLintUnknown, migrationLintUnknown, 99, 1, f.now},
+		{"status too high", migrationLintUnknown, migrationLintUnknown, 600, 1, f.now},
+		{"zero attempt", migrationLintUnknown, migrationLintUnknown, nil, 0, f.now},
+		{"future attempt", migrationLintUnknown, migrationLintUnknown, nil, 3, f.now},
+		{"missing outcome", nil, migrationLintUnknown, nil, 1, f.now},
+		{"missing code", migrationLintUnknown, nil, nil, 1, f.now},
+		{"missing attempt", migrationLintUnknown, migrationLintUnknown, nil, nil, f.now},
+		{"missing time", migrationLintUnknown, migrationLintUnknown, nil, 1, nil},
 		{"orphan status", nil, nil, 503, nil, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -160,7 +170,7 @@ func TestNotificationSenderDiagnosticsRejectsUnsafeOrPartialValues(t *testing.T)
 		})
 	}
 	for _, status := range []any{nil, 100, 599} {
-		_, err := f.db.ExecContext(t.Context(), complete, id, "unknown", "unknown", status, 2, f.now)
+		_, err := f.db.ExecContext(t.Context(), complete, id, migrationLintUnknown, migrationLintUnknown, status, 2, f.now)
 		require.NoError(t, err)
 	}
 	_, err := f.db.ExecContext(t.Context(), complete, id, nil, nil, nil, nil, nil)

@@ -36,6 +36,10 @@ type deadlineDelivery struct {
 	attempts   int64
 	state      string
 	diagnostic []driver.Value
+	receiptID  string
+	protocol   string
+	cleared    bool
+	delivered  bool
 }
 
 type deadlineDriver struct {
@@ -92,7 +96,7 @@ func (c *deadlineConn) QueryContext(_ context.Context, query string, args []driv
 			return &deadlineRows{values: []driver.Value{
 				e.ID, e.SubjectID.String(), e.Type, e.ReferenceID, e.ValidUntil, e.Envelope.KeyID,
 				e.Envelope.Nonce, e.Envelope.Ciphertext, e.Envelope.AdditionalData,
-				e.Envelope.CreatedAt, e.Envelope.DeleteAfter, d.attempts,
+				e.Envelope.CreatedAt, e.Envelope.DeleteAfter, d.attempts, d.receiptID, d.protocol,
 			}}, nil
 		}
 		return &deadlineRows{}, nil
@@ -118,6 +122,14 @@ func (c *deadlineConn) ExecContext(ctx context.Context, query string, args []dri
 		if d.event.ID != args[0].Value || d.token != args[1].Value || d.state != notificationLeased {
 			continue
 		}
+		if strings.Contains(query, "gateway_receipt_id=$3") {
+			return c.acceptGatewayReceipt(d, args)
+		}
+		if strings.Contains(query, "SET state='gateway_accepted'") {
+			d.state = notificationQueued
+			d.token = ""
+			return driver.RowsAffected(1), nil
+		}
 		if strings.Contains(query, "SET attempts = attempts + 1") {
 			return c.reserve(ctx, i)
 		}
@@ -134,6 +146,7 @@ func (c *deadlineConn) ExecContext(ctx context.Context, query string, args []dri
 				d.diagnostic = append(d.diagnostic, arg.Value)
 			}
 			d.state = state
+			d.delivered = state == notificationDelivered
 			d.token = ""
 			if i == 1 && c.state.secondFinished != nil {
 				close(c.state.secondFinished)
@@ -344,4 +357,19 @@ func TestNotificationStorageFailureStillStopsWorker(t *testing.T) {
 			require.Empty(t, d.deliveries[1].state)
 		})
 	}
+}
+
+func (c *deadlineConn) acceptGatewayReceipt(d *deadlineDelivery, args []driver.NamedValue) (driver.Result, error) {
+	if c.state.finishErr != nil {
+		return nil, c.state.finishErr
+	}
+	receiptID, ok := args[2].Value.(string)
+	if !ok {
+		return nil, errors.New("invalid gateway receipt")
+	}
+	d.receiptID = receiptID
+	d.state = notificationQueued
+	d.cleared = true
+	d.token = ""
+	return driver.RowsAffected(1), nil
 }

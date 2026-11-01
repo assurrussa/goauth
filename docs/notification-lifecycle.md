@@ -77,3 +77,18 @@ rejection, commit uncertainty, schema-11 upgrade preservation, schema drift and 
 batch selection over synthetic retained history.
 Run the focused ordinary and integration tests, the clean external consumer,
 and `make check` on the integrated revision before treating it as verified.
+
+## Gateway ownership and transport cutover (schema 15 candidate)
+
+`gateway_accepted` means a downstream encrypted queue owns delivery; it does not
+mean provider acceptance. The receipt ID and acceptance timestamp survive while
+local ciphertext is scrubbed atomically. The existing worker subsequently claims
+metadata-only receipts for Get reconciliation without counting another send.
+`delivered_at` remains NULL until the sender explicitly confirms provider handoff.
+Cancellation cannot recall gateway-owned content and remains unavailable there.
+Expired queue receipts preserve the uncertainty of earlier in-flight handoff.
+
+New events snapshot an optional sender `NotificationTransportProtocol` value.
+A mismatch blocks the old event, retaining its encrypted payload and original
+expiry without consuming send budget. Never stamp unknown historical operations
+with a new protocol or generate a new key to bypass downstream legacy-key fences.

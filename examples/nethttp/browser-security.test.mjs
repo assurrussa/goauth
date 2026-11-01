@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import {createHash} from 'node:crypto';
+import {createHash, X509Certificate} from 'node:crypto';
 import {chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import {assertFixtureActive, browserFixture, browserOrigin, secureBrowserOptions, secureRequestOptions} from './browser-security.mjs';
+import {assertFixtureActive, browserFixture, browserOrigin, launchBrowserSession, secureBrowserOptions, secureRequestOptions} from './browser-security.mjs';
 
 function fixture(t) {
   const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'goauth-browser-')));
@@ -71,11 +71,131 @@ test('acceptance source cannot silently restore TLS or sandbox bypasses', () => 
     readFileSync(new URL('./browser-security.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /rejectUnauthorized\s*:\s*false|ignoreHTTPSErrors\s*:\s*true|chromiumSandbox\s*:\s*false/);
   assert.doesNotMatch(source, /--no-sandbox|--disable-setuid-sandbox|--ignore-certificate-errors|--allow-insecure-localhost/);
-  assert.match(source, /launchPersistentContext\(fixture\.profile,secureBrowserOptions/);
+  assert.match(source, /launchBrowserSession\(chromium,fixture/);
+  assert.match(source, /launchPersistentContext\(fixture\.profile, secureBrowserOptions/);
 });
 
 test('an expired fixture cannot report browser acceptance', () => {
   assert.doesNotThrow(() => assertFixtureActive(2000, 1999));
   assert.throws(() => assertFixtureActive(2000, 2000), /expired/);
   assert.throws(() => assertFixtureActive(2000, 2072), /expired/);
+});
+
+const publicTestCA = `-----BEGIN CERTIFICATE-----
+MIIDJzCCAg+gAwIBAgIUSgBXSQpVAT+obOWoFJ4FXx/Pi+IwDQYJKoZIhvcNAQEL
+BQAwIzEhMB8GA1UEAwwYc3ludGhldGljIHVuaXQgdGVzdCBvbmx5MB4XDTI2MTEw
+MTE5NTkwM1oXDTM2MTAyOTE5NTkwM1owIzEhMB8GA1UEAwwYc3ludGhldGljIHVu
+aXQgdGVzdCBvbmx5MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwjpl
+EmuIiFW1KabJYPryXBeFWCF/keHrwUK5dPy2N3HHvJ2Q2Z5fDZivCQ1SJIJ8bfT4
+9FUQvZE7k9tJS7ygNqpTeScLSRsMZJdkuqMxhjntdFpu5u966XHosf6mOcltsH6F
+VL35BdRvXVuwEXDCY5S0lgRVFxxVpZzbEI6SpfLBJQ7dEBCbgkX2HkktXAhEQNOO
+lGTqmU5Us3USzsxcKZG9qnzLa35znY7V7GJgihrHKo4iJnz4Gi8eQqtHY4wQQtzq
+H3D82GcvoX1Gl9VQFexHxgC+ZJZ2a/3M0rrrvEXC5Vgka+Hxlm/if7xCiIHoXaB6
+yTacaFxjMPMbh/z2HwIDAQABo1MwUTAdBgNVHQ4EFgQUzYOi1pqyGwynVsnXHElL
+5S6937QwHwYDVR0jBBgwFoAUzYOi1pqyGwynVsnXHElL5S6937QwDwYDVR0TAQH/
+BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAZ7RoCHvMBTYMpFjijZ1imj7tDAgy
+JB1ulwJSPYc/VUuKCIetx6xXQ5KJHTWvGS3iJP7Uf/zYlsPw22RbsypFSujOAdnA
+KaBqKAL00yiw5l95IL061B9l6BsWEG1ibO0HTOsZw9tmY62qvUiQ+noX8FRkZ0sm
+nU6nrB50j6h2cxFIiVpPkxmA4ZcLCMdJxug0nuyI231VRwz1Xz9NH7QE35Opjv6z
+yzMuVLMvfTbhkNwHDsigJSap+ApIU9tXxbS96iX7GTMFCy8bW/lmjw819u5yvhTs
+uRbMzXBpbnwgQe/mrzj/6FHA2DSnXV8QOtsLAwHBAK2GqI/dzu/7EL/Vxw==
+-----END CERTIFICATE-----\n`;
+
+function reusableFixture(t) {
+  const f = fixture(t);
+  writeFileSync(path.join(f.root, 'ca.pem'), publicTestCA, {mode: 0o600});
+  f.manifest.caHash = createHash('sha256').update(publicTestCA).digest('hex');
+  f.save();
+  const trust = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'goauth-browser-trust-')));
+  t.after(() => rmSync(trust, {recursive: true, force: true}));
+  chmodSync(trust, 0o700);
+  const marker = {version: 1, purpose: 'goauth-browser-reusable-trust',
+    caHash: createHash('sha256').update(new X509Certificate(publicTestCA).raw).digest('hex'), createdAt: new Date(Date.now()-1000).toISOString(),
+    expiresAt: new Date(Date.now()+60*60*1000).toISOString()};
+  const saveMarker = () => writeFileSync(path.join(trust, 'goauth-trust-profile.json'), JSON.stringify(marker), {mode: 0o600});
+  saveMarker();
+  return {...f, trust, marker, saveMarker, env: {...f.env, GOAUTH_BROWSER_REUSE_TRUST_PROFILE: '1',
+    GOAUTH_BROWSER_TRUST_PROFILE: trust, GOAUTH_BROWSER_TRUST_CA_SHA256: marker.caHash}};
+}
+
+test('reusable trust requires explicit owned marker, approved CA and bounded expiry', t => {
+  const f = reusableFixture(t);
+  const accepted = browserFixture(f.env);
+  assert.equal(accepted.profile, f.trust);
+  assert.equal(accepted.reusableTrust, true);
+  for (const invalid of [
+    {...f.env, GOAUTH_BROWSER_REUSE_TRUST_PROFILE: undefined},
+    {...f.env, GOAUTH_BROWSER_TRUST_CA_SHA256: '0'.repeat(64)},
+    {...f.env, GOAUTH_BROWSER_TRUST_PROFILE: path.join(f.root, 'chromium-profile')},
+  ]) assert.throws(() => browserFixture(invalid));
+  f.marker.caHash = '0'.repeat(64); f.saveMarker();
+  assert.throws(() => browserFixture(f.env), /approved CA/);
+  f.marker.caHash = 'f'.repeat(64); f.saveMarker();
+  assert.throws(() => browserFixture({...f.env, GOAUTH_BROWSER_TRUST_CA_SHA256: f.marker.caHash}), /DER fingerprint/);
+  f.marker.caHash = f.env.GOAUTH_BROWSER_TRUST_CA_SHA256;
+  f.marker.purpose = 'personal'; f.saveMarker();
+  assert.throws(() => browserFixture(f.env));
+  f.marker.purpose = 'goauth-browser-reusable-trust';
+  f.marker.expiresAt = new Date(Date.now()-1).toISOString(); f.saveMarker();
+  assert.throws(() => browserFixture(f.env), /validity/);
+  f.marker.expiresAt = new Date(Date.now()+149000).toISOString(); f.saveMarker();
+  assert.throws(() => browserFixture(f.env), /validity/);
+  f.marker.expiresAt = new Date('2100-01-01T00:00:00Z').toISOString(); f.saveMarker();
+  assert.throws(() => browserFixture(f.env), /validity/);
+  f.marker.expiresAt = new Date(Date.now()+60*60*1000).toISOString(); f.saveMarker();
+  chmodSync(f.trust, 0o755);
+  assert.throws(() => browserFixture(f.env), /other users/);
+});
+
+test('reusable trust rejects symlink and shared marker modes', t => {
+  const f = reusableFixture(t);
+  const link = path.join(f.root, 'goauth-browser-trust-link');
+  symlinkSync(f.trust, link);
+  assert.throws(() => browserFixture({...f.env, GOAUTH_BROWSER_TRUST_PROFILE: link}), /canonical/);
+  chmodSync(path.join(f.trust, 'goauth-trust-profile.json'), 0o644);
+  assert.throws(() => browserFixture(f.env), /other users/);
+});
+
+test('default remains fresh persistent context; opt-in uses only isolated child and closes both', async () => {
+  const calls = [];
+  const child = {newPage() { calls.push('child-page'); }, pages() { return []; }, async storageState() { return {cookies: [], origins: []}; }, async close() { calls.push('child-close'); }};
+  const parent = {newPage() { throw new Error('auth must not use persistent parent'); },
+    browser() { return {async newContext(options) { calls.push(['newContext', options]); return child; }}; },
+    async close() { calls.push('parent-close'); }};
+  const chromium = {async launchPersistentContext(profile, options) { calls.push(['launch', profile, options]); return parent; }};
+  const normal = await launchBrowserSession(chromium, {profile: '/fresh'}, '/browser');
+  assert.equal(normal.context, parent);
+  await normal.close();
+  assert.deepEqual(calls.map(c => Array.isArray(c) ? c[0] : c), ['launch', 'parent-close']);
+  calls.length = 0;
+  const isolated = await launchBrowserSession(chromium, {profile: '/trust', reusableTrust: true}, '/browser');
+  assert.equal(isolated.context, child);
+  assert.deepEqual(calls[1], ['newContext', {ignoreHTTPSErrors: false}]);
+  isolated.context.newPage();
+  await isolated.close();
+  assert.deepEqual(calls.map(c => Array.isArray(c) ? c[0] : c), ['launch', 'newContext', 'child-page', 'child-close', 'parent-close']);
+  assert.equal(calls[0][2].chromiumSandbox, true);
+  assert.equal(calls[0][2].ignoreHTTPSErrors, false);
+});
+
+test('failed isolated creation or close still closes the persistent parent', async () => {
+  const calls = [];
+  const parent = {browser() { return {async newContext() { throw new Error('creation failed'); }}; }, async close() { calls.push('parent'); }};
+  await assert.rejects(launchBrowserSession({async launchPersistentContext() { return parent; }}, {profile: '/trust', reusableTrust: true}), /creation failed/);
+  assert.deepEqual(calls, ['parent']);
+  const child = {pages() { return []; }, async storageState() { return {cookies: [], origins: []}; }, async close() { calls.push('child'); throw new Error('close failed'); }};
+  parent.browser = () => ({async newContext() { return child; }});
+  const session = await launchBrowserSession({async launchPersistentContext() { return parent; }}, {profile: '/trust', reusableTrust: true});
+  await assert.rejects(session.close(), /close failed/);
+  assert.deepEqual(calls, ['parent', 'child', 'parent']);
+});
+
+
+
+test('refuses a non-empty isolated context and closes both contexts', async () => {
+  const calls = [];
+  const child = {pages() { return []; }, async storageState() { return {cookies: [{name: 'unexpected'}], origins: []}; }, async close() { calls.push('child'); }};
+  const parent = {browser() { return {async newContext() { return child; }}; }, async close() { calls.push('parent'); }};
+  await assert.rejects(launchBrowserSession({async launchPersistentContext() { return parent; }}, {profile: '/trust', reusableTrust: true}), /without stored state/);
+  assert.deepEqual(calls, ['child', 'parent']);
 });
