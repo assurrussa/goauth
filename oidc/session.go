@@ -13,13 +13,13 @@ import (
 // PolicyStamp is opaque bounded host-owned version data, never permissions.
 // Later reauthentication must not advance an already issued binding's AuthenticatedAt.
 type SessionBinding struct {
-	SubjectID         string
-	SecurityVersion   int64
-	ClientID          string
-	SessionID         string
-	PolicyStamp       string
-	AuthenticatedAt   time.Time
-	AbsoluteExpiresAt time.Time
+	SubjectID         string    `json:"SubjectID"`
+	SecurityVersion   int64     `json:"SecurityVersion"`
+	ClientID          string    `json:"ClientID"`
+	SessionID         string    `json:"SessionID"`
+	PolicyStamp       string    `json:"PolicyStamp"`
+	AuthenticatedAt   time.Time `json:"AuthenticatedAt"`
+	AbsoluteExpiresAt time.Time `json:"AbsoluteExpiresAt"`
 }
 
 // SessionAuthentication contains trusted evidence for the exact authentication
@@ -38,8 +38,8 @@ type SessionAuthentication struct {
 
 // BrowserSession carries the current opaque cookie generation, not the raw cookie.
 type BrowserSession struct {
-	SessionID    string
-	CookieDigest string
+	SessionID    string `json:"SessionID"`
+	CookieDigest string `json:"CookieDigest"`
 }
 
 type SessionAuthorizeRequest struct {
@@ -47,6 +47,20 @@ type SessionAuthorizeRequest struct {
 	Prompt         []string
 	MaxAgeSeconds  *int64
 	BrowserBinding string
+}
+
+// RequestStepUpCompletion proves MFA for one request and its rotated cookie.
+// Only a verified host MFA transaction may create it; it never proves a password.
+type RequestStepUpCompletion struct {
+	SessionID    string
+	CookieDigest string
+	VerifiedAt   time.Time
+}
+
+// SessionStepUpStateStore is an optional capability; old stores remain compatible.
+// Only the verified host MFA transaction may write this exact request marker.
+type SessionStepUpStateStore interface {
+	MarkStepUpComplete(ctx context.Context, challenge, browserBinding string, completion RequestStepUpCompletion) error
 }
 
 // RequestLoginCompletion may only be written by a verified host login transaction.
@@ -116,6 +130,8 @@ type SessionAdmissionResult struct {
 	Account        goauth.Account
 	Projection     SessionProjection
 	Allowed        bool
+	// StepUpRequired affects only new browser authorizations, never existing grants.
+	StepUpRequired bool
 }
 
 // SessionAdmission locks subject -> project -> client -> grant -> sid using the
@@ -148,7 +164,12 @@ type SessionRequest struct {
 	MaxAgeSeconds   *int64
 	BrowserBinding  string
 	LoginCompletion *RequestLoginCompletion
-	ConsumedAt      *time.Time
+	// Interaction is empty or login for password authentication, step_up for MFA.
+	Interaction      string
+	StepUpSession    *BrowserSession
+	StepUpBinding    *SessionBinding
+	StepUpCompletion *RequestStepUpCompletion
+	ConsumedAt       *time.Time
 }
 
 type SessionCode struct {

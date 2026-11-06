@@ -515,3 +515,82 @@ Checks pending: focused synthetic worker/unit tests, isolated PostgreSQL fresh
 and schema14 upgrade/idempotence/tamper/ownership tests, canonical gates,
 independent review. Do not claim ready or release before these pass. Existing
 synchronous senders remain compatible (empty protocol/nil-provider semantics).
+
+
+## Exact-request SSO MFA step-up (v0.17.0)
+
+Review lens: security boundaries and one-time transactional state. Additive
+admission freshness signal applies to new authorizations only. Step-up keeps
+central sid and password binding, rotates cookie generation, and requires its
+own strictly later verified marker. Login and step-up markers never substitute.
+Empty/login remains the old password branch; prompt none creates no pending
+state; forced login/max_age retains password UX. Existing code, refresh and
+UserInfo ignore the new freshness signal. Schema16 persists original browser
+and binding as JSONB plus typed completion fields, and fences immutable request
+fields and one-way completion/consumption. Hosts own freshness policy and UX.
+
+Transition matrix: pending login -> login marker -> consumed; pending step_up ->
+step_up marker on original sid/new cookie -> consumed. Wrong browser, wrong sid,
+wrong interaction, replay, expiry and out-of-order consumption reject. Current
+policy denial consumes a safely completed request without issuing a code.
+Validation: `GO_SHARED_CACHE_ROOT=<shared-cache> make check` passed, including
+formatting, tidy diff, vet, zero lint issues, all unit tests with race/coverage,
+coverage thresholds (root 82.0%, provider 86.7%), and the local clean consumer.
+`go test -tags=integration ./postgres -count=1` passed in an isolated disposable
+database (269.500s). `go test -race -tags=integration ./postgres -run
+'TestSessionStepUp|TestSessionOIDC' -count=1` passed in a separate disposable
+database (37.826s), covering request transitions, marker substitution, SQL
+immutability, schema15 upgrade/idempotence, schema tampering, and existing OIDC.
+An earlier overlapping PostgreSQL run was invalidated by shared-fixture resets;
+these final runs used separate databases. gopls remains attached to the host
+workspace and cannot resolve this independent checkout; package checks above
+provide compilation evidence. Final diff/whitespace and local-path scans passed.
+Follow-up verification on the final security-updated dependency set passed:
+Go1.27.3, brotli1.2.7 and compress1.20.2; `make check integration
+vulnerability-check coverage-aggregate backup-restore-check`. PostgreSQL race
+integration coverage is80.6%, Redis100%; both local clean consumers passed;
+reachable vulnerability count is0; real Compose dump/restore passed. These
+results supersede the earlier missing Redis/backup/vulnerability gates.
+
+Final release verification at `974bd142756d420bf627a1c0a3273cda2bae737d`:
+`make release-readiness VERSION=v0.17.0` passed, including the complete candidate
+gate and anonymous exact-version consumer with fresh caches and no replacement.
+Real Chromium 157.0.8103.38 / Playwright 1.62.1 HTTPS acceptance passed with
+sandbox and certificate verification enabled. The separately approved CA was
+imported manually into the disposable profile. Fresh untrusted Chrome rejected
+the CA; the trusted profile rejected a wrong hostname. Owned services, keys and
+profiles were removed afterward. Release notes are published for v0.17.0;
+production deployment was not performed.
+
+Final fixture correction: the internal prepared-credential lock-wait test now
+resets its explicit disposable schema before migration, matching other shared
+PostgreSQL tests. A deliberately tampered migration checksum reproduced its
+prior failure; the same fixture passed with the correction. Production checksum
+verification is unchanged. Native AuthHub HTTPS acceptance passed enrollment,
+full MFA, stale-24h code-only confirmation, invalid-code rejection, real current
+TOTP, fresh verification reuse and mobile layout. Host acceptance also passed
+against the public exact SHA without workspace/replacement, followed by the
+released v0.17.0 pin and build. The post-release PR includes a documentation-only
+status correction; the published runtime source and tag remain unchanged.
+
+### Fresh rerun and positive max_age coverage
+
+The requested fresh run exposed a coverage gap, not a runtime defect: stale MFA
+combined with a positive max_age, including password freshness expiring while
+step-up is open. New provider tests prove password-flow selection, successful
+MFA-only continuation while password freshness remains valid, and refusal to
+issue a code after it expires. A new authorization then requires password
+completion. Targeted race tests and the full unit/race/lint/vet gate passed;
+provider coverage is 86.8%.
+
+Fresh PostgreSQL17/Redis integration, including isolated gateway tests, passed
+(PG81.4%, Redis100%). Both PostgreSQL18-only constraint guards passed without
+skips. Verified HTTPS browser acceptance passed again with sandbox and TLS
+checks enabled; untrusted-CA and wrong-hostname browser controls also passed.
+The initial restore invocation was rejected by the disposable-project name
+guard; correcting only fixture configuration passed actual dump/restore and
+the anonymous public v0.17.0 consumer. Host AuthHub make check also passed anew
+without test-cache reuse (canonical1282.813s), as did its actual HTTPS MFA flow,
+build, module verification and reachable vulnerability analysis. Runtime source,
+published tag and host dependency pin are unchanged; only tests and this record
+are updated in the PR.
