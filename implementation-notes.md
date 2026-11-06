@@ -572,3 +572,25 @@ TOTP, fresh verification reuse and mobile layout. Host acceptance also passed
 against the public exact SHA without workspace/replacement, followed by the
 released v0.17.0 pin and build. The post-release PR includes a documentation-only
 status correction; the published runtime source and tag remain unchanged.
+
+### Fresh rerun and positive max_age coverage
+
+The requested fresh run exposed a coverage gap, not a runtime defect: stale MFA
+combined with a positive max_age, including password freshness expiring while
+step-up is open. New provider tests prove password-flow selection, successful
+MFA-only continuation while password freshness remains valid, and refusal to
+issue a code after it expires. A new authorization then requires password
+completion. Targeted race tests and the full unit/race/lint/vet gate passed;
+provider coverage is 86.8%.
+
+Fresh PostgreSQL17/Redis integration, including isolated gateway tests, passed
+(PG81.4%, Redis100%). Both PostgreSQL18-only constraint guards passed without
+skips. Verified HTTPS browser acceptance passed again with sandbox and TLS
+checks enabled; untrusted-CA and wrong-hostname browser controls also passed.
+The initial restore invocation was rejected by the disposable-project name
+guard; correcting only fixture configuration passed actual dump/restore and
+the anonymous public v0.17.0 consumer. Host AuthHub make check also passed anew
+without test-cache reuse (canonical1282.813s), as did its actual HTTPS MFA flow,
+build, module verification and reachable vulnerability analysis. Runtime source,
+published tag and host dependency pin are unchanged; only tests and this record
+are updated in the PR.

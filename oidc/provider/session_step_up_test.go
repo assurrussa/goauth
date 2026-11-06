@@ -160,3 +160,135 @@ func TestSessionStepUpFailsClosedWithoutStoreCapability(t *testing.T) {
 	require.Empty(t, h.requests)
 	require.Empty(t, h.codes)
 }
+
+func TestSessionStepUpPositiveMaxAgeSelectsInteraction(t *testing.T) {
+	for _, test := range []struct {
+		name        string
+		passwordAge time.Duration
+		stepUp      bool
+	}{
+		{name: "password already stale", passwordAge: 61 * time.Second},
+		{name: "password still fresh", passwordAge: 30 * time.Second, stepUp: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newSessionFixture(t)
+			h.admission.StepUpRequired = true
+			h.admission.Binding.AuthenticatedAt = h.now.Add(-test.passwordAge)
+			h.admission.Binding.AbsoluteExpiresAt = h.admission.Binding.AuthenticatedAt.Add(7 * 24 * time.Hour)
+			original := h.admission.Binding
+			req := h.authorizeRequest()
+			maxAge := int64(60)
+			req.MaxAgeSeconds = &maxAge
+			challenge, pending := authorizeMaxAgeInteraction(t, h, req)
+			require.Empty(t, h.codes)
+			require.Equal(t, req.MaxAgeSeconds, pending.MaxAgeSeconds)
+			require.Nil(t, pending.LoginCompletion)
+			require.Nil(t, pending.StepUpCompletion)
+			if !test.stepUp {
+				require.Contains(t, []string{"", testSessionLogin}, pending.Interaction)
+				require.Nil(t, pending.StepUpSession)
+				require.Nil(t, pending.StepUpBinding)
+				h.now = h.now.Add(time.Second)
+				err := h.InOwnedAuthTransaction(t.Context(), func(ctx context.Context) error {
+					return h.MarkStepUpComplete(ctx, challenge, pending.BrowserBinding, oidc.RequestStepUpCompletion{
+						SessionID: h.browser().SessionID, CookieDigest: strings.Repeat("n", 64), VerifiedAt: h.now,
+					})
+				})
+				require.ErrorIs(t, err, oidc.ErrSessionStateConflict)
+				result, err := h.service.ContinueAuthorization(t.Context(), challenge, h.browser(), pending.BrowserBinding)
+				require.Error(t, err)
+				require.Nil(t, result)
+				require.Empty(t, h.codes)
+				return
+			}
+			require.Equal(t, sessionInteractionStepUp, pending.Interaction)
+			require.Equal(t, h.browser(), pending.StepUpSession)
+			require.Equal(t, original, *pending.StepUpBinding)
+			h.now = h.now.Add(time.Second)
+			h.cookie = strings.Repeat("n", 64)
+			require.NoError(t, h.InOwnedAuthTransaction(t.Context(), func(ctx context.Context) error {
+				return h.MarkStepUpComplete(ctx, challenge, pending.BrowserBinding, oidc.RequestStepUpCompletion{
+					SessionID: h.browser().SessionID, CookieDigest: h.cookie, VerifiedAt: h.now,
+				})
+			}))
+			h.admission.StepUpRequired = false
+			result, err := h.service.ContinueAuthorization(t.Context(), challenge, h.browser(), pending.BrowserBinding)
+			require.NoError(t, err)
+			target, err := url.Parse(result.RedirectURI)
+			require.NoError(t, err)
+			code := h.codes[target.Query().Get(responseTypeCode)]
+			require.NotEmpty(t, code.Code)
+			require.Equal(t, original, code.Binding)
+			require.Equal(t, original.AuthenticatedAt, code.AuthenticatedAt)
+			require.Nil(t, h.requests[challenge].LoginCompletion, "MFA must not manufacture password proof")
+		})
+	}
+}
+
+func TestSessionStepUpPositiveMaxAgeExpiresBeforeContinuation(t *testing.T) {
+	h := newSessionFixture(t)
+	h.admission.StepUpRequired = true
+	h.admission.Binding.AuthenticatedAt = h.now.Add(-59 * time.Second)
+	h.admission.Binding.AbsoluteExpiresAt = h.admission.Binding.AuthenticatedAt.Add(7 * 24 * time.Hour)
+	original := h.admission.Binding
+	req := h.authorizeRequest()
+	maxAge := int64(60)
+	req.MaxAgeSeconds = &maxAge
+	challenge, pending := authorizeMaxAgeInteraction(t, h, req)
+	require.Equal(t, sessionInteractionStepUp, pending.Interaction)
+	require.Equal(t, original, *pending.StepUpBinding)
+	h.now = h.now.Add(500 * time.Millisecond)
+	h.cookie = strings.Repeat("n", 64)
+	require.NoError(t, h.InOwnedAuthTransaction(t.Context(), func(ctx context.Context) error {
+		return h.MarkStepUpComplete(ctx, challenge, pending.BrowserBinding, oidc.RequestStepUpCompletion{
+			SessionID: h.browser().SessionID, CookieDigest: h.cookie, VerifiedAt: h.now,
+		})
+	}))
+	h.admission.StepUpRequired = false
+	// The MFA proof and request remain live; only password freshness expires.
+	h.now = h.now.Add(1500 * time.Millisecond)
+	require.True(t, h.now.Before(pending.ExpiresAt))
+	require.Equal(t, original, h.admission.Binding)
+	result, err := h.service.ContinueAuthorization(t.Context(), challenge, h.browser(), pending.BrowserBinding)
+	require.Error(t, err)
+	require.Nil(t, result)
+	require.Empty(t, h.codes)
+	// A new authorization must enter the password branch even though MFA is fresh.
+	loginChallenge, login := authorizeMaxAgeInteraction(t, h, req)
+	require.Contains(t, []string{"", testSessionLogin}, login.Interaction)
+	require.Nil(t, login.StepUpSession)
+	require.Nil(t, login.StepUpBinding)
+	require.Nil(t, login.LoginCompletion)
+	h.now = h.now.Add(time.Second)
+	h.cookie = strings.Repeat("p", 64)
+	h.admission.Binding.AuthenticatedAt = h.now
+	require.NoError(t, h.InOwnedAuthTransaction(t.Context(), func(ctx context.Context) error {
+		return h.MarkLoginComplete(ctx, loginChallenge, login.BrowserBinding, oidc.RequestLoginCompletion{
+			SessionID: h.browser().SessionID, CookieDigest: h.cookie, AuthenticatedAt: h.now,
+		})
+	}))
+	result, err = h.service.ContinueAuthorization(t.Context(), loginChallenge, h.browser(), login.BrowserBinding)
+	require.NoError(t, err)
+	target, err := url.Parse(result.RedirectURI)
+	require.NoError(t, err)
+	code := h.codes[target.Query().Get(responseTypeCode)]
+	require.NotEmpty(t, code.Code)
+	require.Equal(t, h.now, code.Binding.AuthenticatedAt)
+	require.NotEqual(t, original.AuthenticatedAt, code.Binding.AuthenticatedAt)
+}
+
+func authorizeMaxAgeInteraction(t *testing.T, h *sessionFixture,
+	req oidc.SessionAuthorizeRequest,
+) (string, oidc.SessionRequest) {
+	t.Helper()
+	result, err := h.service.Authorize(t.Context(), req, h.browser())
+	require.NoError(t, err)
+	target, err := url.Parse(result.RedirectURI)
+	require.NoError(t, err)
+	require.Empty(t, target.Query().Get(responseTypeCode))
+	challenge := target.Query().Get("oidc_challenge")
+	require.NotEmpty(t, challenge)
+	pending, exists := h.requests[challenge]
+	require.True(t, exists)
+	return challenge, pending
+}
