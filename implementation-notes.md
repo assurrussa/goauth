@@ -517,7 +517,7 @@ independent review. Do not claim ready or release before these pass. Existing
 synchronous senders remain compatible (empty protocol/nil-provider semantics).
 
 
-## Exact-request SSO MFA step-up (local candidate)
+## Exact-request SSO MFA step-up (v0.17.0)
 
 Review lens: security boundaries and one-time transactional state. Additive
 admission freshness signal applies to new authorizations only. Step-up keeps
@@ -527,7 +527,7 @@ Empty/login remains the old password branch; prompt none creates no pending
 state; forced login/max_age retains password UX. Existing code, refresh and
 UserInfo ignore the new freshness signal. Schema16 persists original browser
 and binding as JSONB plus typed completion fields, and fences immutable request
-fields and one-way completion/consumption. No dependency, CI or publication work.
+fields and one-way completion/consumption. Hosts own freshness policy and UX.
 
 Transition matrix: pending login -> login marker -> consumed; pending step_up ->
 step_up marker on original sid/new cookie -> consumed. Wrong browser, wrong sid,
@@ -552,12 +552,15 @@ integration coverage is80.6%, Redis100%; both local clean consumers passed;
 reachable vulnerability count is0; real Compose dump/restore passed. These
 results supersede the earlier missing Redis/backup/vulnerability gates.
 
-Browser sandbox launch and an untrusted-profile HTTPS negative control passed
-on Chromium157.0.8103.38 / Playwright1.62.1. Real positive browser acceptance is
-pending the separately authorized profile-local CA import required by the
-browser fixture contract; the native file picker needs the fixture owner's
-manual action. No trust bypass, publication or deployment was performed.
-Candidate and published readiness are not claimed before that browser gate.
+Final release verification at `974bd142756d420bf627a1c0a3273cda2bae737d`:
+`make release-readiness VERSION=v0.17.0` passed, including the complete candidate
+gate and anonymous exact-version consumer with fresh caches and no replacement.
+Real Chromium 157.0.8103.38 / Playwright 1.62.1 HTTPS acceptance passed with
+sandbox and certificate verification enabled. The separately approved CA was
+imported manually into the disposable profile. Fresh untrusted Chrome rejected
+the CA; the trusted profile rejected a wrong hostname. Owned services, keys and
+profiles were removed afterward. Release notes are published for v0.17.0;
+production deployment was not performed.
 
 Final fixture correction: the internal prepared-credential lock-wait test now
 resets its explicit disposable schema before migration, matching other shared
@@ -565,5 +568,7 @@ PostgreSQL tests. A deliberately tampered migration checksum reproduced its
 prior failure; the same fixture passed with the correction. Production checksum
 verification is unchanged. Native AuthHub HTTPS acceptance passed enrollment,
 full MFA, stale-24h code-only confirmation, invalid-code rejection, real current
-TOTP, fresh verification reuse and mobile layout. Candidate browser and exact-tag
-publication gates remain pending; no deployment is claimed.
+TOTP, fresh verification reuse and mobile layout. Host acceptance also passed
+against the public exact SHA without workspace/replacement, followed by the
+released v0.17.0 pin and build. The post-release PR includes a documentation-only
+status correction; the published runtime source and tag remain unchanged.

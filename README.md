@@ -5,10 +5,9 @@ sessions, recovery, encrypted notification delivery, OIDC and RBAC.
 PostgreSQL stores canonical auth state; net/http and Fiber are optional HTTP
 adapters, and Redis is needed only for optional OIDC one-time state.
 
-The published baseline is [`v0.16.0`](https://github.com/assurrussa/goauth/releases/tag/v0.16.0)
-(schema 15). The selected `v0.17.0` candidate adds exact-request session MFA
-step-up and advances canonical storage to schema 16. Hosts own factor freshness
-policy and confirmation UX; existing code, refresh and UserInfo behavior remains
+The published baseline is [`v0.17.0`](https://github.com/assurrussa/goauth/releases/tag/v0.17.0)
+(schema 16). It adds exact-request session MFA step-up and the additive
+schema 15→16 migration. Hosts own factor freshness policy and confirmation UX; existing code, refresh and UserInfo behavior remains
 unchanged. Coordinate writers and retain verified backups as described in
 [RELEASING.md](RELEASING.md).
 The [v0.6 migration guide](docs/v0.6-migration.md) and

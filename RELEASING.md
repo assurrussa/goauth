@@ -6,10 +6,10 @@ acceptance criteria and sequence of the first public release.
 
 ## Version state
 
-The published baseline is [`v0.16.0`](https://github.com/assurrussa/goauth/releases/tag/v0.16.0),
-using schema 15. The selected `v0.17.0` candidate adds opt-in, exact-request
-session MFA step-up and the additive schema 15→16 migration. Existing requests
-retain their password interaction; no factor freshness is fabricated or
+The published baseline is [`v0.17.0`](https://github.com/assurrussa/goauth/releases/tag/v0.17.0),
+using schema 16. It adds opt-in, exact-request session MFA step-up and the
+additive schema 15→16 migration. Existing requests retain their password
+interaction; no factor freshness is fabricated or
 backfilled by the library. Hosts own freshness policy, factor verification and
 cookie transport. See [session-bound OIDC](docs/session-bound-oidc.md#exact-request-mfa-step-up).
 
@@ -20,10 +20,14 @@ before considering restoration. Password auth_time, central sid and absolute
 session expiry are not extended by step-up. Security dependency fixes require
 Go 1.27.3 or newer and a rebuilt host binary.
 
-Before tagging, the final source must pass `make release-candidate-readiness`;
-after publication, run `make release-readiness VERSION=v0.17.0` and verify host
-adoption without workspace or replacement overrides. Candidate checks do not
-establish publication or production deployment.
+Release source `974bd142756d420bf627a1c0a3273cda2bae737d` passed
+`make release-readiness VERSION=v0.17.0`, including the complete candidate gate,
+real PostgreSQL restore, verified HTTPS browser acceptance and an anonymous
+consumer with fresh caches. The consumer confirmed the exact published version
+without replacement. AuthHub acceptance passed against this source through the
+public proxy without workspace or replacement overrides, followed by a build
+with the released pin. Production deployment is separate. This post-release
+documentation update does not change the immutable tag or runtime source.
 
 ### Historical schema 14→15 preparation record
 
