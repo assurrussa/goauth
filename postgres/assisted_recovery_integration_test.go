@@ -222,6 +222,7 @@ func TestAssistedRecoveryChangesBothCredentialsOnceAndRevokesPriorAuthority(t *t
 // version-15 marker while deleting version 14 does not reconstruct schema 13.
 func removeNotificationGatewayFixtureSchema(t *testing.T, db *sql.DB) {
 	t.Helper()
+	removeSessionStepUpFixtureSchema(t, db)
 	var owned int
 	require.NoError(t, db.QueryRowContext(t.Context(), `SELECT count(*) FROM auth_notification_deliveries
  WHERE gateway_receipt_id IS NOT NULL OR state='gateway_accepted'`).Scan(&owned))

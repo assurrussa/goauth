@@ -299,7 +299,8 @@ func (h *sessionFixture) MarkLoginComplete(ctx context.Context, key, browser str
 		return err
 	}
 	r, ok := h.requests[key]
-	if !ok || r.LoginCompletion != nil || r.ConsumedAt != nil || !h.now.Before(r.ExpiresAt) || r.BrowserBinding != browser {
+	if !ok || r.Interaction == "step_up" || r.LoginCompletion != nil || r.ConsumedAt != nil ||
+		!h.now.Before(r.ExpiresAt) || r.BrowserBinding != browser {
 		return oidc.ErrSessionStateConflict
 	}
 	r.LoginCompletion = &v
@@ -440,3 +441,18 @@ var (
 	_ oidc.SessionStateStore = (*sessionFixture)(nil)
 	_ oidc.SessionAdmission  = (*sessionFixture)(nil)
 )
+
+func (h *sessionFixture) MarkStepUpComplete(ctx context.Context, key, browser string, v oidc.RequestStepUpCompletion) error {
+	if err := h.write(ctx, "step_up_marker"); err != nil {
+		return err
+	}
+	r, ok := h.requests[key]
+	if !ok || r.Interaction != "step_up" || r.StepUpSession == nil || r.StepUpCompletion != nil || r.ConsumedAt != nil ||
+		!h.now.Before(r.ExpiresAt) || r.BrowserBinding != browser || v.SessionID != r.StepUpSession.SessionID ||
+		v.CookieDigest == r.StepUpSession.CookieDigest || !v.VerifiedAt.After(r.RequestedAt) || v.VerifiedAt.After(h.now) {
+		return oidc.ErrSessionStateConflict
+	}
+	r.StepUpCompletion = &v
+	h.requests[key] = r
+	return nil
+}

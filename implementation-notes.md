@@ -515,3 +515,55 @@ Checks pending: focused synthetic worker/unit tests, isolated PostgreSQL fresh
 and schema14 upgrade/idempotence/tamper/ownership tests, canonical gates,
 independent review. Do not claim ready or release before these pass. Existing
 synchronous senders remain compatible (empty protocol/nil-provider semantics).
+
+
+## Exact-request SSO MFA step-up (local candidate)
+
+Review lens: security boundaries and one-time transactional state. Additive
+admission freshness signal applies to new authorizations only. Step-up keeps
+central sid and password binding, rotates cookie generation, and requires its
+own strictly later verified marker. Login and step-up markers never substitute.
+Empty/login remains the old password branch; prompt none creates no pending
+state; forced login/max_age retains password UX. Existing code, refresh and
+UserInfo ignore the new freshness signal. Schema16 persists original browser
+and binding as JSONB plus typed completion fields, and fences immutable request
+fields and one-way completion/consumption. No dependency, CI or publication work.
+
+Transition matrix: pending login -> login marker -> consumed; pending step_up ->
+step_up marker on original sid/new cookie -> consumed. Wrong browser, wrong sid,
+wrong interaction, replay, expiry and out-of-order consumption reject. Current
+policy denial consumes a safely completed request without issuing a code.
+Validation: `GO_SHARED_CACHE_ROOT=<shared-cache> make check` passed, including
+formatting, tidy diff, vet, zero lint issues, all unit tests with race/coverage,
+coverage thresholds (root 82.0%, provider 86.7%), and the local clean consumer.
+`go test -tags=integration ./postgres -count=1` passed in an isolated disposable
+database (269.500s). `go test -race -tags=integration ./postgres -run
+'TestSessionStepUp|TestSessionOIDC' -count=1` passed in a separate disposable
+database (37.826s), covering request transitions, marker substitution, SQL
+immutability, schema15 upgrade/idempotence, schema tampering, and existing OIDC.
+An earlier overlapping PostgreSQL run was invalidated by shared-fixture resets;
+these final runs used separate databases. gopls remains attached to the host
+workspace and cannot resolve this independent checkout; package checks above
+provide compilation evidence. Final diff/whitespace and local-path scans passed.
+Follow-up verification on the final security-updated dependency set passed:
+Go1.27.3, brotli1.2.7 and compress1.20.2; `make check integration
+vulnerability-check coverage-aggregate backup-restore-check`. PostgreSQL race
+integration coverage is80.6%, Redis100%; both local clean consumers passed;
+reachable vulnerability count is0; real Compose dump/restore passed. These
+results supersede the earlier missing Redis/backup/vulnerability gates.
+
+Browser sandbox launch and an untrusted-profile HTTPS negative control passed
+on Chromium157.0.8103.38 / Playwright1.62.1. Real positive browser acceptance is
+pending the separately authorized profile-local CA import required by the
+browser fixture contract; the native file picker needs the fixture owner's
+manual action. No trust bypass, publication or deployment was performed.
+Candidate and published readiness are not claimed before that browser gate.
+
+Final fixture correction: the internal prepared-credential lock-wait test now
+resets its explicit disposable schema before migration, matching other shared
+PostgreSQL tests. A deliberately tampered migration checksum reproduced its
+prior failure; the same fixture passed with the correction. Production checksum
+verification is unchanged. Native AuthHub HTTPS acceptance passed enrollment,
+full MFA, stale-24h code-only confirmation, invalid-code rejection, real current
+TOTP, fresh verification reuse and mobile layout. Candidate browser and exact-tag
+publication gates remain pending; no deployment is claimed.

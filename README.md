@@ -5,11 +5,12 @@ sessions, recovery, encrypted notification delivery, OIDC and RBAC.
 PostgreSQL stores canonical auth state; net/http and Fiber are optional HTTP
 adapters, and Redis is needed only for optional OIDC one-time state.
 
-The latest published release is [`v0.15.0`](https://github.com/assurrussa/goauth/releases/tag/v0.15.0)
-(schema 14). The selected `v0.16.0` candidate is not yet published; it advances
-canonical storage to schema 15 for managed notification queue ownership and
-receipt reconciliation. Upgrade from schema 14 requires coordinated workers,
-verified backups and the rollout and rollback plan in [RELEASING.md](RELEASING.md).
+The published baseline is [`v0.16.0`](https://github.com/assurrussa/goauth/releases/tag/v0.16.0)
+(schema 15). The selected `v0.17.0` candidate adds exact-request session MFA
+step-up and advances canonical storage to schema 16. Hosts own factor freshness
+policy and confirmation UX; existing code, refresh and UserInfo behavior remains
+unchanged. Coordinate writers and retain verified backups as described in
+[RELEASING.md](RELEASING.md).
 The [v0.6 migration guide](docs/v0.6-migration.md) and
 [v0.5 migration guide](docs/v0.5-migration.md) describe historical transitions,
 not the complete current upgrade path.

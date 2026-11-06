@@ -102,6 +102,8 @@ func sessionError(code string) *oidc.OAuthError {
 
 func sessionUnavailable(err error) error { return fmt.Errorf("session OIDC operation failed: %w", err) }
 
+const sessionInteractionStepUp = "step_up"
+
 const sessionErrorInvalidRequest = "invalid_request"
 
 var errSessionExpired = errors.New("session OIDC result expired before delivery")
@@ -135,7 +137,8 @@ func (s *SessionService) Authorize(ctx context.Context,
 		}
 		ready := validAdmission(current, nil, s.now()) && browser != nil && current.Binding.SessionID == browser.SessionID
 		forced := slices.Contains(req.Prompt, "login") || (req.MaxAgeSeconds != nil && *req.MaxAgeSeconds == 0)
-		if ready && !forced && freshAuthentication(current.Binding.AuthenticatedAt, req.MaxAgeSeconds, s.now()) {
+		passwordFresh := ready && !forced && freshAuthentication(current.Binding.AuthenticatedAt, req.MaxAgeSeconds, s.now())
+		if passwordFresh && !current.StepUpRequired {
 			result, deadline, err = s.issueCode(tx, req.AuthorizeRequest, scopes, current.Binding)
 			if err == nil && !freshAuthentication(current.Binding.AuthenticatedAt, req.MaxAgeSeconds, s.now()) {
 				return errSessionExpired
@@ -151,6 +154,12 @@ func (s *SessionService) Authorize(ctx context.Context,
 		if !validDigest(req.BrowserBinding) || current.ClientRevision <= 0 {
 			denial = sessionError(sessionErrorInvalidRequest)
 			return nil
+		}
+		stepUp := passwordFresh && current.StepUpRequired
+		if stepUp {
+			if _, capable := s.state.(oidc.SessionStepUpStateStore); !capable {
+				return errors.New("session state store does not support step-up")
+			}
 		}
 		challenge, err := s.base.generateToken()
 		if err != nil {
@@ -168,6 +177,15 @@ func (s *SessionService) Authorize(ctx context.Context,
 			Prompt:         slices.Clone(req.Prompt),
 			MaxAgeSeconds:  req.MaxAgeSeconds,
 			BrowserBinding: req.BrowserBinding,
+		}
+		if stepUp {
+			pending.Interaction = sessionInteractionStepUp
+			original := *browser
+			binding := current.Binding
+			pending.StepUpSession = &original
+			pending.StepUpBinding = &binding
+			deadline = minTime(now.Add(3*time.Minute), binding.AbsoluteExpiresAt)
+			pending.ExpiresAt = deadline
 		}
 		if err := s.state.SaveRequest(tx, pending); err != nil {
 			return err
@@ -209,7 +227,8 @@ func (s *SessionService) ContinueAuthorization(ctx context.Context,
 	var denial *oidc.OAuthError
 	err = s.owned(ctx, func(tx context.Context) error {
 		current, err := s.admission.Lock(tx, oidc.SessionAdmissionRequest{
-			ClientID: hint.ClientID, SessionID: browser.SessionID, Browser: browser, ClientRevision: hint.ClientRevision,
+			ClientID: hint.ClientID, SessionID: browser.SessionID, Browser: browser,
+			ClientRevision: hint.ClientRevision, Expected: hint.StepUpBinding,
 		})
 		if err != nil {
 			return err
@@ -234,8 +253,7 @@ func (s *SessionService) ContinueAuthorization(ctx context.Context,
 			// No durable effect is intended: rollback the tentative consumption.
 			return oidc.ErrSessionStateConflict
 		}
-		if current.ClientRevision != record.ClientRevision || !validAdmission(current, nil, s.now()) ||
-			current.Binding.SessionID != browser.SessionID {
+		if !continuationAdmissionValid(current, record, browser, s.now()) {
 			// This request is terminal, without creating a code or grant. Use only
 			// the consumed record's state and withhold output until confirmed commit.
 			deadline = record.ExpiresAt
@@ -249,7 +267,11 @@ func (s *SessionService) ContinueAuthorization(ctx context.Context,
 			return nil
 		}
 		binding := current.Binding
-		binding.AuthenticatedAt = record.LoginCompletion.AuthenticatedAt
+		if record.Interaction == sessionInteractionStepUp {
+			binding = *record.StepUpBinding
+		} else {
+			binding.AuthenticatedAt = record.LoginCompletion.AuthenticatedAt
+		}
 		if !freshAuthentication(binding.AuthenticatedAt, record.MaxAgeSeconds, s.now()) || !validBinding(binding, s.now()) {
 			return oidc.ErrSessionStateConflict
 		}
@@ -803,6 +825,14 @@ func requestCompletionMatches(record oidc.SessionRequest,
 	browserBinding string,
 	now time.Time,
 ) bool {
+	if record.Interaction == sessionInteractionStepUp {
+		return stepUpCompletionMatches(record, browser, browserBinding, now)
+	}
+
+	if record.Interaction != "" && record.Interaction != "login" || record.StepUpCompletion != nil ||
+		record.StepUpSession != nil || record.StepUpBinding != nil {
+		return false
+	}
 	mark := record.LoginCompletion
 	return browser != nil && mark != nil && record.ConsumedAt == nil && now.Before(record.ExpiresAt) &&
 		validDigest(browserBinding) && subtleStringCompare(record.BrowserBinding, browserBinding) &&
@@ -847,4 +877,27 @@ func validRefreshSnapshot(token oidc.SessionRefresh) bool {
 	return token.SubjectID == b.SubjectID && token.ClientID == b.ClientID && token.SecurityVersion == b.SecurityVersion &&
 		token.AuthenticatedAt.Equal(b.AuthenticatedAt) && validSessionScopes(token.Scopes) && canonicalUUID(token.FamilyID) &&
 		!token.CreatedAt.IsZero() && token.ExpiresAt.After(token.CreatedAt) && !token.ExpiresAt.After(b.AbsoluteExpiresAt)
+}
+
+func continuationAdmissionValid(current oidc.SessionAdmissionResult, record oidc.SessionRequest,
+	browser *oidc.BrowserSession, now time.Time,
+) bool {
+	return current.ClientRevision == record.ClientRevision && validAdmission(current, nil, now) &&
+		current.Binding.SessionID == browser.SessionID && !current.StepUpRequired &&
+		(record.Interaction != sessionInteractionStepUp || validAdmission(current, record.StepUpBinding, now))
+}
+
+func stepUpCompletionMatches(record oidc.SessionRequest, browser *oidc.BrowserSession,
+	browserBinding string, now time.Time,
+) bool {
+	mark, original, binding := record.StepUpCompletion, record.StepUpSession, record.StepUpBinding
+	return browser != nil && mark != nil && original != nil && binding != nil && record.LoginCompletion == nil &&
+		record.ConsumedAt == nil && now.Before(record.ExpiresAt) && validBinding(*binding, now) &&
+		binding.ClientID == record.ClientID && binding.SessionID == original.SessionID &&
+		mark.SessionID == original.SessionID && browser.SessionID == original.SessionID &&
+		validDigest(browserBinding) && subtleStringCompare(record.BrowserBinding, browserBinding) &&
+		validDigest(original.CookieDigest) && validDigest(browser.CookieDigest) &&
+		!subtleStringCompare(original.CookieDigest, browser.CookieDigest) &&
+		subtleStringCompare(mark.CookieDigest, browser.CookieDigest) &&
+		mark.VerifiedAt.After(record.RequestedAt) && mark.VerifiedAt.Before(record.ExpiresAt) && !mark.VerifiedAt.After(now)
 }

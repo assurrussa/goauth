@@ -25,6 +25,7 @@ func TestPreparedCredentialExpiresDuringRealSubjectLockWait(t *testing.T) {
 	db, err := sql.Open("pgx", dsn)
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
+	require.NoError(t, Down(t.Context(), db, ConfirmResetAuthState))
 	require.NoError(t, Migrate(t.Context(), db))
 	fixture, err := testkit.NewRuntime()
 	require.NoError(t, err)

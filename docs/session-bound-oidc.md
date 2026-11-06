@@ -106,6 +106,40 @@ output. Expiry detected by the in-transaction check rolls consumption back;
 expiry detected only after confirmed commit may leave the terminal consumption
 committed without delivery.
 
+## Exact-request MFA step-up
+
+`SessionAdmissionResult.StepUpRequired` is independent of `Allowed`: the host
+sets it when a live session needs MFA freshness for a new SSO authorization.
+The host owns enrollment, the freshness period, factor revision and verification;
+GoAuth does not impose a 24-hour policy. This flag never invalidates an existing
+code, refresh grant or UserInfo request. It does not change `auth_time` or `amr`.
+
+When ordinary admission and password freshness pass, the provider creates an
+`Interaction: "step_up"` request instead of a code. It saves `StepUpSession`
+(original sid and cookie digest) and `StepUpBinding` (original password evidence).
+The request expires after three minutes, capped by the sid absolute end.
+`prompt=none` returns `login_required` without pending state. Forced login or
+expired `max_age` follows the ordinary password interaction instead.
+
+The host verifies MFA and, in the same owned transaction, revalidates request,
+subject, factor revision and original sid/cookie; rotates the cookie within that
+same sid; records central MFA freshness; and calls the optional
+`SessionStepUpStateStore.MarkStepUpComplete` with `RequestStepUpCompletion`.
+`VerifiedAt` must be strictly after `RequestedAt`, before request expiry, and
+no later than the current clock. A password completion cannot satisfy step-up,
+and a step-up completion cannot satisfy a password interaction. An empty or
+`"login"` interaction retains the existing password contract. Stores lacking the
+optional capability fail closed when step-up is requested.
+
+Continuation requires the original sid and a changed cookie generation matching
+the exact step-up marker, unchanged immutable binding, and current admission
+with `StepUpRequired: false`. Issued code/family authentication time remains the
+original password time. The host must never manufacture `RequestLoginCompletion`
+for code-only MFA. Cookie and redirect release still wait for confirmed commit.
+Schema 16 adds durable interaction/binding/marker fields and immutable one-way
+SQL guards; existing password requests remain valid after migration. Restart all
+writers together; older binaries reject schema 16.
+
 ## Authentication methods
 
 `SessionAdmissionResult.Authentication` is optional trusted, session-bound

@@ -12,9 +12,16 @@ import (
 
 const publicSessionCanonicalLogin = "canonical"
 
+var _ oidc.SessionStepUpStateStore = (*postgres.SessionOIDCState)(nil)
+
 var _ oidc.SessionStateStore = (*postgres.SessionOIDCState)(nil)
 
 var (
+	_ = oidc.SessionRequest{
+		Interaction: "step_up", StepUpSession: &oidc.BrowserSession{}, StepUpBinding: &oidc.SessionBinding{},
+		StepUpCompletion: &oidc.RequestStepUpCompletion{VerifiedAt: time.Now()},
+	}
+	_ = oidc.SessionAdmissionResult{StepUpRequired: true}
 	_ = oidc.MFAEnrollment{Version: 1, Enrolled: false, SetupAvailable: true}
 	_ = oidc.SessionAdmissionResult{Authentication: &oidc.SessionAuthentication{Methods: []string{"pwd"}}}
 	_ = oidc.SessionProjection{MFA: &oidc.MFAEnrollment{Version: 1}}

@@ -186,8 +186,22 @@ func verifySessionOIDCGuards(ctx context.Context, q queryRower) error {
 		{"auth_oidc_code_guard", sessionOIDCCodesTable},
 	}
 	for _, guard := range guards {
-		pattern := regexp.MustCompile(`(?s)CREATE FUNCTION ` + guard.name + `\(\).*?AS \$guard\$(.*?)\$guard\$;`)
-		body := pattern.FindSubmatch(data)
+		guardData := data
+		if guard.name == "auth_oidc_request_guard" {
+			var upgraded bool
+			if err := q.QueryRowContext(ctx,
+				`SELECT EXISTS(SELECT 1 FROM goauth_migration_history WHERE version=16)`).Scan(&upgraded); err != nil {
+				return err
+			}
+			if upgraded {
+				guardData, err = migrationFiles.ReadFile(sessionStepUpMigration)
+				if err != nil {
+					return err
+				}
+			}
+		}
+		pattern := regexp.MustCompile(`(?s)CREATE (?:OR REPLACE )?FUNCTION ` + guard.name + `\(\).*?AS \$guard\$(.*?)\$guard\$;`)
+		body := pattern.FindSubmatch(guardData)
 		if len(body) != 2 {
 			return fmt.Errorf("missing embedded OIDC guard %s", guard.name)
 		}

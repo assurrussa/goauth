@@ -203,6 +203,17 @@ nonce,ciphertext,additional_data,created_at,delete_after,next_attempt_at)
  VALUES($1,$2,'legacy',now()+interval '1 hour','synthetic','\x01','\x02','\x03',now(),now()+interval '1 hour',now())`,
 		id, subject)
 	require.NoError(t, err)
+	data, err := migrationFiles.ReadFile(sessionOIDCMigration)
+	require.NoError(t, err)
+	original := string(data)
+	begin := strings.Index(original, "CREATE FUNCTION auth_oidc_request_guard()")
+	end := strings.Index(original[begin:], "$guard$;") + begin + len("$guard$;")
+	_, err = db.ExecContext(ctx, `ALTER TABLE auth_oidc_authorization_requests DROP CONSTRAINT auth_oidc_request_step_up_check,
+ DROP COLUMN interaction,DROP COLUMN step_up_session,DROP COLUMN step_up_binding,DROP COLUMN step_up_session_id,
+ DROP COLUMN step_up_cookie_digest,DROP COLUMN step_up_verified_at;
+ DELETE FROM goauth_schema_version WHERE version=16; DELETE FROM goauth_migration_history WHERE version=16;`+
+		strings.Replace(original[begin:end], "CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1))
+	require.NoError(t, err)
 	_, err = db.ExecContext(ctx, `DROP INDEX auth_notification_gateway_ready_idx;
  ALTER TABLE auth_notification_deliveries DROP CONSTRAINT auth_notification_gateway_receipt_check,
  DROP CONSTRAINT auth_notification_transport_protocol_check,DROP CONSTRAINT auth_notification_deliveries_state_check,
