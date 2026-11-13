@@ -498,3 +498,5 @@ var (
 		goauth.AssistedRecoveryOwnerAuthorization,
 	) error = (*goauth.AssistedRecovery).InitiateOwner
 )
+
+var _ func(*postgres.Runtime, context.Context) (bool, error) = (*postgres.Runtime).AuthTransactionActive

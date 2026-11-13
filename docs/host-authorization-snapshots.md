@@ -34,3 +34,12 @@ Hosts still own atomic publication, generation fences, lifecycle, max-age expiry
 periodic refresh for external writers/other pods, and complete write coverage.
 Never replace session introspection or transactional write invariants with these
 snapshots. No schema changes, production opt-in or public release are implied.
+
+`Runtime.AuthTransactionActive(ctx)` inspects the canonical managed scope without
+SQL or observer registration. A host's transactional guard must bypass read caches
+when true, including direct Runtime transactions without host-specific markers.
+False without error means no scope; foreign, completed and canceled scopes return
+an error which must not be interpreted as permission to use a cached grant.
+This query does not extend transaction lifetime; existing callback/concurrency
+rules still apply. It does not claim that an arbitrary external SQL transaction
+is managed by GoAuth.
