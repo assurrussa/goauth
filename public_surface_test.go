@@ -500,3 +500,7 @@ var (
 )
 
 var _ func(*postgres.Runtime, context.Context) (bool, error) = (*postgres.Runtime).AuthTransactionActive
+
+var _ func(
+	*postgres.Runtime, context.Context, func(context.Context, postgres.SQLExecutor) ([]goauth.SubjectID, error),
+) (rbac.Snapshot, error) = (*postgres.Runtime).ScopedAuthorizationSnapshot

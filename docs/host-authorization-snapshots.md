@@ -43,3 +43,15 @@ an error which must not be interpreted as permission to use a cached grant.
 This query does not extend transaction lifetime; existing callback/concurrency
 rules still apply. It does not claim that an arbitrary external SQL transaction
 is managed by GoAuth.
+
+For an admin-only cache, use `ScopedAuthorizationSnapshot(ctx, selectSubjects)`.
+The selector reads host membership using the supplied executor and returns canonical
+subject IDs before canonical RBAC reads, all within the same read-only Repeatable
+Read transaction. Subject assignments are filtered by `subject_id=ANY($1::uuid[])`
+in PostgreSQL using the existing subject-first primary key, not loaded and filtered
+in Go. Empty/nil selected IDs return no assignments; a nil selector is an error.
+The complete role/permission catalog remains available, including unassigned roles,
+for role management/preview. Catalog entries are not grants: authorization must use
+only the selected subjects' assignments. Memory scales with the catalog plus the
+selected assignments, not all customer assignments. The unscoped APIs remain
+unchanged. Captured selector results are provisional until the entire call succeeds.
