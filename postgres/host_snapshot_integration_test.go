@@ -16,7 +16,8 @@ func TestHostProjectionSharesRBACSnapshot(t *testing.T) {
 	db := integrationDB(t)
 	resetSchema(t, db)
 	runtime := identityPostgresRuntime(t, db)
-	_, err := db.ExecContext(t.Context(), `CREATE TABLE host_snapshot_test (version integer); INSERT INTO host_snapshot_test VALUES(1)`)
+	_, err := db.ExecContext(t.Context(),
+		`CREATE TABLE host_snapshot_test (version integer); INSERT INTO host_snapshot_test VALUES(1)`)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		_, err := db.ExecContext(context.Background(), `DROP TABLE host_snapshot_test`)
