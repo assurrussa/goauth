@@ -27,6 +27,20 @@ import (
 )
 
 var _ func(
+	*postgres.Runtime, context.Context, func(context.Context, postgres.SQLExecutor) error,
+) (rbac.Snapshot, error) = (*postgres.Runtime).AuthorizationSnapshot
+
+var _ func(
+	*postgres.Runtime, context.Context, *postgres.AuthTransactionObserver,
+) error = (*postgres.Runtime).ObserveAuthTransaction
+
+var _ = postgres.AuthTransactionObserver{Notify: func(outcome postgres.AuthTransactionOutcome) {
+	switch outcome {
+	case postgres.AuthTransactionCommitted, postgres.AuthTransactionRolledBack, postgres.AuthTransactionUnknown:
+	}
+}}
+
+var _ func(
 	*postgres.Runtime, context.Context, goauth.Credential,
 ) (*postgres.CredentialProof, error) = (*postgres.Runtime).PrepareCredential
 

@@ -455,6 +455,12 @@ func (s *rbacStore) ListSubjectRoles(
 }
 
 func (s *rbacStore) Snapshot(ctx context.Context) (rbac.Snapshot, error) {
+	return s.snapshotWithProjection(ctx, nil)
+}
+
+func (s *rbacStore) snapshotWithProjection(
+	ctx context.Context, project func(context.Context, SQLExecutor) error,
+) (rbac.Snapshot, error) {
 	tx, err := (&Store{db: s.db}).notificationTx(ctx)
 	if err != nil {
 		return rbac.Snapshot{}, fmt.Errorf("begin RBAC snapshot: %w", err)
@@ -483,6 +489,11 @@ func (s *rbacStore) Snapshot(ctx context.Context) (rbac.Snapshot, error) {
 	snapshot.SubjectRoles, err = snapshotSubjectRoles(ctx, tx)
 	if err != nil {
 		return rbac.Snapshot{}, err
+	}
+	if project != nil {
+		if err := project(ctx, sqlExecutor{tx}); err != nil {
+			return rbac.Snapshot{}, fmt.Errorf("read host authorization projection: %w", err)
+		}
 	}
 	// A failed read-only commit cannot make cached authorization uncertain.
 	if err := commitAuthTransaction(tx); err != nil {
