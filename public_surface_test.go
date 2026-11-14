@@ -27,6 +27,20 @@ import (
 )
 
 var _ func(
+	*postgres.Runtime, context.Context, func(context.Context, postgres.SQLExecutor) error,
+) (rbac.Snapshot, error) = (*postgres.Runtime).AuthorizationSnapshot
+
+var _ func(
+	*postgres.Runtime, context.Context, *postgres.AuthTransactionObserver,
+) error = (*postgres.Runtime).ObserveAuthTransaction
+
+var _ = postgres.AuthTransactionObserver{Notify: func(outcome postgres.AuthTransactionOutcome) {
+	switch outcome {
+	case postgres.AuthTransactionCommitted, postgres.AuthTransactionRolledBack, postgres.AuthTransactionUnknown:
+	}
+}}
+
+var _ func(
 	*postgres.Runtime, context.Context, goauth.Credential,
 ) (*postgres.CredentialProof, error) = (*postgres.Runtime).PrepareCredential
 
@@ -484,3 +498,9 @@ var (
 		goauth.AssistedRecoveryOwnerAuthorization,
 	) error = (*goauth.AssistedRecovery).InitiateOwner
 )
+
+var _ func(*postgres.Runtime, context.Context) (bool, error) = (*postgres.Runtime).AuthTransactionActive
+
+var _ func(
+	*postgres.Runtime, context.Context, func(context.Context, postgres.SQLExecutor) ([]goauth.SubjectID, error),
+) (rbac.Snapshot, error) = (*postgres.Runtime).ScopedAuthorizationSnapshot

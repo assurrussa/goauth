@@ -24,10 +24,12 @@ type (
 // All operations sharing the transaction context share this callback owner.
 // Keep outcome hooks together and execute them outside the registration lock.
 type authTransactionCallbacks struct {
-	mu      sync.Mutex
-	rbacMu  sync.Mutex
-	entries []authTransactionCallback
-	caches  map[*transactionCache]struct{}
+	mu        sync.Mutex
+	rbacMu    sync.Mutex
+	entries   []authTransactionCallback
+	completed bool
+	observers map[*AuthTransactionObserver]struct{}
+	caches    map[*transactionCache]struct{}
 }
 
 type authTransactionCallback struct {
@@ -46,9 +48,11 @@ const (
 
 func (c *authTransactionCallbacks) run(outcome authTransactionOutcome) {
 	c.mu.Lock()
+	c.completed = true
 	entries := c.entries
 	c.entries = nil
 	c.mu.Unlock()
+	var firstPanic any
 	for _, entry := range entries {
 		callback := entry.afterRollback
 		switch outcome {
@@ -59,8 +63,18 @@ func (c *authTransactionCallbacks) run(outcome authTransactionOutcome) {
 		case authTransactionRolledBack:
 		}
 		if callback != nil {
-			callback()
+			func() {
+				defer func() {
+					if p := recover(); p != nil && firstPanic == nil {
+						firstPanic = p
+					}
+				}()
+				callback()
+			}()
 		}
+	}
+	if firstPanic != nil {
+		panic(firstPanic)
 	}
 }
 
@@ -196,6 +210,9 @@ func commitAuthTransaction(tx *sql.Tx) error {
 		return nil
 	}
 	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && (pgErr.Code == "40003" || pgErr.Code == "08007") {
+		return errors.Join(goauth.ErrOperationOutcomeUnknown, err)
+	}
 	if errors.As(err, &pgErr) || errors.Is(err, sql.ErrTxDone) {
 		return err
 	}

@@ -455,6 +455,19 @@ func (s *rbacStore) ListSubjectRoles(
 }
 
 func (s *rbacStore) Snapshot(ctx context.Context) (rbac.Snapshot, error) {
+	return s.snapshotWithProjection(ctx, nil)
+}
+
+func (s *rbacStore) snapshotWithProjection(
+	ctx context.Context, project func(context.Context, SQLExecutor) error,
+) (rbac.Snapshot, error) {
+	return s.snapshotWithSubjects(ctx, project, nil)
+}
+
+func (s *rbacStore) snapshotWithSubjects(
+	ctx context.Context, project func(context.Context, SQLExecutor) error,
+	selectSubjects func(context.Context, SQLExecutor) ([]goauth.SubjectID, error),
+) (rbac.Snapshot, error) {
 	tx, err := (&Store{db: s.db}).notificationTx(ctx)
 	if err != nil {
 		return rbac.Snapshot{}, fmt.Errorf("begin RBAC snapshot: %w", err)
@@ -467,6 +480,18 @@ func (s *rbacStore) Snapshot(ctx context.Context) (rbac.Snapshot, error) {
 		return rbac.Snapshot{}, fmt.Errorf("begin RBAC snapshot: %w", err)
 	}
 	defer rollbackWrite(tx, true)
+	var scope [][]string
+	if selectSubjects != nil {
+		ids, err := selectSubjects(ctx, sqlExecutor{tx})
+		if err != nil {
+			return rbac.Snapshot{}, fmt.Errorf("select authorization subjects: %w", err)
+		}
+		values := make([]string, len(ids))
+		for i, id := range ids {
+			values[i] = id.String()
+		}
+		scope = [][]string{values}
+	}
 	var snapshot rbac.Snapshot
 	snapshot.Roles, err = snapshotRoles(ctx, tx)
 	if err != nil {
@@ -480,9 +505,14 @@ func (s *rbacStore) Snapshot(ctx context.Context) (rbac.Snapshot, error) {
 	if err != nil {
 		return rbac.Snapshot{}, err
 	}
-	snapshot.SubjectRoles, err = snapshotSubjectRoles(ctx, tx)
+	snapshot.SubjectRoles, err = snapshotSubjectRoles(ctx, tx, scope...)
 	if err != nil {
 		return rbac.Snapshot{}, err
+	}
+	if project != nil {
+		if err := project(ctx, sqlExecutor{tx}); err != nil {
+			return rbac.Snapshot{}, fmt.Errorf("read host authorization projection: %w", err)
+		}
 	}
 	// A failed read-only commit cannot make cached authorization uncertain.
 	if err := commitAuthTransaction(tx); err != nil {
@@ -560,9 +590,16 @@ SELECT role_id, permission_id FROM auth_role_permissions ORDER BY role_id, permi
 	return assignments, nil
 }
 
-func snapshotSubjectRoles(ctx context.Context, tx *sql.Tx) ([]rbac.SubjectRole, error) {
-	rows, err := tx.QueryContext(ctx, `
-SELECT subject_id, role_id FROM auth_subject_roles ORDER BY subject_id, role_id`)
+func snapshotSubjectRoles(ctx context.Context, tx *sql.Tx, scope ...[]string) ([]rbac.SubjectRole, error) {
+	query := `
+SELECT subject_id, role_id FROM auth_subject_roles`
+	var args []any
+	if len(scope) > 0 {
+		query += ` WHERE subject_id=ANY($1::uuid[])`
+		args = []any{scope[0]}
+	}
+	query += ` ORDER BY subject_id, role_id`
+	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list snapshot subject roles: %w", err)
 	}

@@ -80,3 +80,31 @@ func (r *Runtime) Database() *sql.DB {
 	}
 	return r.db
 }
+
+// AuthTransactionActive reports whether ctx carries an active managed transaction
+// on this Runtime's canonical database handle. It performs no SQL and registers
+// no observer. Hosts can use it to bypass read caches for transactional guards.
+// Absent scopes return false; foreign, completed or canceled scopes return errors.
+// As with SQLExecutor, callers must not retain or concurrently outlive the owning
+// transaction callback: this check does not extend the transaction's lifetime.
+func (r *Runtime) AuthTransactionActive(ctx context.Context) (bool, error) {
+	if r == nil || r.store == nil {
+		return false, errors.New("PostgreSQL Runtime is not initialized")
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	scope, ok := ctx.Value(notificationTxContextKey{}).(notificationTxScope)
+	if !ok {
+		return false, nil
+	}
+	if scope.db != r.db {
+		return false, errForeignNotificationTransaction
+	}
+	scope.callbacks.mu.Lock()
+	defer scope.callbacks.mu.Unlock()
+	if scope.callbacks.completed {
+		return false, errors.New("auth transaction is already completed")
+	}
+	return true, nil
+}
