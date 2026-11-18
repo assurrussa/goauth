@@ -22,6 +22,26 @@ final authorization response and must confirm commit before publishing it.
   could have happened; a server-rejected commit is not classified as unknown.
   Cache invalidation and unknown/rollback hooks keep their existing behavior.
 
+## Callback and executor are different contracts
+
+Both transaction methods take `func(context.Context) error`, not
+`func(SQLExecutor) error`. Their current exported signatures are:
+
+```go
+func (r *Runtime) InAuthTransaction(ctx context.Context, fn func(context.Context) error) error
+func (r *Runtime) InOwnedAuthTransaction(ctx context.Context, fn func(context.Context) error) error
+func (r *Runtime) SQLExecutor(ctx context.Context) (SQLExecutor, error)
+```
+
+These are API declarations from `postgres/host_transaction.go`, not a runnable
+program. Inside the callback, obtain the borrowed executor with
+`executor, err := runtime.SQLExecutor(txctx)` and propagate the error. Use the
+same `txctx` for participating auth operations and host SQL. The callback receives
+the managed **context**; the separately obtained executor cannot commit or roll
+back. Do not use `Database()` or a separately started SQL transaction for writes
+that must commit atomically with auth state. See the complete
+[host-session example](../examples/hostsession/README.md) for runnable wiring.
+
 ## Withhold provisional results
 
 Prepare any response inside the callback, but publish it only after the owned

@@ -40,6 +40,10 @@ strict records use the zero policy or `PasswordInputPolicyUnicode`.
 
 ## Transactions, retries and ownership
 
+`InAuthTransaction` receives a `func(context.Context) error` callback. Obtain
+`SQLExecutor(txctx)` separately inside it; the callback does not receive an
+executor directly. See [transaction signatures and ownership](owned-auth-transactions.md#callback-and-executor-are-different-contracts).
+
 Creation is **create-only**. An existing subject ID or `(scheme, normalized_value)`
 is an error, including an identical repeated request. There is no upsert,
 password overwrite, status restoration, identity merge, or silent adoption.
