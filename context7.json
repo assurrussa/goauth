@@ -1,5 +1,7 @@
 {
   "$schema": "https://context7.com/schema/context7.json",
+  "url": "https://context7.com/assurrussa/goauth",
+  "public_key": "pk_gNodxGoIvXtQByc3DVvLt",
   "projectTitle": "GoAuth",
   "description": "PostgreSQL-first authentication and RBAC Runtime for Go hosts, with optional HTTP adapters, sessions, recovery, encrypted notification delivery and OIDC. Hosts own application policy and lifecycle.",
   "folders": [
